@@ -105,10 +105,8 @@ impl ConsoleRuntime {
                 let inset=20*scale as i32;
                 let length=(menu.width as i32-2*inset).max(1);
                 if state.adjusting || (clicked && menu.contains(point) && point.y>=menu.y+36*scale as i32) {
-                    if self.pointer_pressed || clicked {
-                        let value=((point.x-menu.x-inset).clamp(0,length)*100+length/2)/length;
-                        state.set_percent(id,value as u32);
-                    }
+                    let value=((point.x-menu.x-inset).clamp(0,length)*100+length/2)/length;
+                    state.set_percent(id,value as u32);
                     let release=state.adjusting && !self.pointer_pressed;
                     state.adjusting=self.pointer_pressed;widgets::publish(state);
                     if release || !state.adjusting { let _=self.persist_desktop_layout(); }
@@ -121,7 +119,17 @@ impl ConsoleRuntime {
                     let row = (point.y - menu.y) as usize / (36 * scale);
                     if let Some(id)=state.menu_widget.filter(|_|!state.transparency_menu) {
                         match row{
-                            1=>match id{2=>{#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]super::weather::configure();},1=>self.open_settings(3),_=>self.open_settings(0)},
+                            1 => match id {
+                                2 => {
+                                    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+                                    {
+                                        self.surface_desktop();
+                                        super::weather::configure();
+                                    }
+                                }
+                                1 => self.open_settings(3),
+                                _ => self.open_settings(0),
+                            },
                             2=>{state.transparency_menu=true;state.menu_hover=None;widgets::publish(state);self.redraw();return true;},
                             3=>{state.visible &= !(1<<id);if id==1{self.set_ai_chat_enabled(false);}},
                             _=>{}
@@ -205,7 +213,10 @@ impl ConsoleRuntime {
                     if [g.minimize,g.close].iter().any(|r|r.contains(point)) || !minimized && [g.status,g.model,g.timeline,g.composer,g.send].iter().any(|r|r.contains(point)){return false}
                 }
                 #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
-                if id==2 && super::weather::click((point.x-r.x)*100/r.width.max(1) as i32,(point.y-r.y)*100/r.height.max(1) as i32){self.ai_chat_focus=0;self.redraw();return true;}
+                if id==2 && super::weather::click((point.x-r.x)*100/r.width.max(1) as i32,(point.y-r.y)*100/r.height.max(1) as i32){
+                    if self.mode!=ConsoleMode::Desktop || self.desktop_app!=DesktopAppKind::None { self.surface_desktop(); }
+                    self.ai_chat_focus=0;self.redraw();return true;
+                }
                 self.surface_desktop();
                 state.drag=Some((id,point.x-r.x,point.y-r.y));self.ai_chat_focus=0;widgets::publish(state);return true;
             }

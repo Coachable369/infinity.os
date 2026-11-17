@@ -44,17 +44,19 @@ pub(super) fn blur(){unsafe{FOCUS=false}}
 // DESC: Routes weather field, submit and explicit approximate-location actions.
 // ------------------=
 pub(super) fn click(x:i32,y:i32)->bool{unsafe{
-    if LOOKUP.is_some(){return false}
+    if LOOKUP.is_some(){return SETUP && (33..92).contains(&y) && (5..95).contains(&x)}
     if !SETUP && y<32 && x>=65{SETUP=true;MESSAGE=b"Enter your city";QUERY=Text::EMPTY;FOCUS=true;}
-    else if !SETUP && y>=65 && (x<26 || x>=74) {
+    else if !SETUP && (65..96).contains(&y) && (x<12 || x>=88) {
         if let Some(mut out)=OUTLOOK {
             let pages=out.count.div_ceil(3).max(1);
-            out.page=if x<26{out.page.saturating_sub(1)}else{(out.page+1).min(pages-1)};
+            let next=if x<12{out.page.saturating_sub(1)}else{(out.page+1).min(pages-1)};
+            if next==out.page{return false}
+            out.page=next;
             OUTLOOK=Some(out);
-        }
+        } else {return false}
     }
     else if SETUP && (33..59).contains(&y) && (5..95).contains(&x){FOCUS=true;}
-    else if SETUP && (66..92).contains(&y) && ((5..45).contains(&x)||(50..95).contains(&x)){if x>=50{LOOKUP=Some(Request::Detect);}else if QUERY.len>0{LOOKUP=Some(Request::City);}NEXT=0;}
+    else if SETUP && (66..92).contains(&y) && ((5..45).contains(&x)||(50..95).contains(&x)){if x>=50{LOOKUP=Some(Request::Detect);}else if !QUERY.value().trim_ascii().is_empty(){LOOKUP=Some(Request::City);}else{MESSAGE=b"Enter your city";FOCUS=true;}NEXT=0;}
     else{return false}
     crate::ui::widget_keyframes::invalidate(2);true
 }}
@@ -67,7 +69,7 @@ pub(super) fn key(k:ConsoleKey)->bool{unsafe{
     match k{ConsoleKey::Character(c) if (32..=126).contains(&c)=>{let mut q=QUERY;let _=q.add(&[c]);QUERY=q;},
     ConsoleKey::Backspace=>QUERY.len=QUERY.len.saturating_sub(1),
     ConsoleKey::Escape=>{FOCUS=false;SETUP=PLACE.is_none();},
-    ConsoleKey::Enter if QUERY.len>0=>{LOOKUP=Some(Request::City);NEXT=0;FOCUS=false;},_=>return false}
+    ConsoleKey::Enter if !QUERY.value().trim_ascii().is_empty()=>{LOOKUP=Some(Request::City);NEXT=0;FOCUS=false;},_=>return false}
     crate::ui::widget_keyframes::invalidate(2);true
 }}
 // ------------------------=

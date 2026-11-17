@@ -116,16 +116,28 @@ impl State {
             let [x,y]=self.weather_position;
             let preferred=Rect{x:if x==0{width/10}else{((x-1)as usize*width/1000).min(width.saturating_sub(w))}as i32,
                 y:if y==0{height.saturating_sub(h+105*scale)}else{((y-1)as usize*height/1000).min(height.saturating_sub(h))}as i32,width:w as u32,height:h as u32};
-            if self.visible&7!=7 || matches!(self.drag,Some((2,_,_))){return preferred}
-            let obstacles=[self.rect(0,width,height,scale,false),self.rect(1,width,height,scale,false)];
-            if obstacles.iter().all(|r|!r.intersects(preferred)){return preferred}
+            if self.visible & 4 == 0 || matches!(self.drag, Some((2, _, _))) { return preferred; }
+            let mut bounds = [Rect::default(); 2];
+            let mut count = 0;
+            for id in 0..2 {
+                if self.visible & (1 << id) != 0 {
+                    bounds[count] = self.rect(id, width, height, scale, false);
+                    count += 1;
+                }
+            }
+            let obstacles = &bounds[..count];
+            if obstacles.iter().all(|r| !r.intersects(preferred)) { return preferred; }
             let gap=(12*scale) as i32;
             let xmax=width.saturating_sub(w) as i32;
             let ymin=(height*7/100) as i32;
             let ymax=(height.saturating_sub(h+82*scale) as i32).max(ymin);
             let mut best=None;
-            for x in [preferred.x,0,xmax,obstacles[0].x-w as i32-gap,obstacles[1].x-w as i32-gap,obstacles[0].right()+gap,obstacles[1].right()+gap] {
-                for y in [preferred.y,ymin,ymax,obstacles[0].bottom()+gap,obstacles[1].bottom()+gap,obstacles[0].y-h as i32-gap,obstacles[1].y-h as i32-gap] {
+            let candidates_x = [preferred.x, 0, xmax].into_iter().chain(
+                obstacles.iter().flat_map(|r| [r.x - w as i32 - gap, r.right() + gap]));
+            for x in candidates_x {
+                let candidates_y = [preferred.y, ymin, ymax].into_iter().chain(
+                    obstacles.iter().flat_map(|r| [r.bottom() + gap, r.y - h as i32 - gap]));
+                for y in candidates_y {
                     let candidate=Rect{x:x.clamp(0,xmax),y:y.clamp(ymin,ymax),..preferred};
                     let distance=(candidate.x-preferred.x).abs()+(candidate.y-preferred.y).abs();
                     if obstacles.iter().all(|r|!r.intersects(candidate)) && best.is_none_or(|(d,_)|distance<d){best=Some((distance,candidate));}

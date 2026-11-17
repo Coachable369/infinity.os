@@ -226,3 +226,26 @@ fn all_widgets_remain_reachable_when_overview_appears(){
         assert_eq!([state.percent(0),state.percent(1),state.percent(2)],[7,43,100]);
     }
 }
+
+#[test]
+// ------------------------=
+// FUNC: weather_avoids_each_visible_neighbour
+// DESC: Checks independent visibility choices during drag and restores the saved location when a neighbour hides.
+// ------------------=
+fn weather_avoids_each_visible_neighbour() {
+    for (width, height, scale) in [(800,600,1),(1920,1080,1),(3840,2160,2)] {
+        for id in 0..2 {
+            let mut state = State::new();
+            state.visible = 4 | (1 << id);
+            let other = state.rect(id,width,height,scale,false);
+            state.weather_position = [
+                (1 + other.x.max(0) as usize * 1000 / width) as u16,
+                (1 + other.y.max(0) as usize * 1000 / height) as u16,
+            ];
+            state.drag = Some((id,4,4));
+            assert!(!state.rect(2,width,height,scale,false).intersects(other));
+            state.visible = 4;
+            assert!(state.rect(2,width,height,scale,false).intersects(other));
+        }
+    }
+}
