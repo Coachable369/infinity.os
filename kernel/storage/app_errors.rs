@@ -12,8 +12,13 @@ pub(crate) fn record(app: &[u8], utc: Option<u64>, phase: &str, detail: Argument
     let mut path = Bytes::<64>::new();
     path.write(b"/Logs/");
     let stem = basename.strip_suffix(b".py").unwrap_or(basename);
-    for &byte in stem.iter().take(28) {
-        path.write(&[if byte.is_ascii_alphanumeric() || byte == b'-' { byte } else { b'_' }]);
+    let needs_suffix = stem.len() > 28 || stem.iter().any(|b| !b.is_ascii_alphanumeric() && !matches!(b, b'-' | b'_'));
+    for &byte in stem.iter().take(if needs_suffix { 19 } else { 28 }) {
+        path.write(&[if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_') { byte } else { b'_' }]);
+    }
+    if needs_suffix {
+        let fingerprint = stem.iter().fold(0x811c9dc5u32, |hash,b| (hash ^ u32::from(*b)).wrapping_mul(0x01000193));
+        let _ = write!(path, "-{fingerprint:08x}");
     }
     if stem.is_empty() { path.write(b"application"); }
     path.write(b".log");
