@@ -154,7 +154,7 @@ DESIGN_KIT_ASSETS += assets/ui-design-kit/uikit.infinityui assets/ui-design-kit/
 KERNEL_SOURCES += $(DESIGN_KIT_ASSETS)
 KERNEL_SOURCES += $(wildcard sdk/infinity-enterprise-core/*.rs) sdk/infinity-enterprise-core/Cargo.toml
 
-$(BUILD)/x86_64/installed-esp.img $(BUILD)/aarch64/installed-esp.img: $(DESIGN_KIT_ASSETS)
+$(BUILD)/x86_64/installed-esp.img $(BUILD)/aarch64/installed-esp.img: $(DESIGN_KIT_ASSETS) Makefile
 NODE_ASSETS := $(shell find assets/mesh -type f)
 # The BIOS payload begins at 0x8000 and must retain 16 KiB below the 0x9c000 bootstrap stack.
 X86_PAYLOAD_MAX_SECTORS := 1152
@@ -548,7 +548,8 @@ $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/Applications/
 	@mkdir -p $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/DesignKit/Default
-	cp $(DESIGN_KIT_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/DesignKit/Default/
+	cp -R assets/ui-design-kit/default/. $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/DesignKit/Default/
+	cp assets/ui-design-kit/uikit.infinityui assets/ui-design-kit/uikit-catalog.json $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/DesignKit/Default/
 	python3 tools/iso-staging.py allocate $(BUILD)/installed-fat $@
 	mformat -F -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat/EFI ::
@@ -997,7 +998,8 @@ $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS)
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Applications/
 	@mkdir -p $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/DesignKit/Default
-	cp $(DESIGN_KIT_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/DesignKit/Default/
+	cp -R assets/ui-design-kit/default/. $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/DesignKit/Default/
+	cp assets/ui-design-kit/uikit.infinityui assets/ui-design-kit/uikit-catalog.json $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/DesignKit/Default/
 	python3 tools/iso-staging.py allocate $(BUILD)/installed-fat-aarch64 $@
 	mformat -F -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat-aarch64/EFI ::

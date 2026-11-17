@@ -18,11 +18,13 @@ parser.add_argument("--kernel", action="append", type=Path, default=[])
 args = parser.parse_args()
 for arch in args.arch or ("aarch64", "x86_64"):
     with tempfile.TemporaryDirectory(dir=root / "build") as directory:
-        for source in [*kit.iterdir(), kit.parent / "uikit.infinityui", kit.parent / "uikit-catalog.json"]:
-            target = Path(directory) / source.name
+        for source in [*(p for p in kit.rglob("*") if p.is_file()), kit.parent / "uikit.infinityui", kit.parent / "uikit-catalog.json"]:
+            relative = source.relative_to(kit) if source.is_relative_to(kit) else Path(source.name)
+            target = Path(directory) / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["mcopy", "-i", str(root / f"build/{arch}/installed-esp.img"),
-                            f"::/EFI/InfinityOS/InfinityUI/DesignKit/Default/{source.name}", str(target)], check=True)
-            assert target.read_bytes() == source.read_bytes(), (arch, source.name)
+                            f"::/EFI/InfinityOS/InfinityUI/DesignKit/Default/{relative.as_posix()}", str(target)], check=True)
+            assert target.read_bytes() == source.read_bytes(), (arch, str(relative))
 document = json.loads((kit.parent / "uikit.infinityui").read_text())
 expected_tokens = b"IUIKIT01" + struct.pack("<HH13I", 1, 13, *document["colors"])
 assert (kit / "uikit-tokens.bin").read_bytes() == expected_tokens

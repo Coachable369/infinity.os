@@ -2,6 +2,7 @@
 
 This proves asset packaging only, not browser availability or installed execution.
 """
+import argparse
 import json
 import mmap
 import os
@@ -33,11 +34,14 @@ def verify_embedded_fonts(kernel, root):
 
 # ------------------------=
 # FUNC: main
-# DESC: Compares exact PNG payloads extracted from both installed ESPs with their approved sources.
+# DESC: Compares exact artwork and fonts for the selected architecture, or both in a combined release.
 # ------------------=
 def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Run through ./build-kit run python3 tools/browser-artwork-parity.py")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--arch", choices=("aarch64", "x86_64"))
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     assets = {
         "infinity-browser-icon-v1-source.png": (1254, 1254),
@@ -47,7 +51,7 @@ def main():
     }
     records = []
     with tempfile.TemporaryDirectory(prefix="browser-artwork-", dir=root / "build/tmp") as temporary:
-        for architecture in ("x86_64", "aarch64"):
+        for architecture in ((args.arch,) if args.arch else ("aarch64", "x86_64")):
             records.append({"architecture": architecture, "embedded_fonts": verify_embedded_fonts(
                 root / "build" / architecture / "installed-kernel.elf", root)})
             image = root / "build" / architecture / "installed-esp.img"
