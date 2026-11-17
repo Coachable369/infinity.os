@@ -46,6 +46,7 @@ static mut APP_ACTIVE: bool = false;
 static mut APP_NETWORK: super::native_network::Network = super::native_network::Network::new();
 static mut APP_SOURCE_PATH:[u8;95]=[0;95];
 static mut APP_SOURCE_PATH_LENGTH:usize=0;
+static mut APP_LOG_NAME: [u8; 48] = [0; 48];
 static mut APP_BYTES:[u8;256*1024]=[0;256*1024];
 static mut APP_OUTPUT:[u8;4096]=[0;4096];
 static mut APP_OUTPUT_LENGTH:usize=0;
@@ -834,9 +835,15 @@ unsafe fn poll_lease(console:&mut ConsoleRuntime) {unsafe {
 // ------------------=
 pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
     if !path.ends_with(b".elf") {return false;}
+    let services=console.system.firmware_runtime_services;
+    let log = |reason: &str| {
+        let _ = crate::storage::app_errors::record(path,super::certificate_time(services),
+            "launch",format_args!("{reason}"));
+    };
     if APP_ACTIVE || crate::runtime::ai::application_host::context().is_some() {
         console.command_window_suspended=true;console.open_execution_console();
         console.output.write_line(b"A native program is already running. Exit it or press Ctrl+C before launching another.");
+        log("Native application already running");
         APP_LINE_OPEN=false;console.redraw();return true;
     }
     console.command_window_suspended=console.command_window.visible;
@@ -848,14 +855,14 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
     crate::ui::native_uikit::close();APP_UI_REVISION=0;
     let mut panel=assistant::read(1);panel.focused=false;assistant::write(1,panel);
     if !active(console) {
-        console.output.write_line(b"Cannot launch: the authenticated session is unavailable.");return true;
+        log("Cannot launch: the authenticated session is unavailable.");console.output.write_line(b"Cannot launch: the authenticated session is unavailable.");return true;
     }
     let Some((kernel,controller))=job::platform() else {
-        console.output.write_line(b"Native execution is unavailable on this boot.");return true;
+        log("Native execution is unavailable on this boot.");console.output.write_line(b"Native execution is unavailable on this boot.");return true;
     };
     let bytes=&mut *(&raw mut APP_BYTES);
     let Ok((_,length))=crate::storage::object_read_path(path,None,bytes) else {
-        console.output.write_line(b"Cannot read this executable.");return true;
+        log("Cannot read this executable.");console.output.write_line(b"Cannot read this executable.");return true;
     };
     let owner=SecurityIdentity(console.current_session.0);
     if VOICE_OWNER!=owner || (&*(&raw const VOICE_PROGRESS)).snapshot().0==0 {
@@ -868,7 +875,11 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
         Ok(task)=>{
             let name=path.rsplit(|b|*b==b'/').next().unwrap_or(path);
             APP_MONITOR=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_C,name).ok()).flatten();
-            if APP_MONITOR.is_none(){let _=task.release(crate::runtime::native_memory::memory_mut());console.output.write_line(b"No process slot available.");return true;}
+            if APP_MONITOR.is_none(){let _=task.release(crate::runtime::native_memory::memory_mut());log("No process slot available.");console.output.write_line(b"No process slot available.");return true;}
+            let app_name = &mut *(&raw mut APP_LOG_NAME);
+            app_name.fill(0);
+            let count = name.len().min(app_name.len());
+            app_name[..count].copy_from_slice(&name[..count]);
             let _=crate::runtime::ai::application_host::attach(console.current_user.0,console.current_session.0);
             MONITOR_RESUME_NS=0;APP=Some((owner,task));APP_ACTIVE=true;APP_OUTPUT_LENGTH=0;
             (&mut *(&raw mut APP_NETWORK)).reset(owner,false);
@@ -883,7 +894,9 @@ pub(super) fn launch(console:&mut ConsoleRuntime,path:&[u8])->bool {unsafe {
             publish_workflow(5,0,0,path.len());
             schedule_voice_progress(VoiceStep::Running);
         }
-        Err(_)=>{
+        Err(error)=>{
+            let _ = crate::storage::app_errors::record(path,super::certificate_time(console.system.firmware_runtime_services),
+                "launch",format_args!("Executable rejected: {error:?}"));
             console.output.write_line(b"Executable rejected: invalid format, architecture, permissions, or insufficient memory.");
             schedule_voice_progress(VoiceStep::LaunchFailed);
         },
@@ -1009,6 +1022,11 @@ fn poll_app(console:&mut ConsoleRuntime) {unsafe {
     }
     if state==State::Runnable {INFINITY_NATIVE_APP_SNAPSHOT[6]=u64::from((&*(&raw const APP_INPUT)).waiting);}
     if state==State::Runnable{return;}
+    if authorized && !matches!(state,State::Exited(0)|State::Cancelled) {
+        let path=(&*(&raw const APP_LOG_NAME)).split(|b|*b==0).next().unwrap_or_default();
+        let _ = crate::storage::app_errors::record(path,super::certificate_time(console.system.firmware_runtime_services),
+            "execution",format_args!("{state:?}"));
+    }
     let ui_was_active=crate::ui::native_uikit::presentation().active;
     crate::runtime::native_memory::memory_mut().monitor_limit(false,2,u64::MAX);
     if let Some(h)=core::ptr::addr_of_mut!(APP_MONITOR).replace(None){crate::runtime::with_runtime(|r|{let _=r.task_manager.end(&mut r.execution,h);if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=0;}});}

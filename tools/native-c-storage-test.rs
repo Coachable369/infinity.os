@@ -86,6 +86,21 @@ fn main() {
         bytes: Rc::new(RefCell::new(BTreeMap::new())),
     };
     let mut store = ObjectStore::format(disk.clone(), 0, disk.sectors, [0x61; 16]).unwrap();
+    // Independent histories retain whole records and survive remounting the same disk.
+    let path=b"/Logs/InfinityCode.log";
+    let other=b"/Logs/infinity-memory.log";
+    let event=b"2026-11-17T12:45:06Z infinity.application launch\nSEVERE: failure 1\n";
+    for _ in 0..90 {store.append_app_error(path,event).unwrap();}
+    store.append_app_error(other,event).unwrap();
+    assert!(store.append_app_error(b"/Logs/../bad.log",event).is_err());
+    let mut reopened=ObjectStore::mount(disk.clone(),0).unwrap();
+    let id=reopened.resolve(path).unwrap();
+    let mut bytes=[0;4096];
+    let n=reopened.read(id,None,&mut bytes).unwrap();
+    assert!(n>event.len() && n<=4096);
+    assert!(bytes[..n].chunks(event.len()).all(|record|record==event));
+    let second=reopened.resolve(other).unwrap();assert_ne!(id, second);
+    assert_eq!(reopened.read(second,None,&mut bytes).unwrap(),event.len());
     assert!(store.total_blocks() as u64 * 4096 >= 128 * 1024 * 1024);
 
     let clang = store.create_system_extent(b"clang", 100 * 1024 * 1024).unwrap();

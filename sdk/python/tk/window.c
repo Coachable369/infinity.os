@@ -506,8 +506,8 @@ int XUngrabPointer(Display *d,Time time){(void)d;(void)time;NativeWindow *top=to
 // FUNC: XDefineCursor
 // DESC: Stores a supported native pointer shape for a real Tk child; cursor application remains checked by the Window Server.
 // ------------------=
-int XDefineCursor(Display *d,Window id,Cursor cursor){(void)d;NativeWindow *w=lookup_window(id);if(!w||cursor>5)return BadCursor;w->cursor=cursor;
-    NativeWindow *top=top_window(w);if(hover_window==id&&top&&top->native&&infinity_system_call(0x1254,top->native,cursor,0,0,0,0)<0)return BadAccess;return Success;}
+int XDefineCursor(Display *d,Window id,Cursor cursor){(void)d;NativeWindow *w=lookup_window(id);unsigned shape=cursor & 7; if(!w||shape>5)return BadCursor;w->cursor=shape;
+    NativeWindow *top=top_window(w);if(hover_window==id&&top&&top->native&&infinity_system_call(0x1254,top->native,shape,0,0,0,0)<0)return BadAccess;return Success;}
 // ------------------------=
 // FUNC: XRootWindow
 // DESC: Returns the native display metadata root, not a global framebuffer drawable.

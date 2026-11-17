@@ -40,7 +40,7 @@ impl ConsoleRuntime {
             .and_then(|registry|registry.entries.into_iter().flatten().find(|entry|entry.source_id==id));
         self.open_command_window();
         if let Some(entry)=entry{let _=self.launch_registered_application(&entry.source[..entry.source_len]);}
-        else{self.output.write_line(b"This application is no longer registered for the active user.");}
+        else{self.report_launch_error(b"ApplicationLauncher",b"This application is no longer registered for the active user.");}
     }
     // ------------------------=
     // FUNC: generated_application_command
@@ -106,17 +106,17 @@ impl ConsoleRuntime {
     // DESC: Uses existing native C and Python execution with no separate scheduler, shell interpolation or inferred permissions.
     // ------------------=
     pub(super) fn launch_registered_application(&mut self,target:&[u8])->bool{
-        let entry=match self.registered_application(target,true){Ok(entry)=>entry,Err(error)=>{self.output.write_line(error);publish_catalog(2,0,None,false);return false;}};
+        let entry=match self.registered_application(target,true){Ok(entry)=>entry,Err(error)=>{self.report_launch_error(target,error);publish_catalog(2,0,None,false);return false;}};
         match entry.language{
             Language::C=>{
                 #[cfg(all(feature="native-compiler",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-                {if compiler_commands::editor_running(self){self.output.write_line(b"Stop the current application first.");publish_catalog(2,0,Some(entry),false);return false;}
+                {if compiler_commands::editor_running(self){self.report_launch_error(&entry.name[..entry.name_len],b"Stop the current application first.");publish_catalog(2,0,Some(entry),false);return false;}
                     crate::ui::editor_chrome::terminal::mutate(|state|{state.attached=false;state.focused=false;state.restart=false;});
                     let _=compiler_commands::launch(self,&entry.artifact[..entry.artifact_len]);let success=compiler_commands::editor_running(self);publish_catalog(2,0,Some(entry),success);return success;}
             }
             Language::Python=>{
                 #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-                {if python_commands::editor_running(self){self.output.write_line(b"Stop the current Python application first.");publish_catalog(2,0,Some(entry),false);return false;}
+                {if python_commands::editor_running(self){self.report_launch_error(&entry.name[..entry.name_len],b"Stop the current Python application first.");publish_catalog(2,0,Some(entry),false);return false;}
                     crate::ui::editor_chrome::terminal::mutate(|state|{state.attached=false;state.focused=false;state.restart=false;});
                     self.open_execution_console();let mut command=[0;102];command[..7].copy_from_slice(b"python ");command[7..7+entry.artifact_len].copy_from_slice(&entry.artifact[..entry.artifact_len]);
                     let _=python_commands::command(self,&command[..7+entry.artifact_len]);let success=python_commands::editor_running(self);publish_catalog(2,0,Some(entry),success);return success;}

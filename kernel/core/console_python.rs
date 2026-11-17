@@ -285,7 +285,12 @@ unsafe fn start_pip(console: &ConsoleRuntime, arguments: &[&[u8]]) -> Result<(),
 // DESC: Captures script-local imports and launches one isolated, cancellable native CPython process.
 // ------------------=
 unsafe fn start(console: &ConsoleRuntime, path: &[u8], arguments: &[&[u8]], expected_source: Option<&[u8]>) -> Result<(), &'static [u8]> {
-    start_snapshot(console,path,arguments,expected_source,None)
+    let result = start_snapshot(console,path,arguments,expected_source,None);
+    if let Err(reason) = result {
+        let _ = crate::storage::app_errors::record(path, super::certificate_time(console.system.firmware_runtime_services),
+            "launch", format_args!("{}", core::str::from_utf8(reason).unwrap_or("Python launch failed")));
+    }
+    result
 }
 // ------------------------=
 // FUNC: start_snapshot
@@ -818,8 +823,12 @@ pub(super) fn launch_infinitycode(console: &mut ConsoleRuntime) -> Result<(), &'
             },
             Err(_) => return Err(b"InfinityCode: cannot inspect its launch document."),
         }
-        unsafe { start(console, path, &[b"/system/python", path], Some(source)) }
+        unsafe { start_snapshot(console, path, &[b"/system/python", path], Some(source), None) }
     })();
+    if let Err(reason) = result {
+        let _ = crate::storage::app_errors::record(b"InfinityCode",super::certificate_time(console.system.firmware_runtime_services),
+            "launch",format_args!("{}",core::str::from_utf8(reason).unwrap_or("IDE launch failed")));
+    }
     result
 }
 
@@ -1063,9 +1072,29 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     }
     let execution = task.execution_id();
     let lengths = task.result_lengths(b"", &mut job.output, &mut job.errors);
-    if authorized && job.memory_browser && !matches!(result,State::Exited(0)|State::Cancelled) {
-        console.open_app_launcher();
-        crate::ui::app_launcher::set_launch_notice(b"Infinity Memory stopped. Reopen it to retry.");
+    if authorized && !matches!(result,State::Exited(0)|State::Cancelled) {
+        let path = if job.count > 0 { &job.files[0].path[..job.files[0].path_len] } else { b"Python" };
+        let stderr = &job.errors[..lengths.map_or(0, |(_,n,_)|n)];
+        // Record the exception class and source line without copying user source or exception values.
+        let class = stderr.split(|b|*b==b'\n').rev().find_map(|line| {
+            let name = line.split(|b|*b==b':').next()?;
+            (name.len() <= 64 && name.iter().all(u8::is_ascii_alphabetic) &&
+                (name.ends_with(b"Error") || name.ends_with(b"Exception"))).then_some(name)
+        }).unwrap_or(b"unavailable");
+        let line = stderr.split(|b|*b==b'\n').rev().find_map(|line|{
+            let at=line.windows(7).position(|w|w==b", line ")?+7;
+            let digits=line[at..].split(|b|!b.is_ascii_digit()).next()?;
+            core::str::from_utf8(digits).ok()?.parse::<u32>().ok()
+        });
+        let saved = crate::storage::app_errors::record(path,super::certificate_time(console.system.firmware_runtime_services),
+            "execution",format_args!("{result:?} process={execution:?} exception={} line={line:?}",core::str::from_utf8(class).unwrap_or("unknown")));
+        if job.memory_browser || path.ends_with(b"/documents/InfinityCode.py") || path==media::PLAYER {
+            console.open_app_launcher();
+            crate::ui::app_launcher::set_launch_notice(if saved.is_err() { b"App stopped (APP-EXIT). Error log unavailable." }
+                else if job.memory_browser { b"Infinity Memory stopped (APP-EXIT). See /Logs/infinity-memory.log" }
+                else if path==media::PLAYER { b"Media Player stopped (APP-EXIT). See /Logs/media-player.log" }
+                else { b"InfinityCode stopped (APP-EXIT). See /Logs/InfinityCode.log" });
+        }
     }
     if authorized {
         if let Some((_length, _errors, truncated)) = lengths {

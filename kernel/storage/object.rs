@@ -1612,6 +1612,49 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
 
     // ------------------------=
+    // FUNC: append_app_error
+    // DESC: Persists complete bounded supervisor events per application without accumulating object versions.
+    // ------------------=
+    pub(crate) fn append_app_error(&mut self,path:&[u8],entry:&[u8])->Result<(),ObjectError> {
+        let name = path.strip_prefix(b"/Logs/").and_then(|n| n.strip_suffix(b".log")).ok_or(ObjectError::InvalidPath)?;
+        if name.is_empty() || name.len()>28 || !name.iter().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'_'|b'-')) {
+            return Err(ObjectError::InvalidPath);
+        }
+        if entry.len()>768 || entry.iter().filter(|b|**b==b'\n').count()!=2 || !entry.ends_with(b"\n") {
+            return Err(ObjectError::InvalidPath);
+        }
+        match self.resolve(b"/Logs") {
+            Ok(id) if self.metadata(id)?.kind == ObjectType::NamespaceNode => {},
+            Ok(_) => return Err(ObjectError::InvalidPath),
+            Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => {
+                self.create_attached(b"Logs", ObjectType::NamespaceNode, Space::Personal, b"", b"/Logs")?;
+            }
+            Err(error) => return Err(error),
+        }
+        match self.resolve(path) {
+            Ok(id) => {
+                if self.metadata(id)?.kind != ObjectType::Text { return Err(ObjectError::InvalidPath); }
+                let mut history = [0u8; 4096];
+                let used = self.read(id, None, &mut history)?;
+                let mut start = 0;
+                while used-start+entry.len() > history.len() {
+                    start = history[start..used].iter().position(|b|*b==b'\n').map_or(used,|pos|start+pos+1);
+                    start = history[start..used].iter().position(|b|*b==b'\n').map_or(used,|pos|start+pos+1);
+                }
+                history.copy_within(start..used,0);
+                let end = used-start+entry.len();
+                history[used-start..end].copy_from_slice(entry);
+                self.replace_state(id,&history[..end])?;
+            }
+            Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => {
+                self.create_attached(&path[6..],ObjectType::Text,Space::Personal,entry,path)?;
+            }
+            Err(error) => return Err(error),
+        }
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: audio_pipeline_log_commit
     // DESC: Creates the canonical log namespace and rotates sixteen bounded native text checkpoints without growing version history.
     // ------------------=

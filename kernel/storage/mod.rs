@@ -8,6 +8,8 @@ mod format;
 mod install_identity;
 pub mod layout;
 pub mod payload;
+#[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+pub(crate) mod app_errors;
 pub mod object;
 #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
 pub(crate) mod ssh;

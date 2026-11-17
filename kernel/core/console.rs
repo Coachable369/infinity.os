@@ -6060,6 +6060,18 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: report_launch_error
+    // DESC: Journals a supervisor-supplied launch reason and surfaces it in the invoking interface.
+    // ------------------=
+    fn report_launch_error(&mut self, app: &[u8], reason: &'static [u8]) {
+        #[cfg(any(target_arch="aarch64", target_arch="x86_64"))]
+        let _ = crate::storage::app_errors::record(app, certificate_time(self.system.firmware_runtime_services),
+            "launch", format_args!("{}", core::str::from_utf8(reason).unwrap_or("Launch rejected")));
+        self.output.write_line(reason);
+        crate::ui::app_launcher::set_launch_notice(reason);
+    }
+
+    // ------------------------=
     // FUNC: activate_launcher_action
     // DESC: Routes one typed launcher entry into a real Home, Settings, Text Editor, or Command surface.
     // ------------------=
@@ -6069,7 +6081,9 @@ impl ConsoleRuntime {
                 self.home_previous_location = self.home_location;
                 self.home_location = location.min(8);
                 let path = home_location_path(self.home_location);
-                let _ = self.open_file_navigator_window(path);
+                if self.open_file_navigator_window(path).is_none() {
+                    self.report_launch_error(b"FileNavigator", b"File Navigator could not allocate a window (APP-LAUNCH).");
+                }
             }
             LauncherAction::Settings(section) => self.open_settings(section),
             LauncherAction::TextEditor => self.open_text_editor(),
@@ -6081,9 +6095,9 @@ impl ConsoleRuntime {
                 }
             }
             LauncherAction::MediaPlayer => {
-                self.close_app_launcher();
                 #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-                python_commands::launch_media(self,None);
+                if python_commands::launch_media(self,None) { self.close_app_launcher(); }
+                else { crate::ui::app_launcher::set_launch_notice(b"Media Player could not start (APP-LAUNCH)."); }
             }
             LauncherAction::InfinityCode => {
                 // The IDE owns a native GUI window; launching it must not

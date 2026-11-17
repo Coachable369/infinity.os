@@ -21,7 +21,10 @@ TkCursor *TkGetCursorByName(Tcl_Interp *interp,Tk_Window window,Tk_Uid name){
     else if(!strcmp(name,"sb_v_double_arrow")||!strcmp(name,"top_side")||!strcmp(name,"bottom_side"))shape=4;
     else if(!strcmp(name,"sb_h_double_arrow")||!strcmp(name,"left_side")||!strcmp(name,"right_side"))shape=5;
     else{unsupported(interp,"cursor shape");return NULL;}
-    TkCursor *cursor=ckalloc(sizeof(*cursor));memset(cursor,0,sizeof(*cursor));cursor->cursor=(Tk_Cursor)(uintptr_t)shape;cursor->display=Tk_Display(window);return cursor;
+    // Tk reserves zero for failure and requires distinct IDs even for aliases.
+    static uintptr_t next_id;
+    TkCursor *cursor=ckalloc(sizeof(*cursor));memset(cursor,0,sizeof(*cursor));
+    cursor->cursor=(Tk_Cursor)((++next_id << 3) | shape);cursor->display=Tk_Display(window);return cursor;
 }
 // ------------------------=
 // FUNC: TkpFreeCursor
