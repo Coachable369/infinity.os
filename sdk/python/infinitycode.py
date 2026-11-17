@@ -18,7 +18,7 @@ class Studio:
         self.root, self.project = root, Project()
         self.selected, self.drag = None, None
         self.widgets, self.generated = {}, ""
-        root.title("InfinityCode — Python & UI Designer")
+        root.title("InfinityCode")
         configure_workspace_bounds(root)
         root.configure(background="#090F26")
         style = configure_theme(root)
@@ -31,20 +31,30 @@ class Studio:
         style.configure("TEntry", fieldbackground="#090F26", foreground="#FFFFFF", padding=4)
         style.configure("TButton", padding=(8,5), font=("Inter",-14))
         style.configure("Accent.TButton", background="#315ED2", foreground="white")
-        toolbar = ttk.Frame(root, padding=(12,8))
+        bar = tk.Frame(root, bg="#101B3A", padx=8)
+        bar.pack(fill="x")
+        for title, actions in (
+            ("File", (("New form", self.new_form), ("New widget", self.new_widget),
+                      ("Open…", self.open_project), ("Save", self.save), ("Save As…", self.save_as),
+                      ("Export Python", self.export), ("Exit", self.close))),
+            ("Edit", (("Undo", self.undo), ("Redo", self.redo),
+                      ("Cut", lambda: self.edit_command("Cut")), ("Copy", lambda: self.edit_command("Copy")),
+                      ("Paste", lambda: self.edit_command("Paste")), ("Delete control", self.delete),
+                      ("View code behind", self.code_behind))),
+            ("Help", (("Designer help", self.help),))):
+            button = tk.Menubutton(bar, text=title, bg="#101B3A", fg="#DAE9FF",
+                                   activebackground="#244F96", activeforeground="white",
+                                   font=("Inter",-15), padx=12, pady=5, relief="flat")
+            menu = tk.Menu(button, tearoff=False, bg="#101B3A", fg="white", activebackground="#244F96")
+            for label, action in actions:
+                menu.add_command(label=label, command=lambda fn=action:self.perform(fn))
+            button.configure(menu=menu)
+            button.pack(side="right" if title=="Help" else "left")
+        self.control_copy = None
+        toolbar = ttk.Frame(root, padding=(12,6))
         toolbar.pack(fill="x")
-        actions = (("Project", (("New widget",self.new_widget),("Open project",self.load),("Save project",self.save),("Export Python",self.export))),
-                   ("Edit", (("Undo",self.undo),("Redo",self.redo),("Delete selection",self.delete))),
-                   ("Build", (("Check Python",self.check_python),("Generate Python",self.generate),("Go to handler",self.goto_handler))))
-        menu = tk.Menu(root,tearoff=False)
-        for title, entries in actions:
-            group=tk.Menu(menu,tearoff=False)
-            for label,action in entries:
-                group.add_command(label=label,command=lambda fn=action:self.perform(fn))
-            menu.add_cascade(label=title,menu=group)
-        root.configure(menu=menu)
         ttk.Label(toolbar,text="Design workspace",style="Heading.TLabel").pack(side="left",padx=(0,14))
-        for title,action in (("Open",self.load),("Save",self.save),("Check Python",self.check_python),("Generate Python",self.generate)):
+        for title,action in (("Open",self.open_project),("Save",self.save),("Check Python",self.check_python),("Generate Python",self.generate)):
             ttk.Button(toolbar,text=title,style="Accent.TButton" if title=="Generate Python" else "TButton",
                        command=lambda fn=action:self.perform(fn)).pack(side="left",padx=3)
         footer = ttk.Frame(root, padding=(12,5))
@@ -64,6 +74,8 @@ class Studio:
         self.palette_items = []
         for kind in KINDS:
             button = ttk.Button(self.palette,text=kind,command=lambda value=kind:self.perform(lambda:self.add(value)))
+            button.bind("<ButtonPress-1>",lambda event:event.widget.grab_set())
+            button.bind("<ButtonRelease-1>", lambda event, k=kind: self.drop_control(event, k))
             self.palette_items.append((kind,button))
         self.toolbox_filter.trace_add("write",self.filter_controls)
         self.filter_controls()
@@ -114,6 +126,16 @@ class Studio:
         self.viewport = viewport
         self.surface = viewport.create_window(12,12,anchor="nw",window=self.canvas,width=WIDTH,height=HEIGHT)
         self.canvas.pack_propagate(False)
+        self.form_drag = None
+        self.form_grips = []
+        for axis in ("e","s","se"):
+            handle = tk.Frame(viewport, background="#86C7FF", width=10, height=10)
+            marker = viewport.create_window(0,0,window=handle)
+            self.form_grips.append((axis, marker))
+            handle.bind("<ButtonPress-1>", lambda event,a=axis:self.begin_form_resize(event,a))
+            handle.bind("<B1-Motion>", self.size_form)
+            handle.bind("<ButtonRelease-1>", self.finish_form_resize)
+        viewport.bind("<Configure>", lambda event:self.layout_form())
         self.grip = tk.Frame(self.canvas, background="#86C7FF", width=10, height=10)
         self.grip.bind("<ButtonPress-1>", self.resize_start)
         self.grip.bind("<B1-Motion>", self.motion)
@@ -148,12 +170,202 @@ class Studio:
             editor.bind("<Control-Return>",lambda event:self.check_python())
         ttk.Label(footer,text="Project").pack(side="left",padx=(0,6))
         self.path = ttk.Entry(footer, width=38)
-        self.path.insert(0, "/data/project.json" if sys.platform == "infinityos" else os.path.abspath("project.json"))
+        self.path.insert(0, "/data/project.yaml" if sys.platform == "infinityos" else os.path.abspath("project.yaml"))
         self.path.pack(side="left")
         self.status = tk.StringVar(root, "Ready")
         ttk.Label(footer, textvariable=self.status).pack(side="left", padx=12)
+        self.popup = tk.Menu(root, tearoff=False, bg="#101B3A", fg="white", activebackground="#244F96")
+        self.popup.add_command(label="View / edit code behind",command=lambda:self.perform(self.code_behind))
+        self.popup.add_command(label="Save project and code",command=lambda:self.perform(self.save))
+        self.canvas.bind("<Button-3>",self.context)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.saved = copy.deepcopy(self.project.data)
+
+
+    # ------------------------=
+    # FUNC: layout_form
+    # DESC: Center the editable surface and its edge handles inside the available viewport.
+    # ------------------=
+    def layout_form(self, size=None):
+        width,height = size or form_size(self.project.data)
+        vw=max(self.viewport.winfo_width(),width+32)
+        vh=max(self.viewport.winfo_height(),height+32)
+        x,y=(vw-width)//2,(vh-height)//2
+        self.viewport.coords(self.surface,x,y)
+        self.viewport.itemconfigure(self.surface,width=width,height=height)
+        self.viewport.configure(scrollregion=(0,0,vw,vh))
+        for axis,marker in self.form_grips:
+            self.viewport.coords(marker,x+(width if "e" in axis else width//2),y+(height if "s" in axis else height//2))
+
+    # ------------------------=
+    # FUNC: begin_form_resize
+    # DESC: Capture the initial form dimensions for a single resize transaction.
+    # ------------------=
+    def begin_form_resize(self,event,axis):
+        self.sync_source()
+        event.widget.grab_set()
+        self.form_drag=(axis,event.x_root,event.y_root,*form_size(self.project.data))
+
+    # ------------------------=
+    # FUNC: size_form
+    # DESC: Preview form bounds while keeping each existing control inside the surface.
+    # ------------------=
+    def size_form(self,event):
+        if self.form_drag is None:
+            return
+        axis,x,y,w,h=self.form_drag
+        items=self.project.data["elements"]
+        min_w=max([64]+[i["x"]+i["width"] for i in items])
+        min_h=max([64]+[i["y"]+i["height"] for i in items])
+        # A centered edge moves by half the change in the full dimension.
+        width=min(4096,max(min_w,w+2*(event.x_root-x))) if "e" in axis else w
+        height=min(4096,max(min_h,h+2*(event.y_root-y))) if "s" in axis else h
+        self.layout_form((width,height))
+        return width,height
+
+    # ------------------------=
+    # FUNC: finish_form_resize
+    # DESC: Commit the new form dimensions as one undoable operation.
+    # ------------------=
+    def finish_form_resize(self,event):
+        event.widget.grab_release()
+        size=self.size_form(event)
+        if size:
+            self.form_drag=None
+            self.project.replace(dict(self.project.data,width=size[0],height=size[1]))
+            self.render()
+
+    # ------------------------=
+    # FUNC: drop_control
+    # DESC: Place a toolbox item at its drop position or defer to the normal click binding.
+    # ------------------=
+    def drop_control(self,event,kind):
+        event.widget.grab_release()
+        x=event.x_root-self.canvas.winfo_rootx()
+        y=event.y_root-self.canvas.winfo_rooty()
+        width,height=form_size(self.project.data)
+        if 0<=x<width and 0<=y<height:
+            if self.snap.get():
+                x,y=round(x/10)*10,round(y/10)*10
+            event.widget.state(["!pressed"])
+            self.perform(lambda:self.add(kind,x,y))
+            return "break"
+
+    # ------------------------=
+    # FUNC: context
+    # DESC: Open the design context menu for a form or control.
+    # ------------------=
+    def context(self,event,key=None):
+        self.select(key)
+        self.popup.tk_popup(event.x_root,event.y_root)
+        return "break"
+
+    # ------------------------=
+    # FUNC: code_behind
+    # DESC: Open the selected event method and create its binding on first edit.
+    # ------------------=
+    def code_behind(self):
+        item=self.item()
+        if item and item["kind"]!="Label":
+            if not item.get("handler"):
+                name="on_"+item["id"]
+                self.fields["handler"].insert(0,name)
+                self.apply()
+            name=self.item()["handler"]
+            import ast
+            if not any(isinstance(n,ast.FunctionDef) and n.name==name for n in ast.parse(self.methods.get("1.0","end-1c")).body):
+                self.methods.insert("end",f"\n\ndef {name}():\n    pass\n")
+            self.goto_handler()
+        else:
+            self.tabs.select(2)
+            self.methods.focus_set()
+
+    # ------------------------=
+    # FUNC: edit_command
+    # DESC: Edit focused text or copy and paste selected design elements.
+    # ------------------=
+    def edit_command(self,action):
+        target=self.root.focus_get()
+        if isinstance(target,(tk.Text,tk.Entry,ttk.Entry)):
+            target.event_generate("<<"+action+">>")
+        elif action in ("Copy","Cut") and self.item():
+            self.control_copy=copy.deepcopy(self.item())
+            if action=="Cut":
+                self.delete()
+        elif action=="Paste" and self.control_copy:
+            self.sync_source()
+            original=self.control_copy
+            value=copy.deepcopy(self.project.data)
+            number=1
+            names={i["id"] for i in value["elements"]}
+            while original["id"]+str(number) in names:
+                number+=1
+            self.selected=original["id"]+str(number)
+            w,h=form_size(value)
+            value["elements"].append(dict(original,id=self.selected,x=min(w-original["width"],original["x"]+10),y=min(h-original["height"],original["y"]+10)))
+            self.project.replace(value)
+            self.render()
+
+    # ------------------------=
+    # FUNC: new_form
+    # DESC: Start an empty application form after protecting unsaved work.
+    # ------------------=
+    def new_form(self):
+        if self.discard():
+            self.project=Project()
+            self.selected=None
+            self.generated=""
+            self.path.delete(0,"end")
+            self.path.insert(0,"/data/project.yaml" if sys.platform=="infinityos" else os.path.abspath("project.yaml"))
+            self.restore()
+            self.saved=copy.deepcopy(self.project.data)
+            self.tabs.select(0)
+
+    # ------------------------=
+    # FUNC: choose_path
+    # DESC: Choose a project path in the application namespace.
+    # ------------------=
+    def choose_path(self,title):
+        from tkinter import simpledialog
+        return simpledialog.askstring(title,"Project path",initialvalue=self.path.get(),parent=self.root)
+
+    # ------------------------=
+    # FUNC: save_as
+    # DESC: Persist the project to a new path and switch only after success.
+    # ------------------=
+    def save_as(self):
+        path=self.choose_path("Save project as")
+        if path:
+            self.sync_source()
+            self.project.save(path)
+            self.path.delete(0,"end")
+            self.path.insert(0,path)
+            self.saved=copy.deepcopy(self.project.data)
+            self.status.set("Saved "+path)
+
+    # ------------------------=
+    # FUNC: open_project
+    # DESC: Open a selected project without replacing the workspace on failure.
+    # ------------------=
+    def open_project(self):
+        path=self.choose_path("Open project")
+        if path and self.discard():
+            project=Project()
+            project.load(path)
+            self.project=project
+            self.selected=None
+            self.path.delete(0,"end")
+            self.path.insert(0,path)
+            self.restore()
+            self.saved=copy.deepcopy(project.data)
+            self.tabs.select(0)
+
+    # ------------------------=
+    # FUNC: help
+    # DESC: Display the designer gestures and project save workflow.
+    # ------------------=
+    def help(self):
+        messagebox.showinfo("InfinityCode","Drag a toolbox control onto the form. Drag a blue form handle to resize. Right-click a control to edit its event method. File → Save stores the layout and code together.",parent=self.root)
 
     # ------------------------=
     # FUNC: schedule_syntax
@@ -281,7 +493,7 @@ class Studio:
         self.generated = self.project.data["source"]
         self.selected = None
         self.path.delete(0, "end")
-        self.path.insert(0, "/data/widget.json" if sys.platform == "infinityos" else os.path.abspath("widget.json"))
+        self.path.insert(0, "/data/widget.yaml" if sys.platform == "infinityos" else os.path.abspath("widget.yaml"))
         self.restore()
         self.tabs.select(0)
         self.status.set("Widget form  |  Select a control to edit its event method")
@@ -294,8 +506,7 @@ class Studio:
         width, height = form_size(self.project.data)
         kind = "Widget" if self.project.data.get("form_type") == "widget" else "Application"
         self.form_label.set(f"{kind} form   {width} × {height}")
-        self.viewport.itemconfigure(self.surface, width=width, height=height)
-        self.viewport.configure(scrollregion=(0, 0, width+24, height+24))
+        self.layout_form()
         for widget in self.widgets.values():
             widget.destroy()
         self.widgets.clear()
@@ -305,6 +516,7 @@ class Studio:
             widget = make_widget(self.canvas, item)
             self.widgets[identifier] = widget
             widget.bind("<ButtonPress-1>", lambda event, key=identifier: self.start(event, key))
+            widget.bind("<Button-3>", lambda event,key=identifier:self.context(event,key))
             widget.bind("<B1-Motion>", self.motion)
             widget.bind("<ButtonRelease-1>", self.release)
             self.layers.insert("end", identifier)
@@ -342,9 +554,9 @@ class Studio:
     # FUNC: add
     # DESC: Inserts a control and selects it for immediate placement.
     # ------------------=
-    def add(self, kind):
+    def add(self, kind, x=20, y=20):
         self.sync_source()
-        self.selected = self.project.add(kind)
+        self.selected = self.project.add(kind,x,y)
         self.render()
         self.status.set("Control added | Generate Python to update source")
 

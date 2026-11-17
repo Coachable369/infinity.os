@@ -18,6 +18,7 @@ void InfinityTkRelease(Drawable drawable);
 uint64_t InfinityTkRevision(Drawable drawable);
 int InfinityTkSetTitle(Window window, const char *title);
 int InfinityTkSetState(Window window, int state);
+void InfinityTkAcceptShellSize(TkWindow *window, unsigned width, unsigned height);
 int InfinityTkGetState(Window window);
 void InfinityTkReleaseProperties(Window window);
 int XParseGeometry(const char *text, int *x, int *y, unsigned *width, unsigned *height);

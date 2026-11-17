@@ -263,6 +263,57 @@ class ProjectTests(unittest.TestCase):
             root.destroy()
 
     # ------------------------=
+    # FUNC: test_form_workspace_roundtrip
+    # DESC: Exercises viewport anchoring, toolbox drops, form sizing and code behind through a YAML round trip.
+    # ------------------=
+    @unittest.skipUnless(os.environ.get("INFINITYCODE_GUI_TEST") == "1", "explicit GUI session required")
+    def test_form_workspace_roundtrip(self):
+        import tkinter as tk
+        import yaml
+        from types import SimpleNamespace
+        from infinitycode import Studio
+        root=tk.Tk()
+        try:
+            studio=Studio(root)
+            for width,height in ((1200,780),(960,650),(1380,820)):
+                root.geometry(f"{width}x{height}")
+                root.update()
+                vw=studio.viewport.winfo_width()
+                x,y=studio.viewport.coords(studio.surface)
+                self.assertEqual(x,max(16,(vw-WIDTH)//2))
+                inspector=studio.fields["id"].winfo_rootx()-root.winfo_rootx()
+                self.assertLess(width-inspector,230)
+            tool=dict(studio.palette_items)["Button"]
+            drop=SimpleNamespace(widget=tool,x_root=studio.canvas.winfo_rootx()+104,
+                                 y_root=studio.canvas.winfo_rooty()+63)
+            tool.grab_set()
+            studio.drop_control(drop,"Button")
+            self.assertEqual((studio.item()["x"],studio.item()["y"]),(100,60))
+            grip=root.nametowidget(studio.viewport.itemcget(studio.form_grips[-1][1],"window"))
+            drag=SimpleNamespace(widget=grip,x_root=300,y_root=200)
+            studio.begin_form_resize(drag,"se")
+            drag.x_root+=30
+            studio.finish_form_resize(drag)
+            self.assertEqual(studio.project.data["width"],700)
+            studio.code_behind()
+            self.assertEqual(studio.item()["handler"],"on_button1")
+            studio.methods.insert("end","\nresult = 42\n")
+            with tempfile.TemporaryDirectory(dir=ROOT/"build/tmp") as folder:
+                path=str(Path(folder)/"form.yaml")
+                with patch.object(studio,"choose_path",return_value=path):
+                    studio.save_as()
+                    studio.new_form()
+                    studio.open_project()
+                saved=yaml.safe_load(Path(path).read_text())
+                self.assertEqual(studio.project.data,saved)
+                self.assertEqual(saved["elements"][0]["handler"],"on_button1")
+                self.assertEqual(saved["elements"][0]["x"],100)
+                self.assertEqual(saved["methods"],studio.methods.get("1.0","end-1c"))
+                self.assertEqual(compile(export_source(saved),path,"exec").co_name,"<module>")
+        finally:
+            root.destroy()
+
+    # ------------------------=
     # FUNC: test_transactions
     # DESC: Verifies unique additions, undo/redo and invalid transactions leaving prior state intact.
     # ------------------=

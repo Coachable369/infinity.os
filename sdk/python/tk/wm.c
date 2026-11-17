@@ -121,6 +121,15 @@ static void wm_geometry(ClientData client, Tk_Window tkwin) {
 static const Tk_GeomMgr wm_manager = {"infinity", wm_geometry, NULL};
 
 // ------------------------=
+// FUNC: InfinityTkAcceptShellSize
+// DESC: Records an external resize so subsequent geometry negotiations preserve the chosen size.
+// ------------------=
+void InfinityTkAcceptShellSize(TkWindow *window, unsigned width, unsigned height) {
+    WmInfo *wm = window ? window->wmInfoPtr : NULL;
+    if (wm) { wm->width = (int)width; wm->height = (int)height; }
+}
+
+// ------------------------=
 // FUNC: wm_event
 // DESC: Applies declared resize bounds to actual configure events, including resizes initiated by the desktop.
 // ------------------=

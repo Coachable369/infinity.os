@@ -127,13 +127,25 @@ impl Task {
         controller: cpu::Controller,
         deadline: u64,
     ) -> Result<Self, MemoryError> {
+        Self::start_with_heap(bytes, args, owner, id, session, memory, _kernel, controller, deadline, 16384)
+    }
+
+    // ------------------------=
+    // FUNC: start_with_heap
+    // DESC: Reserves the caller-selected native heap for applications with larger retained drawing surfaces.
+    // ------------------=
+    pub unsafe fn start_with_heap(
+        bytes: &'static [u8], args: &[&[u8]], owner: SecurityIdentity, id: u32, session: u32,
+        memory: &mut NativeMemory, _kernel: KernelAccessMap, controller: cpu::Controller,
+        deadline: u64, heap_pages: u32,
+    ) -> Result<Self, MemoryError> {
         let args = super::native_arguments::Arguments::new(args).ok_or(MemoryError::InvalidAddress)?;
         let image =
             Image::parse_compiler(bytes, cpu::MACHINE).map_err(|_| MemoryError::InvalidAddress)?;
         let layout = CompilerVirtualLayout {
             image_base: image.virtual_base as u64,
             heap_base: 0x200000000,
-            heap_pages: 16384,
+            heap_pages,
             stack_guard_base: 0x300000000,
             stack_pages: 256,
         };

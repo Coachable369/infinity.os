@@ -252,6 +252,7 @@ static int observe_geometry(NativeWindow *w){
         if(!InfinityTkResize(w->id,width,height))return 0;
         if(infinity_surface_resize(w->resize,w->surface,width,height)<0){InfinityTkResize(w->id,w->width,w->height);return 0;}
         ++w->generation;
+        InfinityTkAcceptShellSize(w->tk,width,height);
     }
     int changed=w->x!=x||w->y!=y||w->width!=(unsigned)width||w->height!=(unsigned)height;
     if(changed){w->x=x;w->y=y;w->width=width;w->height=height;w->paint_revision=0;

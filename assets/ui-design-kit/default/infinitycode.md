@@ -4,14 +4,14 @@ Reuse Eclipse Precision's OS-owned outer frame and existing Inter typography.
 No alternate window borders or new icon family. Content uses navy #090F26,
 surface #101B3A, border #86C7FF, text #FFFFFF and accent #3E6FFF.
 
-Layout: compact action bar; left component/layer list; central Designer,
+Layout: File Navigator-style menu row with File and Edit at left and Help at right; compact action bar; left component/layer list; central Designer,
 Python and Event Methods tabs; right numeric/text properties; persistent bottom status. Use
 installed native Tk controls, not screenshot stand-ins. Designer controls are
-the actual widgets exported to Python, positioned in a fixed 640×420 canvas.
+the actual widgets exported to Python, positioned on a centered, resizable form initially 640×420.
 Selection outline and resize grip are editor-only and never exported.
 
 Initial contract: add/select/move/resize/delete controls, ten-pixel snapping,
-edit text and geometry, undo/redo, save/load versioned JSON, export editable
+edit text and geometry, undo/redo, save/load YAML projects and open legacy JSON, export editable
 Python. Explicitly regenerating Python asks before replacing manual source
 changes. Export never executes edited code. Projects and exports use the
 application's capability-scoped /data directory on InfinityOS.
@@ -31,4 +31,4 @@ focus, close, minimize, maximize and restore resolve the authenticated user's
 owned window. Close requests pass through the IDE's unsaved-project confirmation;
 they do not terminate the Python process behind that confirmation.
 
-The current workspace reference is `infinitycode-workspace-reference.png`. Use the dedicated glass code-window glyph in assets/apps/infinitycode-icon-v1.png, Project/Edit/Build menus and a four-action project toolbar, searchable Toolbox, Layers list, Form Designer/Python/Event Methods tabs and an inspector grouped into Identity, Layout and Event. Keep exported widget coordinates independent of the workbench size.
+The current workspace reference is `infinitycode-workspace-reference.png`. Use the default matte code-window glyph in assets/apps/infinitycode-icon-v1.png, Project/Edit/Build menus and a four-action project toolbar, searchable Toolbox, Layers list, Form Designer/Python/Event Methods tabs and an inspector grouped into Identity, Layout and Event. Keep exported widget coordinates independent of the workbench size.

@@ -1,7 +1,7 @@
 #include "native.h"
 
 #define MAX_DRAWABLES 256
-#define PIXEL_BUDGET (64u*1024u*1024u)
+#define PIXEL_BUDGET (96u*1024u*1024u)
 typedef struct NativeDrawable {
     Drawable id;
     InfinityTkPixels image;
@@ -43,6 +43,7 @@ Drawable InfinityTkAllocate(unsigned width,unsigned height,int depth){
 // ------------------=
 int InfinityTkResize(Drawable id,unsigned width,unsigned height){
     NativeDrawable *d=lookup(id);if(!d||!width||!height||width>8192||height>8192)return 0;
+    if(d->image.width==width && d->image.height==height)return 1;
     size_t old=(size_t)d->image.width*d->image.height*4,size=(size_t)width*height*4;
     if(size>PIXEL_BUDGET-(pixel_bytes-old))return 0;
     uint32_t *pixels=calloc(1,size);if(!pixels)return 0;

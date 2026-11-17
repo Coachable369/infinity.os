@@ -13,7 +13,11 @@ THEME = dict(background="#101B3A", foreground="#FFFFFF", font=("Inter", 11),
 # DESC: Resolves the shared design and runtime dimensions for the selected form.
 # ------------------=
 def form_size(project):
-    return (360, 200) if project.get("form_type") == "widget" else (WIDTH, HEIGHT)
+    default = (360, 200) if project.get("form_type") == "widget" else (WIDTH, HEIGHT)
+    size = project.get("width", default[0]), project.get("height", default[1])
+    if any(type(n) is not int or not 64 <= n <= 4096 for n in size):
+        raise ValueError("Form dimensions must be between 64 and 4096 pixels")
+    return size
 
 
 # ------------------------=
@@ -216,15 +220,17 @@ class Project:
     # FUNC: add
     # DESC: Adds a uniquely named native control within the visible design surface.
     # ------------------=
-    def add(self, kind):
+    def add(self, kind, x=20, y=20):
         value = copy.deepcopy(self.data)
         names = {item["id"] for item in value["elements"]}
         number = 1
         while kind.lower() + str(number) in names:
             number += 1
         identifier = kind.lower() + str(number)
-        value["elements"].append(dict(id=identifier, kind=kind, x=20, y=20,
-            width=160, height=40, text="One|Two|Three" if kind == "Combobox" else kind))
+        width, height = form_size(value)
+        control_width = min(160, width)
+        value["elements"].append(dict(id=identifier, kind=kind, x=max(0,min(x,width-control_width)), y=max(0,min(y,height-40)),
+            width=control_width, height=40, text="One|Two|Three" if kind == "Combobox" else kind))
         self.replace(value)
         return identifier
 
@@ -249,7 +255,15 @@ class Project:
             body = stream.read(262145)
         if len(body) > 262144:
             raise ValueError("Project file is too large")
-        self.replace(json.loads(body))
+        if str(path).lower().endswith(".json"):
+            value = json.loads(body)
+        else:
+            import yaml
+            try:
+                value = yaml.safe_load(body)
+            except yaml.YAMLError as error:
+                raise ValueError(f"Invalid project YAML: {error}") from error
+        self.replace(value)
 
     # ------------------------=
     # FUNC: save
@@ -259,5 +273,9 @@ class Project:
         import os
         value = validate(self.data)
         with open(path + ".tmp", "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
+            if str(path).lower().endswith(".json"):
+                json.dump(value, stream, ensure_ascii=False, indent=2)
+            else:
+                import yaml
+                yaml.safe_dump(value, stream, allow_unicode=True, sort_keys=False)
         os.replace(path + ".tmp", path)

@@ -488,11 +488,15 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     job.initial_pages = memory_mut().available_pages() as u64;
     let id = NEXT_TASK_ID;
     NEXT_TASK_ID = id.checked_add(1).ok_or(b"python: process identifiers exhausted.".as_slice())?;
-    job.task = Some(Task::start(crate::runtime::native_python_package::PYTHON, arguments,
+    // Maximized Tk designers retain pixels for overlapping containers as well as the final surface.
+    let bundled_ide = arguments.len()==2 && arguments[1].ends_with(b"/documents/InfinityCode.py") &&
+        job.count>0 && &job.files[0].bytes[..job.files[0].len]==include_bytes!("../../sdk/python/examples/infinitycode.py");
+    let heap_pages = if bundled_ide && job.initial_pages >= 61440 { 28672 } else { 16384 };
+    job.task = Some(Task::start_with_heap(crate::runtime::native_python_package::PYTHON, arguments,
         job.owner, id, 1, memory_mut(), kernel, controller,
         if job.pip { now.saturating_add(600_000_000_000) }
         else if arguments.contains(&b"-c".as_slice()) { now.saturating_add(120_000_000_000) }
-        else { u64::MAX }).map_err(|_| b"python: cannot allocate native process.".as_slice())?);
+        else { u64::MAX },heap_pages).map_err(|_| b"python: cannot allocate native process.".as_slice())?);
     job.task.as_mut().unwrap().set_launch_secret(secret);
     if application {
         match crate::runtime::ai::application_host::attach(console.current_user.0,console.current_session.0){
@@ -503,8 +507,7 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
     job.memory_browser = path == memory_browser::PATH && arguments.len()==2 && job.generated.is_none()
         && &job.files[0].bytes[..job.files[0].len] == include_bytes!("../../runtime/install/System/infinity-memory.py");
-    job.memory_launching=job.memory_browser || (arguments.len()==2 && path.ends_with(b"/documents/InfinityCode.py") &&
-        &job.files[0].bytes[..job.files[0].len]==include_bytes!("../../sdk/python/examples/infinitycode.py"));
+    job.memory_launching=job.memory_browser || bundled_ide;
     let name=if path==memory_browser::PATH { b"Infinity Memory".as_slice() } else if path==media::PLAYER {b"Media Player".as_slice()} else {path.rsplit(|b|*b==b'/').next().unwrap_or(path)};
     MONITOR_RESUME_NS=0;
     job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
