@@ -3379,7 +3379,7 @@ impl ConsoleRuntime {
     // DESC: Registers one singleton GUI application's live execution context when needed.
     // ------------------=
     fn ensure_app_task(&mut self, image_identity: u32) -> bool {
-        crate::runtime::with_runtime(|runtime| {
+        let launched = crate::runtime::with_runtime(|runtime| {
             for index in 0..runtime.execution.count() {
                 if let Some(context)=runtime.execution.nth(index).filter(|c|c.image_identity==image_identity && c.service_identity==0) {
                     if context.state!=crate::runtime::execution::ContextState::Stopped {return true;}
@@ -3390,7 +3390,13 @@ impl ConsoleRuntime {
             runtime
                     .task_manager
                     .launch(&mut runtime.execution, image_identity).is_ok()
-        }).unwrap_or(false)
+        }).unwrap_or(false);
+        if !launched {
+            let mut name = crate::runtime::console_execution::Bytes::<48>::new();
+            crate::runtime::with_runtime(|runtime| name.write(runtime.task_manager.application_name(image_identity)));
+            self.report_launch_error(name.bytes(), b"Task Manager could not start the application (APP-LAUNCH).");
+        }
+        launched
     }
 
     // ------------------------=
