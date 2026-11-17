@@ -332,9 +332,15 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual(studio.menu_bar.winfo_height(),72)
             self.assertEqual(studio.toolbar.winfo_height(),96)
             page=root.nametowidget(studio.tabs.select())
-            self.assertLessEqual(page.winfo_y(),90)
-            self.assertGreaterEqual(page.winfo_y(),78)
-            self.assertEqual(studio.tab_images[0].height(),80)
+            self.assertLessEqual(page.winfo_y(),68)
+            self.assertGreaterEqual(page.winfo_y(),64)
+            self.assertEqual(studio.tab_images[0].height(),64)
+            import runpy
+            rasterize=runpy.run_path(str(ROOT / "tools/native-python/uikit-tabs.py"))["render"]
+            for image,state in zip(studio.tab_images,("normal","selected","hover","focus")):
+                reference=rasterize(ROOT / "assets/ui-design-kit/default/workspace-tabs" / (state+".svg"),2)
+                self.assertEqual((image.width(),image.height()),reference.size)
+                self.assertEqual([image.get(x,y) for y in range(image.height()) for x in range(image.width())],list(reference.getdata()))
             self.assertEqual(studio.project.data,before)
             # Compare decoded native image pixels with the production UIKit asset,
             # including borders, highlight and fill at both supported densities.

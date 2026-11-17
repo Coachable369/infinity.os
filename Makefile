@@ -80,7 +80,7 @@ KERNEL_SOURCES += $(wildcard sdk/c/include/*.h sdk/c/include/infinity/*.h sdk/c/
 KERNEL_SOURCES += sdk/c/examples/camera_capture.c
 KERNEL_SOURCES += assets/ai-memory/weights.bin assets/ai-memory/tokens.bin assets/ai-memory/offsets.bin assets/apps/infinity-memory-v1.bmp
 SDK_SOURCES := $(shell find sdk/distribution sdk/c/include sdk/c/examples sdk/python/examples runtime/install sdk/user-template -type f) sdk/python/infinity.py sdk/python/infinity_log.py sdk/python/infinity_network.py docs/intelligence-kit.md $(wildcard assets/ui-design-kit/*.json assets/ui-design-kit/*.infinityui assets/ui-design-kit/default/*) tools/package-sdk.py assets/ai-memory/LICENSE
-SDK_SOURCES += $(shell find runtime/install -type d)
+SDK_SOURCES += $(shell find runtime/install -type d) $(wildcard sdk/python/infinity_uikit*.py) $(shell find assets/ui-design-kit/default/workspace-tabs -type f)
 .PHONY: sdk-catalog-refresh
 build/sdk/catalog.rs: sdk-catalog-refresh
 build/sdk/catalog.rs: $(SDK_SOURCES)

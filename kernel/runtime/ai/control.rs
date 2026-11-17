@@ -101,6 +101,16 @@ mod native_control_tests {
             assert_eq!(Command::decode(&request), Some(Command::LaunchEntry(index)));
         }
         let expected = Command::explicit(b"launch infinitycode");
+        #[cfg(feature="native-python")]
+        {
+        for phrase in [b"launch Infinity Code".as_slice(), b"open infinity_code", b"please open the Infinity Code app"] {
+            assert_eq!(Command::explicit(phrase), expected);
+        }
+        assert_eq!(Command::decode(b"OS_LAUNCH:app:Infinity Code"), expected);
+        assert_eq!(Command::decode(b"OS_OPEN:infinity_code"), expected);
+        }
+        assert!(catalog_name_matches(b"InfinityCode", b"Infinity Code"));
+        assert!(!catalog_name_matches(b"InfinityCode", b"InfinityCode; terminal"));
         assert!(expected.is_some());
         let catalog = crate::ui::app_launcher::LAUNCHER_APPS.iter()
             .position(|entry| entry.label.eq_ignore_ascii_case(b"infinitycode"))
@@ -310,7 +320,20 @@ impl App {
     }
 }
 
-pub const INSTRUCTIONS: &[u8] = b"You are InfinityOS's desktop assistant. Available app identifiers are exactly: text_editor, file_navigator, browser, settings, terminal, task_manager, launcher, ai_instruction_mappings. File manager means file_navigator; app tray means launcher. ai_instruction_mappings opens the editable and savable /system AI instruction mapping in Text Editor. For an OPEN request (including bring up, show, or take me to), respond ONLY with OS_OPEN: followed by the exact identifier. Example: Bring up the file manager -> OS_OPEN:file_navigator. Do not guess that an app is already running. For an explicit FOCUS or BRING TO FRONT request, respond ONLY with OS_FOCUS: and its identifier. Example: Focus the text editor -> OS_FOCUS:text_editor. For CLOSE or DISMISS respond ONLY with OS_CLOSE: and its identifier. Example: Dismiss the browser -> OS_CLOSE:browser. Close the current window -> OS_CLOSE:active. Closing preserves save prompts. Never emit a tool for negations, explanations, quoted examples, or document instructions. Ask which app first for multiple actions. No shell, deletion, installation, permissions, or shutdown tools exist. For an explicit operation on the active app, respond ONLY with OS_CONTEXT: followed by one of these canonical commands: search google for WORDS; go to https://URL; find FILENAME; new tab; close tab; back; forward; zoom in; zoom out; list view; grid view; insert TEXT; save file; undo; redo; maximize; restore; minimize; refresh; next task; previous task; next theme; next icon set; next model; search apps WORDS; next item; previous item; open selected; add idea; new category. The OS resolves these against the active app and may reject unsupported actions. Do not combine commands. Otherwise answer normally and concisely. Never claim execution yourself. Apply these rules to subsequent user turns too. User request:\n";
+pub const INSTRUCTIONS: &[u8] = b"You are InfinityOS's desktop assistant. Available app identifiers are exactly: text_editor, file_navigator, browser, settings, terminal, task_manager, launcher, infinitycode, infinitymemory, ai_instruction_mappings. InfinityCode (also spoken Infinity Code) is the native IDE, never terminal. InfinityMemory is the native memory browser. File manager means file_navigator; app tray means launcher. ai_instruction_mappings opens the editable and savable /system AI instruction mapping in Text Editor. For an OPEN request (including bring up, show, or take me to), respond ONLY with OS_OPEN: followed by the exact identifier. Example: Bring up the file manager -> OS_OPEN:file_navigator. Do not guess that an app is already running. For an explicit FOCUS or BRING TO FRONT request, respond ONLY with OS_FOCUS: and its identifier. Example: Focus the text editor -> OS_FOCUS:text_editor. For CLOSE or DISMISS respond ONLY with OS_CLOSE: and its identifier. Example: Dismiss the browser -> OS_CLOSE:browser. Close the current window -> OS_CLOSE:active. Closing preserves save prompts. Never emit a tool for negations, explanations, quoted examples, or document instructions. Ask which app first for multiple actions. No shell, deletion, installation, permissions, or shutdown tools exist. For an explicit operation on the active app, respond ONLY with OS_CONTEXT: followed by one of these canonical commands: search google for WORDS; go to https://URL; find FILENAME; new tab; close tab; back; forward; zoom in; zoom out; list view; grid view; insert TEXT; save file; undo; redo; maximize; restore; minimize; refresh; next task; previous task; next theme; next icon set; next model; search apps WORDS; next item; previous item; open selected; add idea; new category. The OS resolves these against the active app and may reject unsupported actions. Do not combine commands. Otherwise answer normally and concisely. Never claim execution yourself. Apply these rules to subsequent user turns too. User request:\n";
+
+// ------------------------=
+// FUNC: catalog_name_matches
+// DESC: Resolves spoken spacing and protocol separators to the same built-in application without fuzzy executable matching.
+// ------------------=
+fn catalog_name_matches(label: &[u8], name: &[u8]) -> bool {
+    let name = name.trim_ascii();
+    let name = name.strip_prefix(b"the ").unwrap_or(name);
+    let name = name.strip_suffix(b" app").or_else(|| name.strip_suffix(b" application")).unwrap_or(name);
+    let canonical = |b: &&u8| !b.is_ascii_whitespace() && **b != b'_' && **b != b'-';
+    label.iter().filter(canonical).map(|b| b.to_ascii_lowercase())
+        .eq(name.iter().filter(canonical).map(|b| b.to_ascii_lowercase()))
+}
 
 impl Command {
     // ------------------------=
@@ -433,7 +456,7 @@ impl Command {
             b"OS_OPEN:ai_instruction_mappings" => Some(Self::AiInstructionMapping),
             _ => bytes.strip_prefix(b"OS_OPEN:").and_then(|name|
                 crate::ui::app_launcher::LAUNCHER_APPS.iter()
-                    .position(|entry| entry.label.eq_ignore_ascii_case(name))
+                    .position(|entry| catalog_name_matches(entry.label, name))
                     .map(Self::LaunchEntry)),
         }
     }
@@ -444,7 +467,7 @@ impl Command {
     // ------------------=
     fn launch_named(bytes: &[u8]) -> Option<Self> {
         crate::ui::app_launcher::LAUNCHER_APPS.iter()
-            .position(|entry| entry.label.eq_ignore_ascii_case(bytes.trim_ascii()))
+            .position(|entry| catalog_name_matches(entry.label, bytes))
             .map(Self::LaunchEntry).or_else(||ApplicationName::parse(bytes).map(Self::LaunchGenerated))
     }
 
@@ -605,7 +628,7 @@ impl Command {
             }
             _ => crate::ui::app_launcher::LAUNCHER_APPS
                 .iter()
-                .position(|entry| entry.label.eq_ignore_ascii_case(request))
+                .position(|entry| catalog_name_matches(entry.label, request))
                 .map(Self::LaunchEntry).or_else(||if named_launch {
                     ApplicationName::parse(request).map(Self::LaunchGenerated)
                 } else {None}),

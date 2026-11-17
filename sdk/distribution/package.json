@@ -51,7 +51,14 @@
     "UIKit/infinitycode-tabs.md": "assets/ui-design-kit/default/infinitycode-tabs.md",
     "UIKit/infinitycode-tabs-reference.png": "assets/ui-design-kit/default/infinitycode-tabs-reference.png",
     "UIKit/infinity_uikit.py": "sdk/python/infinity_uikit.py",
-    "UIKit/infinity_uikit_artwork.py": "sdk/python/infinity_uikit_artwork.py"
+    "UIKit/infinity_uikit_artwork.py": "sdk/python/infinity_uikit_artwork.py",
+    "UIKit/infinity_uikit_tabs.py": "sdk/python/infinity_uikit_tabs.py",
+    "UIKit/workspace-tabs/README.md": "assets/ui-design-kit/default/workspace-tabs/README.md",
+    "UIKit/workspace-tabs/normal.svg": "assets/ui-design-kit/default/workspace-tabs/normal.svg",
+    "UIKit/workspace-tabs/selected.svg": "assets/ui-design-kit/default/workspace-tabs/selected.svg",
+    "UIKit/workspace-tabs/hover.svg": "assets/ui-design-kit/default/workspace-tabs/hover.svg",
+    "UIKit/workspace-tabs/focus.svg": "assets/ui-design-kit/default/workspace-tabs/focus.svg",
+    "UIKit/workspace-tabs/states.png": "assets/ui-design-kit/default/workspace-tabs/states.png"
   },
   "trees": {
     "widgets/examples": "sdk/widgets/examples",

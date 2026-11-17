@@ -13,6 +13,7 @@ const INFINITY_ALIASES: &[&[u8]] = &[
     b"infinity os",
     b"infinityos",
     b"in finity",
+    b"in-finity",
     b"infinite",
     b"infinity",
     b"infin",
@@ -137,7 +138,13 @@ fn match_address(transcript: &[u8], mut at: usize, wake_word: WakeWord) -> Optio
 pub fn interrupt_address(input: &[u8], word: WakeWord) -> Match {
     let mut at=skip_separators(input,0);
     if let Some(end)=match_alias(input,at,b"hey") { at=skip_separators(input,end); }
-    if match_alias(input,at,word.phrase()).is_none() {return Match::Absent;}
+    // Preserve complete wake-word authority while accepting recognizer word
+    // boundaries for the same spoken name. Clipped "infin"/"finity" and the
+    // different word "infinite" still cannot authorize an interruption.
+    let complete = match_alias(input,at,word.phrase()).is_some()
+        || (word == WakeWord::Infinity && [b"in finity".as_slice(), b"in-finity", b"infinityos"]
+            .iter().any(|alias| match_alias(input,at,alias).is_some()));
+    if !complete {return Match::Absent;}
     classify(input,word)
 }
 

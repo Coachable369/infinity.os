@@ -12,7 +12,7 @@ application when its window changes size.
 | Title and window controls | Shared compositor geometry | Remain at system scale |
 | Menu | 36 px high | Fill width, never stretch height |
 | Toolbar | 48 px high | Fill width; overflow commands when necessary |
-| Workspace tabs | 40 px base | Fixed shoulders; stretch only flat center |
+| Workspace tabs | 32 px base | Fixed shoulders; stretch only flat center |
 | Toolbox | 210 px wide | Left anchored; vertical content scrolls |
 | Inspector | 260 px wide | Right anchored; vertical content scrolls |
 | Work area | Remaining width and height | Reflow; never stretch controls |
@@ -73,3 +73,8 @@ OS surface sampler and exports normal, focused/hovered, and pressed states for
 secondary buttons, primary buttons, and fields. Native Python builds regenerate
 these states from the current kit. The SDK ships the same artwork module.
 Inspectors must scroll when explicit zoom or a smaller viewport reduces space.
+
+The compact tab source assets are `workspace-tabs/{normal,selected,hover,focus}.svg`.
+`tools/native-python/uikit-tabs.py` compiles these into the packaged native UIKit
+module. The native widget must consume these pixels, retain 32 logical pixel
+height, and stretch only the center. Do not add duplicate vertical label padding.

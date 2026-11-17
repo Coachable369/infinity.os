@@ -946,6 +946,20 @@ fn duplex_and_followup_tests(owner:runtime::execution::SecurityIdentity) {
     assert_eq!(TURNS.load(Ordering::SeqCst),turns+1,"full command must survive its earlier probe");
     *TEST_TRANSCRIPT.lock().unwrap()=None;ECHO_PLAYBACK.store(false,Ordering::SeqCst);
     conversation::stop(owner);conversation::poll();
+    // Complete spoken-name ASR boundaries retain stop authority; bare and clipped words do not.
+    for phrase in [b"In finity stop".as_slice(), b"In-finity stop", b"InfinityOS stop", b"Infinity stop. Infinity stop."] {
+        assert!(conversation::start(owner)); recognize_voice(b"Infinity explain this");
+        conversation::poll(); OUTPUT.store(1,Ordering::SeqCst); ECHO_PLAYBACK.store(true,Ordering::SeqCst);
+        let turns=TURNS.load(Ordering::SeqCst); let cancels=CANCEL_CALLS.load(Ordering::SeqCst);
+        *TEST_TRANSCRIPT.lock().unwrap()=Some(phrase.to_vec());
+        MICROPHONE.lock().unwrap().extend((0..voice_vad::INTERRUPT_PROBE_SAMPLES+640).map(|i|if i%2==0{2800}else{-2800}));
+        drain_microphone();conversation::poll();
+        assert_eq!(TURNS.load(Ordering::SeqCst),turns);
+        assert_eq!(CANCEL_CALLS.load(Ordering::SeqCst),cancels+1);
+        assert!(!voice_output::playback_active(owner));
+        *TEST_TRANSCRIPT.lock().unwrap()=None;ECHO_PLAYBACK.store(false,Ordering::SeqCst);
+        conversation::stop(owner);conversation::poll();
+    }
     WAKE_SETTING.store(2,Ordering::SeqCst);
     assert!(conversation::start(owner)); recognize_voice(b"Blue Star explain this");
     conversation::poll(); OUTPUT.store(1,Ordering::SeqCst); ECHO_PLAYBACK.store(true,Ordering::SeqCst);

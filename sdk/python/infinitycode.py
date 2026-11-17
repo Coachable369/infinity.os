@@ -49,7 +49,7 @@ class Studio:
         bar.pack(fill="x")
         for title, actions in (
             ("File", (("New form", self.new_form), ("New widget", self.new_widget),
-                      ("Open…", self.open_project), ("Save", self.save), ("Save As…", self.save_as),
+                      ("Open...", self.open_project), ("Save", self.save), ("Save As...", self.save_as),
                       ("Export Python", self.export), ("Exit", self.close))),
             ("Edit", (("Undo", lambda:self.edit_command("Undo")), ("Redo", lambda:self.edit_command("Redo")),
                       ("Cut", lambda: self.edit_command("Cut")), ("Copy", lambda: self.edit_command("Copy")),

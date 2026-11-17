@@ -82,6 +82,22 @@ fn layout() -> DesktopSessionLayout {
 }
 
 // ------------------------=
+// FUNC: remembered_desktop_login
+// DESC: Verifies durable local account selection and rejects a forged or failed-login selection.
+// ------------------=
+fn remembered_desktop_login() {
+    let (mut identity, owner, session) = fixture();
+    let member = create_user(&mut identity, session.id, b"remembered");
+    assert!(!identity.remember_desktop_user(member.id, session.id));
+    assert_eq!(identity.preferred_login_index(), 0);
+    let local = identity.create_session(member.id, b"member password", 8).unwrap();
+    assert!(identity.remember_desktop_user(member.id, local.id));
+    let restored = IdentitySystem::decode(&identity.encode()).unwrap();
+    assert_eq!(restored.user_nth(restored.preferred_login_index()).unwrap().id, member.id);
+    assert_ne!(member.id, owner.id);
+}
+
+// ------------------------=
 // FUNC: authorization_and_crud
 // DESC: Exercises authenticated directory reads, user/group CRUD, memberships and lifecycle cleanup.
 // ------------------=
@@ -497,6 +513,7 @@ fn reboot_after_configuration() {
 // DESC: Executes focused behavioral account-management tests against the production native identity model.
 // ------------------=
 fn main() {
+    remembered_desktop_login();
     reboot_after_configuration();
     authorization_and_crud();
     administrator_safety();

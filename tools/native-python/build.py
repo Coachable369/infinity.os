@@ -93,6 +93,7 @@ def frozen_library(source, arch):
                            ("infinitycode_model", "infinitycode_model.py"),
                            ("infinity_uikit", "infinity_uikit.py"),
                            ("infinity_uikit_artwork", "infinity_uikit_artwork.py"),
+                           ("infinity_uikit_tabs", "infinity_uikit_tabs.py"),
                            ("infinity_widget", "infinity_widget.py"),
                            ("_infinity_platform", "platform.py")):
         names[name] = (name + ".py", (ROOT / "sdk/python" / filename).read_bytes())

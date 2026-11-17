@@ -91,10 +91,10 @@ def workspace_tabs(root, style, scale=1):
         root._infinity_tab_images=cache
         style.element_create(element, "image", images[0],
                              ("selected focus", images[3]), ("selected", images[1]), ("active", images[2]),
-                             border=(round(32*scale),round(40*scale)-1,round(32*scale),0), padding=(round(24*scale),round(9*scale),round(24*scale),round(9*scale)), sticky="nsew")
+                             border=(round(28*scale),0,round(28*scale),0), padding=(round(24*scale),round(4*scale),round(24*scale),round(4*scale)), sticky="nsew")
     style.layout("Workspace.TNotebook.Tab", [(element, {"sticky":"nsew", "children":[("Notebook.label", {"sticky":"nswe"})]})])
     style.configure("Workspace.TNotebook", background="#090F26", borderwidth=0, tabmargins=(0,0,0,0))
-    style.configure("Workspace.TNotebook.Tab", padding=(round(32*scale),round(9*scale)), font=("Inter",-round(18*scale)), foreground="#E6EAF2")
+    style.configure("Workspace.TNotebook.Tab", padding=(round(32*scale),round(4*scale)), font=("Inter",-round(18*scale)), foreground="#E6EAF2")
     style.map("Workspace.TNotebook.Tab", foreground=[("selected","#FFFFFF"),("active","#FFFFFF")])
     return images
 
@@ -103,26 +103,18 @@ def workspace_tabs(root, style, scale=1):
 # DESC: Rasterize each UIKit state at the chosen display scale, retaining smooth shoulders without vertical tiling.
 # ------------------=
 def _tab_images(root, scale):
+    import base64
+    import zlib
     import tkinter as tk
-    width,height=round(80*scale),round(40*scale)
-    # Image borders retain the shoulder geometry while Tk stretches only the flat center.
-    profile=(100,80,73,69,67,65,63,61,59,57,55,53,51,49,47,45,43,41,39,37,35,33,31,29,27,25,23,21,19,17,14,11,8,5,3,1,0)
-    images = []
-    for fill, edge in (("#101B3A", "#536984"), ("#243651", "#92AEC8"), ("#2E4263", "#AAC8E2"), ("#243651", "#C9D2E0")):
-        fill_rgb=tuple(int(fill[i:i+2],16) for i in (1,3,5))
-        edge_rgb=tuple(int(edge[i:i+2],16) for i in (1,3,5))
-        pixels=bytearray()
+    from infinity_uikit_tabs import WIDTH, HEIGHT, STATES
+    raw=zlib.decompress(base64.b64decode(STATES))
+    width,height=round(80*scale),round(32*scale)
+    images=[]
+    for state in range(4):
+        pixels=raw[state*WIDTH*HEIGHT*3:(state+1)*WIDTH*HEIGHT*3]
+        rows=[]
         for y in range(height):
-            t=y*36/(height-1)
-            i=min(35,int(t));fraction=t-i
-            inset=(profile[i]*(1-fraction)+profile[i+1]*fraction)*height/144
-            for x in range(width):
-                distance=min(x+0.5-inset,width-0.5-inset-x)
-                coverage=min(1,max(0,distance+0.5))
-                interior=0 if y==0 else min(1,max(0,distance-0.5))
-                color=tuple(round(bg*(1-coverage)+e*(coverage-interior)+f*interior)
-                            for bg,e,f in zip((9,15,38),edge_rgb,fill_rgb))
-                pixels.extend(color)
-        data=f"P6\n{width} {height}\n255\n".encode()+pixels
-        images.append(tk.PhotoImage(master=root,data=data,format="PPM"))
+            sy=min(HEIGHT-1,y*HEIGHT//height)
+            rows.append(b"".join(pixels[(sy*WIDTH+min(WIDTH-1,x*WIDTH//width))*3:(sy*WIDTH+min(WIDTH-1,x*WIDTH//width))*3+3] for x in range(width)))
+        images.append(tk.PhotoImage(master=root,data=f"P6\n{width} {height}\n255\n".encode()+b"".join(rows),format="PPM"))
     return images

@@ -108,7 +108,8 @@ pub(super) unsafe fn poll(playing: bool) -> bool {
                 if valid && result.ok().is_some_and(|n| {
                     let input=&(&*(&raw const TRANSCRIPT))[..n];
                     if let wake_word::Match::Command{start}=wake_word::interrupt_address(input,WORD) {
-                        stop_speech_command(&input[start..], INTERRUPT)
+                        let end = wake_word::deduplicated_command_end(input, WORD, start);
+                        stop_speech_command(&input[start..end], INTERRUPT)
                     } else { false }
                 }) {
                     stop_spoken_reply(); (&mut *(&raw mut TRANSCRIPT)).fill(0); return true;

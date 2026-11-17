@@ -2910,6 +2910,9 @@ impl ConsoleRuntime {
         self.cancel_node_pairing_input();
         self.mode = ConsoleMode::Desktop;
         self.synchronize_workplace();
+        if crate::runtime::with_runtime(|r| r.identity.remember_desktop_user(self.current_user, self.current_session)).unwrap_or(false) {
+            let _ = crate::runtime::persist_identity_state();
+        }
         self.refresh_task_automation();
         self.desktop_app = DesktopAppKind::None;
         self.system_focus = 0;
@@ -15014,7 +15017,7 @@ pub fn initialize(system: SystemSnapshot) {
         if !setup {
             runtime.mode = ConsoleMode::Authentication;
             runtime.system_focus = 1;
-            runtime.system_step = 0;
+            runtime.system_step = crate::runtime::with_runtime(|r| r.identity.preferred_login_index()).unwrap_or(0);
             runtime.reset_input();
             crate::output_text(b"[authentication] login ready\n");
         } else {

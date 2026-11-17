@@ -317,6 +317,7 @@ pub enum IdentityError {
 #[derive(Clone)]
 pub struct IdentitySystem {
     storage_uncertain: bool,
+    last_desktop_user: StableId,
     machine: Option<MachineIdentity>,
     users: [Option<UserIdentity>; MAX_USERS],
     ssh_password_throttle: [(u8, u64); MAX_USERS],
@@ -346,6 +347,7 @@ impl IdentitySystem {
     pub const fn new() -> Self {
         Self {
             storage_uncertain: false,
+            last_desktop_user: StableId([0; 16]),
             machine: None,
             users: [None; MAX_USERS],
             ssh_password_throttle: [(0, 0); MAX_USERS],
@@ -863,6 +865,27 @@ impl IdentitySystem {
         self.authenticate(user, secret, now)?;
         self.create_verified_session(user,now)
     }
+    // ------------------------=
+    // FUNC: remember_desktop_user
+    // DESC: Remembers only a successfully authenticated local desktop identity, never a remote login or failed attempt.
+    // ------------------=
+    pub fn remember_desktop_user(&mut self, user: StableId, session: StableId) -> bool {
+        if !self.sessions.iter().flatten().any(|s| s.id == session && s.user == user
+            && s.origin == SessionOrigin::Local && s.state == SessionState::Active) { return false; }
+        if self.last_desktop_user == user { return false; }
+        self.last_desktop_user = user;
+        true
+    }
+    // ------------------------=
+    // FUNC: preferred_login_index
+    // DESC: Resolves the last local desktop account after reboot, falling back safely if removed or disabled.
+    // ------------------=
+    pub fn preferred_login_index(&self) -> usize {
+        (0..self.user_count()).find(|index| self.user_nth(*index).is_some_and(|u|
+            u.id == self.last_desktop_user && u.state == UserState::Active))
+            .or_else(|| (0..self.user_count()).find(|index| self.user_nth(*index).is_some_and(|u| u.state == UserState::Active))).unwrap_or(0)
+    }
+
     // ------------------------=
     // FUNC: create_verified_session
     // DESC: Creates the ordinary least-authority session only after a credential verifier has succeeded.
@@ -1435,6 +1458,7 @@ impl IdentitySystem {
         put16(&mut out, 10, IDENTITY_STATE_BYTES as u16);
         out[12] = self.onboarding as u8;
         out[13] = self.user_count() as u8;
+        write_id(&mut out, 141, self.last_desktop_user);
         put64(&mut out, 16, self.next_id);
         put64(&mut out, 24, self.generation);
         if let Some(machine) = self.machine {
@@ -1530,6 +1554,7 @@ impl IdentitySystem {
             stored_primary
         };
         let (opacity, blur) = decode_background_effects(bytes[SYSTEM_BACKGROUND_EFFECTS_OFFSET]);
+        state.last_desktop_user = read_id(bytes, 141);
         state.background_opacity = opacity;
         state.background_blur = blur;
         if bytes[32] == 1 {
