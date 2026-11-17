@@ -149,6 +149,8 @@ static uint64_t compose(NativeWindow *w,uint32_t *target,unsigned width,unsigned
     InfinityTkPixels *pixels=InfinityTkDrawable(w->id);if(!pixels)return 0;
     int left=ox>clip_x?ox:clip_x,top=oy>clip_y?oy:clip_y,right=ox+(int)w->width,bottom=oy+(int)w->height;
     if(right>clip_right)right=clip_right;if(bottom>clip_bottom)bottom=clip_bottom;
+    if(target && (oy > clip_bottom+(int)w->border_width ||
+       oy+(int)w->height+(int)w->border_width < clip_y)) return 0;
     if(target&&!w->input_only&&w->border_width){int b=w->border_width;
         InfinityTkPixels *tile=InfinityTkDrawable(w->border_pixmap);
         int bl=ox-b>clip_x?ox-b:clip_x,bt=oy-b>clip_y?oy-b:clip_y;
@@ -172,11 +174,19 @@ static int present(NativeWindow *w){
     if(!w->mapped||!w->native)return 0;size_t bytes=(size_t)w->width*w->height*4;if(bytes>16u*1024u*1024u)return 0;
     uint64_t revision=compose(w,NULL,w->width,w->height,0,0,0,0,w->width,w->height,0);
     if(revision==w->paint_revision)return 0;
-    uint32_t *pixels=calloc(1,bytes);if(!pixels)return 0;
-    compose(w,pixels,w->width,w->height,0,0,0,0,w->width,w->height,0);
-    for(size_t at=0;at<bytes;){size_t size=bytes-at;if(size>65536)size=65536;
-        if(infinity_surface_upload(w->publish,w->surface,pixels+at/4,at,size)<0){free(pixels);return 0;}at+=size;}
-    free(pixels);if(infinity_surface_commit(w->publish,w->surface,w->generation+1)<0)return 0;
+    // The retained widget surfaces already occupy application heap. Compose directly
+    // into upload-sized bands instead of requiring another contiguous full-window allocation.
+    static uint32_t band[65536/sizeof(uint32_t)];
+    unsigned rows=(sizeof(band)/sizeof(*band))/w->width;
+    if(!rows)return 0;
+    for(unsigned y=0;y<w->height;y+=rows){
+        unsigned height=w->height-y;if(height>rows)height=rows;
+        size_t count=(size_t)w->width*height*sizeof(*band);
+        memset(band,0,count);
+        compose(w,band,w->width,height,0,-(int)y,0,0,w->width,height,0);
+        if(infinity_surface_upload(w->publish,w->surface,band,(size_t)y*w->width*sizeof(*band),count)<0)return 0;
+    }
+    if(infinity_surface_commit(w->publish,w->surface,w->generation+1)<0)return 0;
     ++w->generation;w->paint_revision=revision;return 1;
 }
 // ------------------------=
