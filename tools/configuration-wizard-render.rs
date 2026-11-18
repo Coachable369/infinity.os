@@ -939,3 +939,56 @@ pub(super) fn verify_password_pair() {
         }
     }
 }
+
+// ------------------------=
+// FUNC: verify_boot_performance
+// DESC: Measures production boot restoration and checks exact clipped pixels and bounded image damage at display resolution.
+// ------------------=
+pub fn verify_boot_performance() {
+    verify_template_bitmap_damage();
+    boot_scene_clip_pixels();
+    let (w,h)=(2560,1440);
+    let bytes=include_bytes!("../assets/boot/boot-screens.iuit");
+    let mut pixels=vec![0;w*h];
+    let start=std::time::Instant::now();
+    let mut d=display(&mut pixels,w,h);
+    assert!(d.boot_template_scene(bytes,1,100,b"",2400));
+    let scene_us=start.elapsed().as_micros();
+    let submissions=d.submissions;
+    assert!(submissions < 10_000, "Image damage must be submitted per rectangle, not per pixel");
+    let expected=pixels.clone();
+    let start=std::time::Instant::now();
+    for i in 0..18 {
+        let (x,y)=(500+i*65,360+(i%3)*55);
+        for row in y..y+45 {pixels[row*w+x..row*w+x+45].fill(0xabcdef);}
+        assert!(display(&mut pixels,w,h).restore_boot_template_region(bytes,1,x,y,45,45));
+    }
+    assert_eq!(pixels,expected);
+    println!("{{\"scene_us\":{scene_us},\"damage_submissions\":{submissions},\"restore_18_us\":{}}}",start.elapsed().as_micros());
+}
+
+// ------------------------=
+// FUNC: verify_template_bitmap_damage
+// DESC: Compares batched image painting with the prior per-pixel blend path across clips, formats and opacity.
+// ------------------=
+fn verify_template_bitmap_damage() {
+    let image=include_bytes!("../assets/boot/infinity-emblem-v2.bmp");
+    let bitmap=crate::ui::bitmap::RuntimeBitmap::parse(image).unwrap();
+    for format in [0,1] { for opacity in [0u8,78,255] { for clipped in [false,true] {
+        let (w,h)=(96,64);
+        let mut actual=vec![0x123456;w*h];let mut expected=actual.clone();
+        let mut d=display(&mut actual,w,h);d.format=format;
+        if clipped {d.set_render_clip(29,18,24,16);}
+        d.paint_bitmap_template_rect(image,12,8,64,48,[0;4],opacity,false);
+        assert!(d.submissions<=1);
+        let mut reference=display(&mut expected,w,h);reference.format=format;
+        if clipped {reference.set_render_clip(29,18,24,16);}
+        let placement=bitmap.placement(64,48,[0;4],false).unwrap();
+        for y in 0..placement.destination_height {for x in 0..placement.destination_width {
+            let [r,g,b,a]=bitmap.filtered_rgba(placement,x,y);
+            reference.blend_color((12+placement.destination_left+x)as i32,
+                (8+placement.destination_top+y)as i32,r,g,b,(u16::from(a)*u16::from(opacity)/255)as u8);
+        }}
+        assert_eq!(actual,expected);
+    }}}
+}

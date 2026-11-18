@@ -75,3 +75,28 @@ mod tests {
         }
     }
 }
+
+// ------------------------=
+// FUNC: frame_at
+// DESC: Selects the current reveal frame by elapsed time, skipping missed frames and ending after 2.4 seconds.
+// ------------------=
+pub(crate) fn frame_at(elapsed_ms: u64) -> Option<usize> {
+    (elapsed_ms < 2400).then_some((elapsed_ms / 20) as usize)
+}
+
+#[cfg(test)]
+mod clock_tests {
+    // ------------------------=
+    // FUNC: reveal_skips_missed_frames_and_finishes
+    // DESC: Verifies slow rendering cannot accumulate a backlog of mandatory splash frames.
+    // ------------------=
+    #[test]
+    fn reveal_skips_missed_frames_and_finishes() {
+        assert_eq!(super::frame_at(0), Some(0));
+        assert_eq!(super::frame_at(19), Some(0));
+        assert_eq!(super::frame_at(175), Some(8));
+        assert_eq!(super::frame_at(2399), Some(119));
+        assert_eq!(super::frame_at(2400), None);
+        assert_eq!(super::frame_at(u64::MAX), None);
+    }
+}

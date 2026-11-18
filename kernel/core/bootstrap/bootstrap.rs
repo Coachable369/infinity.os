@@ -1394,15 +1394,18 @@ pub fn show_splash(info: &BootInfo) -> bool {
         (75, b"MOUSE DRIVER PROBE"),
         (100, b"INFINITYOS READY"),
     ];
-    for (stage_index, (stage, label)) in stages.into_iter().enumerate() {
-        for frame in 0..30 {
-            let sequence = stage_index * 30 + frame;
-            display.boot_template_scene(BOOT_TEMPLATE,if cfg!(feature="installer"){1}else{2},
-                stage.saturating_sub(24)+frame*24/30,label,(sequence+1)*20);
-            display.mark_dirty_rect(0,0,display.width,display.height);
-            display.present_damage();
-            wait_frame(20);
-        }
+    let started = crate::ui::performance::monotonic_ns();
+    for fallback_frame in 0..120 {
+        let elapsed = started.zip(crate::ui::performance::monotonic_ns())
+            .map(|(start, now)| now.saturating_sub(start) / 1_000_000)
+            .unwrap_or(fallback_frame * 20);
+        let Some(sequence) = reveal::frame_at(elapsed) else { break; };
+        let (stage, label) = stages[sequence / 30];
+        display.boot_template_scene(BOOT_TEMPLATE,if cfg!(feature="installer"){1}else{2},
+            stage.saturating_sub(24)+(sequence%30)*24/30,label,(sequence+1)*20);
+        display.mark_dirty_rect(0,0,display.width,display.height);
+        display.present_damage();
+        wait_frame(20);
     }
     // Leave the authored final loading frame visible until the startup menu
     // takes ownership of the display. The menu is a separate editable scene.

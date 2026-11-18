@@ -2087,15 +2087,21 @@ impl super::DisplayDevice {
             for x in start_x..end_x {
                 let [red, green, blue, source_alpha] = bitmap.filtered_rgba(placement, x, y);
                 let alpha = (source_alpha as u16 * opacity as u16 / 255) as u8;
-                self.blend_color(
-                    (draw_left + x) as i32,
-                    (draw_top + y) as i32,
+                self.blend_color_unchecked(
+                    draw_left + x,
+                    draw_top + y,
                     red,
                     green,
                     blue,
                     alpha,
                 );
             }
+        }
+        // Sampling is already clipped above. Submit coverage once rather than
+        // inserting millions of individual pixels into the damage tracker.
+        if start_x < end_x && start_y < end_y {
+            self.mark_dirty_rect(draw_left + start_x, draw_top + start_y,
+                end_x - start_x, end_y - start_y);
         }
     }
 

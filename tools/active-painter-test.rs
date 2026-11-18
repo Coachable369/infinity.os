@@ -390,6 +390,7 @@ fn spatial_stage_blurs_to_screen_edges() {
 // ------------------=
 #[cfg(not(studio_native_preview))]
 fn main() {
+    if std::env::args().any(|arg|arg=="--boot-performance-only") {configuration_wizard_render::verify_boot_performance();return;}
     if std::env::args().any(|arg|arg=="--desktop-drag-only") {desktop_drag_render_test::verify();return;}
     if std::env::args().any(|arg|arg=="--motion-benchmark-only") {motion_blur_benchmark();return;}
     if std::env::args().any(|arg|arg=="--login-waves-only") {configuration_wizard_render::login_wave_tests::verify();return;}
