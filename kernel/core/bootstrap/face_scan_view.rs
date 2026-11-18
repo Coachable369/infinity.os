@@ -1,10 +1,10 @@
-//! Rigid canonical face geometry, decorative only, never recognition evidence.
+//! Authored scan sprite and legacy rigid face geometry; decorative only, never recognition evidence.
 use super::DisplayDevice;
 #[cfg(target_os="none")]
 use super::CONSOLE;
 use crate::ui::{geometry::Rect,face_setup_layout::Layout};
 const MESH:&[u8]=include_bytes!("../../../assets/ui-design-kit/default/face-canonical-v1.mesh");
-const LIMIT:usize=816;
+const LIMIT:usize=1536;
 static mut BASE:[u32;LIMIT*LIMIT]=[0;LIMIT*LIMIT];
 static mut DEPTH:[f32;256*256]=[0.0;256*256];
 static mut DRAWN:[u64;3423]=[0;3423];
@@ -14,6 +14,7 @@ static mut START_MS:Option<u64>=None;
 static mut BASE_DIRTY:bool=false;
 static mut POSE_MS:u64=0;
 static mut POSE_REDUCED:bool=true;
+static mut SPRITE_SCAN:bool=false;
 
 // ------------------------=
 // FUNC: advance_pose
@@ -107,7 +108,8 @@ impl DisplayDevice {
     // FUNC: face_mask_base
     // DESC: Saves the clean scene beneath the illustration; animation never accumulates trails.
     // ------------------=
-    pub(super) fn face_mask_base(&mut self,r:Rect) {unsafe {
+    pub(super) fn face_mask_base(&mut self,r:Rect,sprite:bool) {unsafe {
+        SPRITE_SCAN=sprite;
         BOUNDS=None;
         if r.width as usize>LIMIT || r.height as usize>LIMIT || r.x<0 || r.y<0
             || r.right()>self.width as i32 || r.bottom()>self.height as i32 {return;}
@@ -120,7 +122,7 @@ impl DisplayDevice {
     }}
     // ------------------------=
     // FUNC: face_mask_scan
-    // DESC: Depth-tests rigid face triangles, then composites antialiased cyan edges and luminous nodes.
+    // DESC: Restores the cached illustration and paints scan bands or legacy depth-tested geometry.
     // ------------------=
     pub(super) fn face_mask_scan(&mut self,r:Rect,elapsed:u64,reduced:bool) {unsafe {
         if BOUNDS!=Some(r) {return;}
@@ -129,6 +131,10 @@ impl DisplayDevice {
         for y in 0..r.height as usize {
             core::ptr::copy_nonoverlapping(base.as_ptr().add(y*LIMIT),
                 self.buffer.add((r.y as usize+y)*self.stride+r.x as usize),r.width as usize);
+        }
+        if SPRITE_SCAN {
+            self.face_sprite_scan(r,elapsed,reduced);
+            return;
         }
         let (s,c)=if reduced {(0.0,1.0)}else{rotation(elapsed)};
         let points:[[f32;3];468]=core::array::from_fn(|i|project(i,s,c));
@@ -168,6 +174,24 @@ impl DisplayDevice {
         }
         for p in points {self.face_mesh_sample(r,p,sweep,245,depth);}
     }}
+    // ------------------------=
+    // FUNC: face_sprite_scan
+    // DESC: Animates three feathered scan bands over the authored sprite with bounded damage and static reduced motion.
+    // ------------------=
+    fn face_sprite_scan(&mut self,r:Rect,elapsed:u64,reduced:bool) {
+        let phase=if reduced {0.5}else{(elapsed%6400) as f32/6400.0};
+        for band in 0..3 {
+            let position=(phase+band as f32/3.0)%1.0;
+            let y=r.y+(r.height as f32*(0.12+position*0.76)) as i32;
+            for dy in -7i32..=7 {
+                let strength=if dy.abs()<=1 {180}else{(8-dy.abs())*9};
+                for dx in 0..r.width as i32 {
+                    let edge=(dx.min(r.width as i32-1-dx) as f32/(r.width as f32*0.18)).min(1.0).max(0.0);
+                    self.blend_color(r.x+dx,y+dy,100,240,255,(strength as f32*edge) as u8);
+                }
+            }
+        }
+    }
     // ------------------------=
     // FUNC: face_mesh_sample
     // DESC: Occludes rear geometry and uses fractional pixel coverage for smooth subpixel motion.

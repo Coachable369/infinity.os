@@ -13,7 +13,8 @@ final class FacialScreenTests: XCTestCase {
         old.screens[0].title = "My welcome screen"
         var migrated = old.migratedForFacialEnrollment()
         XCTAssertEqual(Array(migrated.screens.prefix(8)), old.screens)
-        migrated.screens[8].elements[0].frame.x = 43
+        let title = try XCTUnwrap(migrated.screens[8].elements.firstIndex { $0.role == .title })
+        migrated.screens[8].elements[title].frame.x = 43
         XCTAssertEqual(migrated.migratedForFacialEnrollment(), migrated)
         try TemplateValidator.validate(migrated, for: .configuration)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(migrated, collection: .configuration),

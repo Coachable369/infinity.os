@@ -60,7 +60,7 @@ fn face_notice(state:&crate::runtime::face_setup::Setup,error:bool,camera_availa
             _=>b"The recognition worker could not complete. No enrollment or login change was saved.",
         }}
         else if !camera_available {b"Native camera capture is unavailable on this configuration. You can skip this optional check."}
-        else {b"Private, on-device enrollment. Facial sign-in defaults On in Settings. RGB matching cannot prevent photo or video replay. Password sign-in stays available."};
+        else {b"Private, on-device enrollment. Password sign-in stays available. RGB matching cannot prevent photo or video replay."};
 
     note
 }
@@ -136,7 +136,7 @@ impl DisplayDevice {
                 self.access_label(bounds(r),if state.pending(){b"Starting camera..."}else{b"Camera unavailable"},
                     l.pixels*3/5,palette::SECONDARY,true,false);
             }
-            self.face_mask_base(l.mask);
+            self.face_mask_base(l.mask,false);
             // Reuse the kit's image-backed field surfaces for real accepted photos.
             let gap=l.pixels;
             let left=l.preview.x as usize+l.preview.width as usize+gap;
@@ -193,8 +193,31 @@ impl DisplayDevice {
             if e.hidden || e.opacity==0 {continue;}
             let r=scale_template_rect(e.frame,self.width,self.height);
             let id=e.code_identifier;
+            if matches!(id,b"facePoseGuide0"|b"facePoseGuide1"|b"facePoseGuide2")
+                && state.photo((id[id.len()-1]-b'0') as usize).is_some() {continue;}
             match id {
-                b"faceGuidance"=>e.text=guidance,
+                b"faceGuidance"=>e.text=match state.stage() {
+                    Stage::Photos(0) if !state.pending()=>b"Keep your whole face visible in even lighting.",
+                    Stage::Photos(1) if !state.pending()=>b"Turn slightly to your left. Keep both eyes visible and hold still.",
+                    Stage::Photos(_) if !state.pending()=>b"Turn slightly to your right. Keep both eyes visible and hold still.",
+                    Stage::Photos(_) if state.checking_photo()=>b"Checking lighting, detail and pose. Accepted views are kept.",
+                    Stage::Photos(_)=>b"Waiting for a fresh frame. Hold still.",
+                    Stage::Review=>b"Three views accepted. Verify and save your identity to this account.",
+                    Stage::Verifying(_)=>b"Face the camera. Comparing fresh captures with your three views.",
+                    Stage::Passed=>b"Your identity is saved. You can now continue setup.",
+                    Stage::Failed(_)=>b"Review the message below, then retry. Password sign-in stays available.",
+                    _=>b"Preparing the camera. Keep one person in the frame.",
+                },
+                b"faceStepTitle"=>e.text=match state.stage() {
+                    Stage::Photos(0)=>b"Face the camera",
+                    Stage::Photos(1)=>b"Turn slightly left",
+                    Stage::Photos(_)=>b"Turn slightly right",
+                    Stage::Review=>b"Review your photos",
+                    Stage::Verifying(_)=>b"Verifying identity",
+                    Stage::Passed=>b"Identity saved",
+                    Stage::Failed(_)=>b"Please try again",
+                    _=>b"Preparing camera",
+                },
                 b"facePrimary"=>e.text=action,
                 b"faceStatus"=>{
                     e.text=notice;
@@ -218,12 +241,27 @@ impl DisplayDevice {
                         crate::runtime::face_setup::PhotoStatus::Pending=>b"Pending",
                     };
                 },
+                b"facePhotoCard0"|b"facePhotoCard1"|b"facePhotoCard2"=>{
+                    let slot=(id[id.len()-1]-b'0') as usize;
+                    if state.stage()==Stage::Photos(slot as u8) {
+                        e.border=[40,225,255,255];
+                    } else if state.photo_status(slot)==crate::runtime::face_setup::PhotoStatus::Accepted {
+                        e.border=[90,205,180,255];
+                    }
+                },
                 b"faceMesh"=>{
                     self.face_mask_base(crate::ui::geometry::Rect{x:r.left as i32,y:r.top as i32,
-                        width:r.width as u32,height:r.height as u32});
+                        width:r.width as u32,height:r.height as u32},
+                        crate::ui::face_setup_layout::binding(&template,b"faceSprite",self.width,self.height).is_some());
                     continue;
                 },
                 _=>{},
+            }
+            if matches!(id,b"facePhotoStatus0"|b"facePhotoStatus1"|b"facePhotoStatus2"|b"faceStepTitle") {
+                self.access_label((r.left,r.top,r.width,r.height),e.text,
+                    (e.font_size as usize*self.height/1000).max(8),palette::TEXT,
+                    id!=b"faceStepTitle",id==b"faceStepTitle");
+                continue;
             }
             if matches!(e.kind,1|4|5) {
                 let target=match id {b"faceBack"=>Some(0),b"facePrimary"=>Some(1),
@@ -249,8 +287,25 @@ impl DisplayDevice {
                     self.blend_color((left+x) as i32,(top+y) as i32,pixels[i],pixels[i+1],pixels[i+2],
                         (255u16*u16::from(e.opacity)/100) as u8);
                 }}
+            } else if id==b"facePreview" {
+                self.face_alignment_guide(r.left,r.top,r.width,r.height);
             }
         }
         true
+    }
+    // ------------------------=
+    // FUNC: face_alignment_guide
+    // DESC: Draws an antialiased empty-camera alignment oval without presenting a simulated enrollment photograph.
+    // ------------------=
+    fn face_alignment_guide(&mut self,x:usize,y:usize,w:usize,h:usize) {
+        let rx=(w as f32*0.38).min(h as f32*0.40);let ry=h as f32*0.47;
+        if rx<1.0 || ry<1.0 {return;}
+        for py in 0..h {for px in 0..w {
+            let dx=(px as f32-w as f32*0.5)/rx;
+            let dy=(py as f32-h as f32*0.5)/ry;
+            let distance=(dx*dx+dy*dy-1.0).abs()*rx*0.5;
+            let alpha=((1.6-distance).max(0.0).min(1.0)*180.0) as u8;
+            if alpha>0 {self.blend_color((x+px) as i32,(y+py) as i32,170,215,245,alpha);}
+        }}
     }
 }

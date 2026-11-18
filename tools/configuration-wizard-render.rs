@@ -52,10 +52,13 @@ fn display(pixels: &mut [u32], width: usize, height: usize) -> DisplayDevice {
 pub(super) fn verify_face() {
     verify_face_capture_feedback();
     face_scan_view::verify_rigid_geometry();
-    let (width,height)=(1920,1080);
+    let (width,height)=(1672,941);
     let mut pixels=vec![0x00090f26;width*height];
     let mut d=display(&mut pixels,width,height);
-    let state=crate::runtime::face_setup::Setup::new();
+    let mut state=crate::runtime::face_setup::Setup::new();
+    state.begin(1,2,[3;32],"Everyday",100).unwrap();
+    state.accept(crate::runtime::face_setup::wire::Report::new(state.control().command_id,
+        crate::runtime::face_setup::wire::READY,0,0,0),101).unwrap();
     d.paint_bitmap_cover_rect(desktop::ONBOARDING_BMP,0,0,width,height);
     d.face_setup_frame_state(b"Everyday",1,false,&state,true);
     let base=pixels.clone();let mask=crate::ui::face_setup_layout::Layout::new(width,height).mask;
@@ -104,12 +107,12 @@ pub(super) fn verify_face() {
 // ------------------=
 fn verify_face_capture_feedback() {
     use crate::runtime::face_setup::{Setup,PhotoStatus,PREVIEW_BYTES,wire as p};
-    for (width,height) in [(1280,800),(1920,1080)] {
+    for (width,height) in [(1280,800),(1920,1080),(3840,2160)] {
         let mut pixels=vec![0;width*height];let mut d=display(&mut pixels,width,height);
         let l=crate::ui::face_setup_layout::Layout::new(width,height);
-        let left=l.preview.x as usize+l.preview.width as usize+l.pixels;
-        let slot_width=(l.field.x as usize+l.field.width as usize-left-l.pixels*2)/3;
-        let center=(l.preview.y as usize+slot_width*3/8)*width+left+slot_width/2;
+        let template=InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).unwrap();
+        let slot=crate::ui::face_setup_layout::binding(&template,b"facePhoto0",width,height).unwrap();
+        let center=(slot.y as usize+slot.height as usize/2)*width+slot.x as usize+slot.width as usize/2;
         let mut state=Setup::new();state.begin(1,2,[3;32],"Everyday",100).unwrap();
         state.accept(p::Report::new(state.control().command_id,p::READY,0,0,0),101).unwrap();
         state.capture(102).unwrap();
@@ -137,6 +140,27 @@ fn verify_face_capture_feedback() {
                 assert_eq!(pixels[center],0x002a2a2a);
             }
         }
+        // Advancing to either side must retain the accepted front view; each slot
+        // publishes its own camera evidence rather than an empty-state pose guide.
+        for slot_index in 1..3 {
+            state.capture(120+slot_index as u64*10).unwrap();
+            let id=state.control().command_id;
+            let shade=42+slot_index as u8*50;
+            for offset in (0..PREVIEW_BYTES).step_by(3840) {
+                state.write_preview(id,offset,&[shade;3840],121+slot_index as u64*10).unwrap();
+            }
+            state.accept(p::Report::new(id,if slot_index==2 {p::REVIEW}else{p::READY},0,slot_index as u32+1,0),122+slot_index as u64*10).unwrap();
+            d.face_setup_frame_state(b"Everyday",1,false,&state,true);
+            assert_eq!(pixels[center],0x002a2a2a);
+            let id=if slot_index==1 {b"facePhoto1"}else{b"facePhoto2"};
+            let r=crate::ui::face_setup_layout::binding(&template,id,width,height).unwrap();
+            let pixel=(r.y as usize+r.height as usize/2)*width+r.x as usize+r.width as usize/2;
+            assert_eq!(pixels[pixel],u32::from(shade)*0x010101);
+        }
+        d.face_mask_scan(l.mask,0,false);
+        let before=pixels.clone();
+        d.face_mask_scan(l.mask,1700,false);
+        assert!(pixels!=before,"scan animation was disabled at {width}x{height}");
     }
 }
 

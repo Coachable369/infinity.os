@@ -2507,7 +2507,7 @@
           "role" : 5,
           "surfaceCorners" : 0,
           "surfaceMaterial" : 0,
-          "text" : "Let’s Name Your Compute Node",
+          "text" : "Let\u2019s Name Your Compute Node",
           "zIndex" : 9
         },
         {
@@ -9799,6 +9799,1761 @@
       ],
       "id" : 8,
       "title" : "Ready"
+    },
+    {
+      "elements" : [
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "firstBootBackground",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontFamily" : 0,
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000000",
+          "imageAsset" : "installer-assets/Glossy-Blue-Infinity-Wave-Wallpaper-2.png",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 0
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePanel",
+          "cornerRadius" : 20,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 190,
+            "blue" : 48,
+            "green" : 23,
+            "red" : 7
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 870,
+            "width" : 910,
+            "x" : 45,
+            "y" : 65
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000002",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "facePanel",
+          "opacity" : 100,
+          "role" : 2,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 1
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceEyebrow",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 22,
+          "frame" : {
+            "height" : 30,
+            "width" : 480,
+            "x" : 85,
+            "y" : 92
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000003",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "faceEyebrow",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "SECURE SIGN-IN",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 2
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceTitle",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 64,
+          "frame" : {
+            "height" : 80,
+            "width" : 530,
+            "x" : 85,
+            "y" : 130
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000004",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "faceTitle",
+          "opacity" : 100,
+          "role" : 4,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Create your facial identity",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 3
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceSubtitle",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 28,
+          "frame" : {
+            "height" : 40,
+            "width" : 530,
+            "x" : 85,
+            "y" : 200
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000005",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "faceSubtitle",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Capture three views to set up facial sign-in.",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 4
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePreviewCard",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 135,
+            "blue" : 60,
+            "green" : 32,
+            "red" : 10
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 310,
+            "width" : 300,
+            "x" : 85,
+            "y" : 270
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000098",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "facePreview",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 5
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 0,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePreview",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 260,
+            "width" : 185,
+            "x" : 145,
+            "y" : 295
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000006",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "facePreview",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 6
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePreviewLabel",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 18,
+          "frame" : {
+            "height" : 32,
+            "width" : 260,
+            "x" : 100,
+            "y" : 280
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000007",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "facePreviewLabel",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Live camera",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 7
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceGuidance",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 23,
+          "frame" : {
+            "height" : 90,
+            "width" : 190,
+            "x" : 405,
+            "y" : 400
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000008",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "faceGuidance",
+          "opacity" : 100,
+          "role" : 5,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 8
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceNameLabel",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 26,
+            "width" : 180,
+            "x" : 405,
+            "y" : 490
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000009",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "faceNameLabel",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Identity name",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 9
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceName",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 46,
+            "width" : 190,
+            "x" : 405,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000000A",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "credential.facial_profile_name",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "faceName",
+          "opacity" : 100,
+          "role" : 10,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 10
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoCard0",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 135,
+            "blue" : 60,
+            "green" : 32,
+            "red" : 10
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 200,
+            "width" : 158,
+            "x" : 85,
+            "y" : 600
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000000B",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "facePhotoCard0",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 11
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoLabel0",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 30,
+            "width" : 134,
+            "x" : 97,
+            "y" : 612
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000000C",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "facePhotoLabel0",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "1   Front",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 12
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 0,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePoseGuide0",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 67,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 145,
+            "width" : 114,
+            "x" : 107,
+            "y" : 631
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000064",
+          "imageAsset" : "installer-assets/Face-Enrollment-Poses-v2.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Front pose guide",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 13
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 0,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhoto0",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 109,
+            "width" : 82,
+            "x" : 123,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000000D",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "facePhoto0",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 14
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoStatus0",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 26,
+            "width" : 134,
+            "x" : 97,
+            "y" : 765
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000000E",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "facePhotoStatus0",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 15
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoCard1",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 135,
+            "blue" : 60,
+            "green" : 32,
+            "red" : 10
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 200,
+            "width" : 158,
+            "x" : 255,
+            "y" : 600
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000000F",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "facePhotoCard1",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 16
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoLabel1",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 30,
+            "width" : 134,
+            "x" : 267,
+            "y" : 612
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000010",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "facePhotoLabel1",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "2   Left",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 17
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 0,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePoseGuide1",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 33,
+            "right" : 33,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 145,
+            "width" : 114,
+            "x" : 277,
+            "y" : 631
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000065",
+          "imageAsset" : "installer-assets/Face-Enrollment-Poses-v2.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Left pose guide",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 18
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 0,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhoto1",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 109,
+            "width" : 82,
+            "x" : 293,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000011",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "facePhoto1",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 19
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoStatus1",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 26,
+            "width" : 134,
+            "x" : 267,
+            "y" : 765
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000012",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "facePhotoStatus1",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 20
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoCard2",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 135,
+            "blue" : 60,
+            "green" : 32,
+            "red" : 10
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 200,
+            "width" : 158,
+            "x" : 425,
+            "y" : 600
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000013",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "facePhotoCard2",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 21
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoLabel2",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 30,
+            "width" : 134,
+            "x" : 437,
+            "y" : 612
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000014",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "facePhotoLabel2",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "3   Right",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 22
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 0,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePoseGuide2",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 67,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 145,
+            "width" : 114,
+            "x" : 447,
+            "y" : 631
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000066",
+          "imageAsset" : "installer-assets/Face-Enrollment-Poses-v2.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Right pose guide",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 23
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 0,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhoto2",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 0,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 109,
+            "width" : 82,
+            "x" : 463,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000015",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "facePhoto2",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 24
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePhotoStatus2",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 26,
+            "width" : 134,
+            "x" : 437,
+            "y" : 765
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000016",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "facePhotoStatus2",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 25
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 140,
+            "green" : 88,
+            "red" : 67
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceSprite",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontFamily" : 0,
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 700,
+            "width" : 340,
+            "x" : 600,
+            "y" : 85
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000099",
+          "imageAsset" : "installer-assets/Face-Enrollment-Scan-v2.png",
+          "imageFit" : 1,
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "Scanning face sprite",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 26
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceMesh",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 58,
+            "green" : 27,
+            "red" : 16
+          },
+          "fontFamily" : 0,
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 700,
+            "width" : 340,
+            "x" : 600,
+            "y" : 85
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000017",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "faceMesh",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 27
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceStatus",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 115,
+            "width" : 420,
+            "x" : 85,
+            "y" : 810
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000018",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "faceStatus",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 28
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceBack",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 58,
+            "width" : 100,
+            "x" : 515,
+            "y" : 835
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000019",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "faceBack",
+          "opacity" : 100,
+          "role" : 7,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "Back",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 29
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceSkip",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 38,
+            "green" : 15,
+            "red" : 9
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 58,
+            "width" : 125,
+            "x" : 625,
+            "y" : 835
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000001A",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : false,
+          "name" : "faceSkip",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "Skip for now",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 30
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "facePrimary",
+          "cornerRadius" : 14,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 107,
+            "red" : 35
+          },
+          "fontFamily" : 0,
+          "fontSize" : 21,
+          "frame" : {
+            "height" : 58,
+            "width" : 170,
+            "x" : 760,
+            "y" : 835
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-00000000001B",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "facePrimary",
+          "opacity" : 100,
+          "role" : 8,
+          "surfaceCorners" : 2,
+          "surfaceMaterial" : 1,
+          "text" : "",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 31
+        },
+        {
+          "actionCaptionMode" : 0,
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 199,
+            "red" : 134
+          },
+          "captionColor" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 255,
+            "red" : 255
+          },
+          "codeIdentifier" : "faceStepTitle",
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontFamily" : 0,
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 48,
+            "width" : 190,
+            "x" : 405,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "FAC20000-0000-4000-8000-000000000097",
+          "imageAsset" : "",
+          "imageFit" : 0,
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Capture step heading",
+          "opacity" : 100,
+          "role" : 0,
+          "surfaceCorners" : 0,
+          "surfaceMaterial" : 0,
+          "text" : "Face the camera",
+          "textGlow" : 0,
+          "textSharpness" : 0,
+          "zIndex" : 32
+        }
+      ],
+      "id" : 9,
+      "title" : "Facial Recognition"
     }
   ],
   "version" : 1
