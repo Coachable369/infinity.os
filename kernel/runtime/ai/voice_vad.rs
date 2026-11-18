@@ -5,6 +5,7 @@ pub const MAX_SAMPLES: usize = RATE * 10;
 // Preserve a softly spoken wake prefix before the louder command crosses the
 // onset gate. This is retained audio, not additional endpoint wait time.
 const PRE_ROLL: usize = RATE * 3 / 5;
+const IDLE_WAKE_PRE_ROLL: usize = RATE * 6 / 5;
 const ONSET_FRAMES: usize = 3;
 pub const INTERRUPT_PROBE_SAMPLES: usize = RATE * 4 / 5;
 const AMBIENT_FRAMES: usize = 9;
@@ -44,6 +45,7 @@ pub struct Detector {
     adapt_idle: bool,
     calibrated_onset: u16,
     calibrated_tail: u16,
+    pre_roll: usize,
     limit_silence: usize,
 }
 impl Detector {
@@ -67,6 +69,7 @@ impl Detector {
             waiting_frames: 0,
             quiet_frames: 0, quiet_peak_energy: 0, adapt_idle: false,
             calibrated_onset: threshold, calibrated_tail: threshold,
+            pre_roll: PRE_ROLL,
             limit_silence: 0,
         }
     }
@@ -151,7 +154,7 @@ impl Detector {
                     if self.state == VadState::Waiting && self.consecutive >= ONSET_FRAMES {
                         self.speech_start = self.samples.saturating_sub(ONSET_FRAMES * FRAME);
                         self.segment.start =
-                            self.samples.saturating_sub(ONSET_FRAMES * FRAME + PRE_ROLL);
+                            self.samples.saturating_sub(ONSET_FRAMES * FRAME + self.pre_roll);
                         self.state = VadState::Speech;
                     }
                 } else {
@@ -289,10 +292,11 @@ impl Utterance {
         }
         // Waiting time must not consume the speech budget. Preserve onset and
         // partial-frame history, but discard old silence before the next chunk.
-        if self.detector.state == VadState::Waiting && self.detector.samples >= RATE {
+        let roll_at = RATE + self.detector.pre_roll.saturating_sub(PRE_ROLL);
+        if self.detector.state == VadState::Waiting && self.detector.samples >= roll_at {
             // Onset has not been confirmed yet: preserve the frames contributing
             // to that decision as well as the complete soft-consonant preroll.
-            let keep = PRE_ROLL + ONSET_FRAMES * FRAME + self.detector.frame_samples;
+            let keep = self.detector.pre_roll + ONSET_FRAMES * FRAME + self.detector.frame_samples;
             let end = self.detector.samples;
             self.pcm.copy_within(end - keep..end, 0);
             self.pcm[keep..end].fill(0);
@@ -331,6 +335,12 @@ impl Utterance {
     // DESC: Enables quiet-room recovery only during idle desktop wake capture, never during playback or recognition.
     // ------------------=
     pub fn idle_wake_gate(&mut self, enabled: bool) {
+        // Retain the complete softly spoken address before a louder command
+        // crosses the onset gate. This adds no endpoint delay and does not
+        // alter duplex capture. Never change an already selected segment.
+        if self.detector.state == VadState::Waiting {
+            self.detector.pre_roll = if enabled { IDLE_WAKE_PRE_ROLL } else { PRE_ROLL };
+        }
         if !enabled && self.detector.adapt_idle {
             self.detector.threshold = self.detector.calibrated_onset;
             self.detector.continuation_threshold = self.detector.continuation_threshold.max(self.detector.calibrated_tail);
@@ -392,6 +402,35 @@ impl Utterance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // ------------------------=
+    // FUNC: idle_wake_preserves_soft_address_before_loud_command
+    // DESC: Retains a quiet one-second wake prefix after long idle across capture chunk boundaries, without changing duplex retention or endpoint latency.
+    // ------------------=
+    fn idle_wake_preserves_soft_address_before_loud_command() {
+        let prefix = RATE;
+        let mut input = std::vec![400; RATE * 10];
+        input.extend_from_slice(&std::vec![600; prefix]);
+        input.extend_from_slice(&[1800; FRAME * 5]);
+        input.extend_from_slice(&[400; END_SILENCE]);
+        for idle in [false, true] {
+            for chunk in [1, 17, 319, 320, 701, 4096] {
+                let mut utterance = Utterance::new(816);
+                utterance.clear_with_continuation(816, 612);
+                utterance.idle_wake_gate(idle);
+                let mut consumed = 0;
+                for samples in input.chunks(chunk) { consumed += utterance.push(samples); }
+                assert_eq!(consumed, input.len());
+                let speech = utterance.speech().unwrap();
+                assert_eq!(speech.iter().filter(|&&v| v == 600).count(),
+                    if idle { prefix } else { PRE_ROLL });
+                assert_eq!(&speech[speech.len() - END_SILENCE..], &[400; END_SILENCE]);
+                assert_eq!(utterance.onset_threshold(), 816);
+                utterance.cancel();
+                assert!(utterance.pcm.iter().all(|s| *s == 0));
+            }
+        }
+    }
     #[test]
     // ------------------------=
     // FUNC: waiting_rollover_preserves_soft_onset

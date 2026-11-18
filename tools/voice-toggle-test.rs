@@ -835,6 +835,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     wake_handoff_tests(owner);
     recognition_backpressure_preserves_next_wake_tests(owner);
     wake_boundary_capture_tests(owner);
+    first_soft_wake_after_idle_tests(owner);
     transcript_handoff_tests(owner);
     turn_timing_tests(owner);
     workflow_narration_and_failure_tests(owner);
@@ -2248,6 +2249,40 @@ fn wake_boundary_capture_tests(owner: runtime::execution::SecurityIdentity) {
     assert!(!conversation::wake_armed());
     conversation::stop(owner);BUSY.store(false,Ordering::SeqCst);conversation::poll();
     HOLD_RECOGNITION.store(false,Ordering::SeqCst);
+}
+
+// ------------------------=
+// FUNC: first_soft_wake_after_idle_tests
+// DESC: Preserves the first quiet wake prefix after ten seconds of ambient capture on consecutive turns, without reopening the microphone.
+// ------------------=
+fn first_soft_wake_after_idle_tests(owner: runtime::execution::SecurityIdentity) {
+    HOLD_RECOGNITION.store(true, Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().clear();
+    MICROPHONE.lock().unwrap().extend([400; 8000]);
+    drain_microphone();
+    let captures = CAPTURES.load(Ordering::SeqCst);
+    for _ in 0..3 {
+        NOW.fetch_add(10_000_000_000, Ordering::SeqCst);
+        MICROPHONE.lock().unwrap().extend(vec![400; voice_vad::RATE * 10]);
+        drain_microphone();
+        let turns = TURNS.load(Ordering::SeqCst);
+        let requests = RECOGNITION_REQUESTS.lock().unwrap().len();
+        MICROPHONE.lock().unwrap().extend(vec![600; voice_vad::RATE]);
+        MICROPHONE.lock().unwrap().extend([1800; voice_vad::FRAME * 5]);
+        MICROPHONE.lock().unwrap().extend(vec![400; voice_vad::END_SILENCE]);
+        drain_microphone();
+        assert_eq!(conversation::state().0, conversation::State::Recognizing);
+        assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(), requests + 1);
+        assert_eq!(RECOGNIZED.lock().unwrap().iter().filter(|&&v| v == 600).count(), voice_vad::RATE);
+        finish_recognition(b"Infinity hello");
+        assert_eq!(TURNS.load(Ordering::SeqCst), turns + 1);
+        assert_eq!(PROMPTS.lock().unwrap().last().unwrap(), b"hello");
+        complete_voice_reply();
+        assert_eq!(CAPTURES.load(Ordering::SeqCst), captures);
+    }
+    conversation::stop(owner); conversation::poll();
+    HOLD_RECOGNITION.store(false, Ordering::SeqCst);
 }
 
 // ------------------------=
