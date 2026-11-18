@@ -179,15 +179,27 @@ impl DisplayDevice {
     // DESC: Animates three feathered scan bands over the authored sprite with bounded damage and static reduced motion.
     // ------------------=
     fn face_sprite_scan(&mut self,r:Rect,elapsed:u64,reduced:bool) {
-        let phase=if reduced {0.5}else{(elapsed%6400) as f32/6400.0};
+        // Front scans vertically; side captures sweep toward the requested side.
+        let pose={
+            #[cfg(all(feature="native-face",target_os="none"))]
+            {crate::runtime::face_setup_host::view(|s|match s.stage(){crate::runtime::face_setup::Stage::Photos(n)=>n,_=>0})}
+            #[cfg(not(all(feature="native-face",target_os="none")))]
+            {0u8}
+        };
+        let phase=if reduced {1200}else{elapsed%2400} as i32;
+        let extent=if pose==0{r.height}else{r.width} as i32;
+        let cross=if pose==0{r.width}else{r.height} as i32;
+        let feather=(cross*18/100).max(1);
         for band in 0..3 {
-            let position=(phase+band as f32/3.0)%1.0;
-            let y=r.y+(r.height as f32*(0.12+position*0.76)) as i32;
-            for dy in -7i32..=7 {
-                let strength=if dy.abs()<=1 {180}else{(8-dy.abs())*9};
-                for dx in 0..r.width as i32 {
-                    let edge=(dx.min(r.width as i32-1-dx) as f32/(r.width as f32*0.18)).min(1.0).max(0.0);
-                    self.blend_color(r.x+dx,y+dy,100,240,255,(strength as f32*edge) as u8);
+            let progress=(phase+band*800)%2400;
+            let progress=if pose==1{2400-progress}else{progress};
+            let at=extent*(288+progress*76/100)/2400;
+            for delta in -7i32..=7 {
+                let strength=if delta.abs()<=1{180}else{(8-delta.abs())*9};
+                for along in 0..cross {
+                    let opacity=strength*along.min(cross-1-along).min(feather).max(0)/feather;
+                    let (x,y)=if pose==0{(along,at+delta)}else{(at+delta,along)};
+                    self.blend_color(r.x+x,r.y+y,100,240,255,opacity as u8);
                 }
             }
         }

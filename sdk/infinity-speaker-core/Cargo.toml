@@ -1,0 +1,11 @@
+[package]
+name = "infinity-speaker-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+[workspace]
+[lib]
+path = "lib.rs"
+[dependencies]
+libm = { version = "0.2", default-features = false }
+infinity-face-core = { path = "../infinity-face-core" }

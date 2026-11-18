@@ -1,3 +1,5 @@
+#[cfg(feature="speaker-probe")]
+#[path="speaker.rs"] mod speaker;
 use super::{native_memory::*, native_c_image::Image, cpu::{self, Tables, Controller, Context, MACHINE}, emit, finish, IMAGE};
 #[cfg(feature = "python-pip-probe")]
 #[path = "pip.rs"] mod pip;
@@ -102,6 +104,8 @@ unsafe fn execute_linked(bytes: &[u8], memory: &mut NativeMemory, kernel: Kernel
 // DESC: Exercises the production bounded compiler task against real user-mode Clang and LLD, not a fixture-specific syscall loop.
 // ------------------=
 pub unsafe fn run(memory: &mut NativeMemory, kernel: KernelAccessMap, controller: Controller) -> ! {
+    #[cfg(feature="speaker-probe")]
+    speaker::run(memory,controller);
     #[cfg(feature = "compiler-clock-probe")]
     clock_contract();
     // A declared test clock fixture, never an installed-kernel fallback date.

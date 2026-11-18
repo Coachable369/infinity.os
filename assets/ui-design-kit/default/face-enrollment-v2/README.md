@@ -22,7 +22,7 @@ an explicit addition to the generated reference, not a claim of pixel identity.
 ## Reusable scanning-face component
 
 The generated transparent face sprite is composited once into the cached base.
-Three feathered cyan horizontal bands travel over it on a 6.4-second loop.
+Three feathered cyan bands travel over it on a 2.4-second loop. Front capture scans vertically; side capture scans horizontally toward the requested side.
 Restore the cached rectangle before each frame; never accumulate scan trails.
 Animation is bounded to the illustration rectangle at 30 Hz. Reduced motion
 uses a fixed scan position. The illustration is decorative, not measured data.

@@ -1469,6 +1469,8 @@ impl super::DisplayDevice {
         #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if step==7 {self.face_setup_frame(input,focus,validation_error);return;}
         #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if step==9 {self.voice_setup_frame(focus);return;}
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         let step=if step==8 {7}else{step};
         let card=crate::ui::installer_layout::configuration_template_rect(step,
             crate::ui::installer_template::InstallerTemplateRole::Console,self.width,self.height);

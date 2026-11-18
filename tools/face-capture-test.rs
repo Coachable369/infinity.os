@@ -53,7 +53,7 @@ fn preview_then_photo_preserves_exposure() {
     assert!(pixels.iter().all(|v|*v==128));
     CAMERA.with(|c|c.borrow_mut().command=2);
     let photo=capture::capture(2,&mut pixels,&mut stream,false).unwrap();
-    assert!(photo.1>preview.1+1);assert!(pixels.iter().all(|v|*v==128));
+    assert!(photo.1>preview.1);assert!(pixels.iter().all(|v|*v==128));
     CAMERA.with(|c|{let c=c.borrow();assert_eq!(c.starts,1);assert_eq!(c.stops,0);assert!(!c.pinned);});
 }
 
@@ -118,4 +118,20 @@ fn cancellation_preserves_stream_and_timeout_closes() {
     CAMERA.with(|c|{assert_eq!(c.borrow().stops,0);c.borrow_mut().frames=false;});
     assert_eq!(capture::capture(2,&mut pixels,&mut stream,false),Err(105));
     CAMERA.with(|c|assert_eq!(c.borrow().stops,1));
+}
+
+// ------------------------=
+// FUNC: restarted_camera_keeps_enrollment_tickets_monotonic
+// DESC: Fresh front, left and right photos remain distinct when hardware restarts its frame counter.
+// ------------------=
+#[test]
+fn restarted_camera_keeps_enrollment_tickets_monotonic() {
+    reset();let mut stream=capture::Stream::default();let mut pixels=[0;8192];
+    let mut last=0;
+    for _ in 0..3 {
+        CAMERA.with(|c|c.borrow_mut().sequence=0);
+        let photo=capture::photo(1,&mut pixels,&mut stream,false).unwrap();
+        assert!(photo.1>last);last=photo.1;
+        assert!(pixels.iter().all(|v|*v==128));capture::stop(&mut stream);
+    }
 }

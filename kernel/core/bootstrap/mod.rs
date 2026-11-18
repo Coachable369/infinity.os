@@ -21,6 +21,9 @@ mod access_input_view;
 mod onboarding_network_view;
 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 mod face_setup_view;
+mod voice_setup_view;
+#[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+pub use self::voice_setup_view::animate as voice_setup_animation_tick;
 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
 mod face_scan_view;
 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]

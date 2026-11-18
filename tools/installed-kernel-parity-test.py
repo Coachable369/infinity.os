@@ -13,6 +13,10 @@ def main():
         installed = (root / 'build' / architecture / 'installed-kernel.elf').read_bytes()
         assert installed[:6] == b'\x7fELF\x02\x01'
         assert int.from_bytes(installed[18:20], 'little') == machine
+        for artifact in [f'build/speaker/{architecture}/speaker-worker.elf',
+                         'build/speaker/models/resnet34.iface', 'build/speaker/models/resnet34.head']:
+            data = (root / artifact).read_bytes()
+            assert installed.find(data) >= 0, (architecture, artifact, 'missing installed speaker component')
         for scene in range(4):
             artwork = (root / 'assets' / 'desktop' / f'spatial-world-{scene}.bmp').read_bytes()
             assert installed.find(artwork) >= 0, (architecture, scene, 'missing installed world artwork')

@@ -6461,6 +6461,8 @@ impl ConsoleRuntime {
     fn input_onboarding(&mut self, key: ConsoleKey) {
         #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
         if self.system_step==7 {self.input_face_setup(key);return;}
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if self.system_step==9 {self.input_voice_setup(key);return;}
         if self.system_step == 4 {
             if self.system_focus == 1 && self.command_length >= self.onboarding_secret.len() && matches!(key, ConsoleKey::Character(_)) { return; }
             if let ConsoleKey::Tab(reverse) = key {
@@ -6569,7 +6571,7 @@ impl ConsoleRuntime {
             return;
         }
         if matches!(key, ConsoleKey::Escape) && self.system_step > 0 {
-            self.system_step -= 1;
+            self.system_step = if self.system_step==8 && cfg!(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))) {9} else {self.system_step-1};
             self.system_focus = 1;
             self.onboarding_validation_error = false;
             self.restore_onboarding_input();
@@ -6579,7 +6581,7 @@ impl ConsoleRuntime {
             return;
         }
         if self.system_step > 0 && self.system_focus == 0 {
-            self.system_step -= 1;
+            self.system_step = if self.system_step==8 && cfg!(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64"))) {9} else {self.system_step-1};
             self.system_focus = 1;
             self.onboarding_validation_error = false;
             self.restore_onboarding_input();
@@ -6696,7 +6698,7 @@ impl ConsoleRuntime {
         }
         if !matches!(key,ConsoleKey::Enter) {return;}
         if self.system_focus==3 {
-            face::cancel();self.system_step=8;self.system_focus=1;self.reset_input();return;
+            face::cancel();self.system_step=9;self.system_focus=1;self.reset_input();return;
         }
         let (stage,pending)=face::view(|state|(state.stage(),state.pending()));
         if pending {return;}
@@ -6709,9 +6711,28 @@ impl ConsoleRuntime {
             }
             Stage::Photos(_)=>self.onboarding_validation_error=face::capture().is_err(),
             Stage::Review=>self.onboarding_validation_error=face::verify().is_err(),
-            Stage::Passed=>{face::cancel();self.system_step=8;self.system_focus=1;self.reset_input();}
+            Stage::Passed=>{face::cancel();self.system_step=9;self.system_focus=1;self.reset_input();}
             _=>(),
         }
+    }
+
+    // ------------------------=
+    // FUNC: input_voice_setup
+    // DESC: Controls explicit voice enrollment, retry and optional skip after facial setup.
+    // ------------------=
+    #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+    fn input_voice_setup(&mut self,key:ConsoleKey){
+        use crate::runtime::voice_identity_host as voice;
+        if let ConsoleKey::Tab(reverse)=key{self.system_focus=(self.system_focus+if reverse{2}else{1})%3;return;}
+        if matches!(key,ConsoleKey::Escape)||(matches!(key,ConsoleKey::Enter)&&self.system_focus==0){voice::cancel();self.system_step=7;self.system_focus=1;return;}
+        if !matches!(key,ConsoleKey::Enter){return;}
+        if self.system_focus==2{voice::cancel();self.system_step=8;self.system_focus=1;return;}
+        let stage=voice::snapshot().0;
+        if stage==voice::Stage::Saved{voice::cancel();self.system_step=8;self.system_focus=1;return;}
+        if matches!(stage,voice::Stage::Idle|voice::Stage::Failed(voice::Failure::Unauthorized|voice::Failure::Storage)){
+            if !voice::begin_enrollment(self.current_user,&self.onboarding_secret[..self.onboarding_secret_length]){return;}
+        }
+        voice::record();
     }
 
     // ------------------------=
@@ -6950,6 +6971,7 @@ impl ConsoleRuntime {
                 {
                     let account=if self.mode==ConsoleMode::Locked {Some(self.current_user)}else{
                         crate::runtime::with_runtime(|r|r.identity.user_nth(self.system_step).map(|u|u.id)).flatten()};
+                    crate::runtime::voice_identity_host::cancel();
                     let started=account.is_some_and(crate::runtime::face_setup_host::start_login);
                     // Face state is not credential text. Invalidate the access
                     // scene so its button feedback is painted even when focus
@@ -8950,6 +8972,13 @@ impl ConsoleRuntime {
             self.mode,
             ConsoleMode::Onboarding | ConsoleMode::Authentication | ConsoleMode::Locked
         ) {
+            #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+            if self.mode==ConsoleMode::Onboarding && self.system_step==9 {
+                let layout=crate::ui::voice_setup_layout::Layout::new(self.system.framebuffer_width as usize,self.system.framebuffer_height as usize);
+                let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+                if let Some(target)=layout.hit(point){self.system_focus=target;if clicked{self.input_voice_setup(ConsoleKey::Enter);}}
+                if clicked{self.redraw();}else{crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}return;
+            }
             #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
             if self.mode==ConsoleMode::Onboarding && self.system_step==7 {
                 let previous_focus=self.system_focus;
@@ -14804,12 +14833,17 @@ fn poll_native_ai_inner() {
         let selected=if !login_page {None}else if runtime.mode==ConsoleMode::Locked {Some(runtime.current_user)}else{
             crate::runtime::with_runtime(|r|r.identity.user_nth(runtime.system_step).map(|u|u.id)).flatten()};
         let was_busy=crate::runtime::face_setup_host::login_busy();
-        crate::runtime::ai::voice_conversation::sync_login_listener(if was_busy {None}else{selected});
+        crate::runtime::ai::voice_conversation::sync_login_listener(None);
         if let Some(proof)=crate::runtime::face_setup_host::poll_login(selected) {
-            if let Some(account)=selected {
+            if let Some(account)=selected {crate::runtime::voice_identity_host::accept_face(account,proof);runtime.redraw();}
+        }
+        let enrolling=(runtime.mode==ConsoleMode::Onboarding&&runtime.system_step==9).then_some(runtime.current_user);
+        if crate::runtime::voice_identity_host::poll(enrolling,selected){runtime.redraw();}
+        if let Some(proof)=crate::runtime::voice_identity_host::take_proof(){
+            if let Some(account)=selected{
                 let locked=(runtime.mode==ConsoleMode::Locked).then_some(runtime.current_session);
                 let now=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000;
-                if let Some(Ok(session))=crate::runtime::with_runtime(|r|r.identity.complete_face_login(account,locked,proof,now)) {
+                if let Some(Ok(session))=crate::runtime::with_runtime(|r|r.identity.complete_voice_login(account,locked,proof,now)){
                     runtime.current_user=account;runtime.current_session=session.id;runtime.reset_input();
                     runtime.begin_authentication_success(locked.is_some());
                 }
@@ -14830,7 +14864,7 @@ fn poll_native_ai_inner() {
         if crate::runtime::face_setup_host::poll(visible) {
             let after=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection(),s.checking_photo()));
             if visible && crate::runtime::face_setup_host::view(|s|s.saved()) {
-                runtime.system_step=8;runtime.system_focus=1;runtime.reset_input();runtime.redraw();
+                runtime.system_step=9;runtime.system_focus=1;runtime.reset_input();runtime.redraw();
             }
             else if visible && before==after {crate::bootstrap::face_preview_present();}
             else {runtime.redraw();}
@@ -15128,6 +15162,12 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
         if crate::bootstrap::face_scan_animation_tick(
             runtime.mode==ConsoleMode::Onboarding && runtime.system_step==7,
             runtime.spatial.state.reduced_motion) {return true;}
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if crate::bootstrap::voice_setup_animation_tick(runtime.mode==ConsoleMode::Onboarding && runtime.system_step==9){return true;}
+        // These pages own bounded animation damage. Do not repaint their full
+        // photographic scene for generic hover decoration between scan frames.
+        #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+        if runtime.mode==ConsoleMode::Onboarding && matches!(runtime.system_step,7|9){return true;}
         if runtime.authentication_success.active() {
             let now = crate::ui::performance::monotonic_ns();
             let elapsed_ms = now

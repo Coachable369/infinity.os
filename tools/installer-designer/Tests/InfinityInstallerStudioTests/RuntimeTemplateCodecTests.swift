@@ -892,15 +892,15 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
         XCTAssertEqual(configuration.screens.map(\.title), [
             "Welcome", "Node Name", "Profile Name", "Display Name", "Password",
-            "Privacy & Appearance", "Network", "Ready", "Facial Recognition",
+            "Privacy & Appearance", "Network", "Ready", "Facial Recognition", "Voice Identity",
         ])
-        XCTAssertEqual(configuration.screens.map(\.id), Array(1...9))
+        XCTAssertEqual(configuration.screens.map(\.id), Array(1...10))
         for screen in configuration.screens {
             XCTAssertEqual(screen.elements.filter { $0.role == .backButton && $0.locked }.count, 1)
             XCTAssertEqual(screen.elements.filter { $0.role == .primaryButton && $0.locked }.count, 1)
             XCTAssertTrue(screen.elements.filter { $0.kind != .button }.allSatisfy { !$0.locked })
             let progress = screen.elements.filter { $0.role == .progressSegment }
-            XCTAssertEqual(progress.count, screen.id == 9 ? 0 : 8)
+            XCTAssertEqual(progress.count, screen.id >= 9 ? 0 : 8)
             XCTAssertTrue(progress.allSatisfy {
                 $0.kind == .panel && $0.frame.height == 20 && $0.text.isEmpty
             })
@@ -1095,7 +1095,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
         XCTAssertEqual(store.selectedCollection, .configuration)
         XCTAssertEqual(store.document, installerBefore)
-        XCTAssertEqual(store.configurationDocument.screens.count, 10)
+        XCTAssertEqual(store.configurationDocument.screens.count, 11)
         XCTAssertTrue(store.configurationDocument.screens.contains { $0.title == "Recovery Options" })
         XCTAssertTrue(store.configurationDocument.screens[2].elements.contains {
             $0.role == .title && $0.text == "Choose a local profile"

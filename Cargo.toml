@@ -9,7 +9,7 @@ crate-type = ["staticlib"]
 
 [features]
 default = ["native-compiler", "native-python", "native-face"]
-native-face = ["native-compiler"]
+native-face = ["native-compiler", "dep:infinity-speaker-core"]
 native-compiler = []
 native-python = ["native-compiler"]
 installer = []
@@ -19,6 +19,7 @@ browser-qemu-payload = ["browser-installer-payload"]
 native-browser = []
 
 [dependencies]
+infinity-speaker-core = { path = "sdk/infinity-speaker-core", optional = true }
 infinity-enterprise-core = { path = "sdk/infinity-enterprise-core" }
 infinity-browser-core = { path = "sdk/infinity-browser-core" }
 infinity-http = { path = "kernel/runtime/http" }

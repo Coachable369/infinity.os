@@ -518,7 +518,7 @@ final class TemplateStore: ObservableObject {
         }
         var screen = selectedScreen ?? factory.screens[0]
         // A new ordinary wizard page must not inherit enrollment-only live bindings.
-        if selectedCollection == .configuration && screen.id == 9 {
+        if selectedCollection == .configuration && [9, 10].contains(screen.id) {
             screen = factory.screens[0]
         }
         screen.title = "New Screen"

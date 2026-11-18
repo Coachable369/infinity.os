@@ -105,6 +105,18 @@ impl NodeRuntime {
         Some(key)
     }
     // ------------------------=
+    // FUNC: voice_vault_key
+    // DESC: Derives a separate account-scoped speaker-template key from the protected node seed.
+    // ------------------=
+    pub(crate) fn voice_vault_key(&self,owner:&[u8;16])->Option<zeroize::Zeroizing<[u8;32]>> {
+        self.key_ref?;
+        if *owner==[0;16] || self.identity_seed==[0;32] {return None;}
+        let mut key=zeroize::Zeroizing::new([0;32]);
+        hkdf::Hkdf::<Sha256>::new(Some(b"InfinityOS local speaker enrollment v1"),&self.identity_seed)
+            .expand(owner,&mut *key).ok()?;
+        Some(key)
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Creates bounded node services with no identity or ambient remote authority.
     // ------------------=

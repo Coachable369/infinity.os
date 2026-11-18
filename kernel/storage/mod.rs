@@ -982,6 +982,38 @@ pub(crate) fn face_identity_load(owner:[u8;16],out:&mut[u8])->Result<usize,objec
 }
 
 // ------------------------=
+// FUNC: voice_identity_path
+// DESC: Constructs an account-scoped private speaker-vault path without user-provided path segments.
+// ------------------=
+fn voice_identity_path(owner:[u8;16])->[u8;55] {
+    let mut path=[0;55];path[..23].copy_from_slice(b"/system/identity/voice/");
+    for (i,byte) in owner.iter().enumerate(){path[23+i*2]=b"0123456789abcdef"[(byte>>4)as usize];path[24+i*2]=b"0123456789abcdef"[(byte&15)as usize];}
+    path
+}
+// ------------------------=
+// FUNC: voice_identity_commit
+// DESC: Atomically persists an encrypted speaker record in live or installed native system storage.
+// ------------------=
+pub(crate) fn voice_identity_commit(owner:[u8;16],content:&[u8])->Result<u32,object::ObjectError>{
+    if content.len()!=crate::runtime::voice_identity_vault::BYTES||&content[..8]!=b"INFVOICE"||content[8..24]!=owner{return Err(object::ObjectError::CorruptContent);}
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|match store.resolve(&voice_identity_path(owner)){
+        Ok(id)=>store.replace_state(id,content),
+        Err(object::ObjectError::NamespaceNotFound|object::ObjectError::NotFound)=>store.create_attached(b"@voice-identity",object::ObjectType::Metadata,object::Space::System,content,&voice_identity_path(owner)).map(|_|1),
+        Err(error)=>Err(error),
+    })}
+    #[cfg(target_arch="x86")]
+    {Err(object::ObjectError::SpaceUnavailable)}
+}
+// ------------------------=
+// FUNC: voice_identity_load
+// DESC: Reads only the selected account's encrypted speaker enrollment.
+// ------------------=
+pub(crate) fn voice_identity_load(owner:[u8;16],out:&mut[u8])->Result<usize,object::ObjectError>{
+    object_read_path(&voice_identity_path(owner),None,out).map(|(_,n)|n)
+}
+
+// ------------------------=
 // FUNC: checkpoint_state
 // DESC: Saves mutable system state with bounded copy-on-write history and durable commit barriers.
 // ------------------=

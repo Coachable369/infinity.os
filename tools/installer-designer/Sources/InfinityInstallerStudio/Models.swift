@@ -413,7 +413,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         case .login: 1
         case .boot: 2
         case .installation: 11
-        case .configuration: 9
+        case .configuration: 10
         case .systemSettings: 11
         case .desktop: 3
         }
@@ -424,7 +424,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Resolves the fixed InfinityOS runtime workflow represented by one template document.
     // ------------------=
     static func runtimeCollection(screenCount: Int) -> ScreenCollection? {
-        if screenCount == 8 || screenCount == ScreenCollection.configuration.requiredScreenCount { return .configuration }
+        if screenCount == 8 || screenCount == 9 || screenCount == ScreenCollection.configuration.requiredScreenCount { return .configuration }
         if screenCount == ScreenCollection.installation.requiredScreenCount { return .installation }
         return nil
     }
@@ -434,6 +434,9 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
+        if self == .configuration && screenID == 10 {
+            return [.console, .title, .body, .backButton, .primaryButton].contains(role) ? 1 : 0
+        }
         if self == .configuration && screenID == 9 {
             return [.console, .title, .body, .input, .backButton, .primaryButton].contains(role) ? 1 : 0
         }
@@ -958,7 +961,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             version: currentVersion,
             canvasWidth: 1000,
             canvasHeight: 1000,
-            screens: screens + [facialEnrollmentScreen()]
+            screens: screens + [facialEnrollmentScreen(), voiceEnrollmentScreen()]
         )
     }
 

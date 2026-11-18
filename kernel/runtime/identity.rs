@@ -941,6 +941,20 @@ impl IdentitySystem {
         self.create_verified_session(user,now)
     }
     // ------------------------=
+    // FUNC: complete_voice_login
+    // DESC: Creates or unlocks a session only after a fresh combined face-and-speaker proof; inactive users fail closed.
+    // ------------------=
+    #[cfg(all(feature="native-face",target_os="none"))]
+    pub(crate) fn complete_voice_login(&mut self,user:StableId,locked:Option<StableId>,proof:super::voice_identity_login::Proof,now:u64)->Result<Session,IdentityError>{
+        if !proof.consume(user,now)||!self.user_profile(user).is_some_and(|p|p.face_login_enabled)
+            ||!self.user(user).is_some_and(|u|u.state==UserState::Active){return Err(IdentityError::AccessDenied);}
+        if let Some(id)=locked{
+            let session=self.sessions.iter_mut().flatten().find(|s|s.id==id&&s.user==user&&s.state==SessionState::Locked).ok_or(IdentityError::AccessDenied)?;
+            session.state=SessionState::Active;return Ok(*session);
+        }
+        self.create_verified_session(user,now)
+    }
+    // ------------------------=
     // FUNC: set_face_login
     // DESC: Persists the owning user's opt-out while leaving password authentication and enrollment intact.
     // ------------------=

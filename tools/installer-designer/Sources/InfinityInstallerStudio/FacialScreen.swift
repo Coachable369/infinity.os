@@ -6,9 +6,9 @@ extension InstallerStudioDocument {
     // DESC: Appends the runtime facial screen without renumbering or replacing existing authored screens.
     // ------------------=
     func migratedForFacialEnrollment() -> InstallerStudioDocument {
-        guard screens.count == 8 else { return self }
         var result = self
-        result.screens.append(Self.facialEnrollmentScreen())
+        if result.screens.count == 8 { result.screens.append(Self.facialEnrollmentScreen()) }
+        if result.screens.count == 9 { result.screens.append(Self.voiceEnrollmentScreen()) }
         return result
     }
 

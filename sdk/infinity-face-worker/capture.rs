@@ -1,7 +1,7 @@
 //! Shared preview/photo acquisition: preserve exposure while requiring fresh pixels.
 use super::{call,clock,visit};
 #[derive(Default)]
-pub struct Stream { opened:Option<u64>, first_frame:Option<u64>, sequence:u64 }
+pub struct Stream { opened:Option<u64>, first_frame:Option<u64>, sequence:u64, admission:u64 }
 
 // ------------------------=
 // FUNC: stop
@@ -9,7 +9,7 @@ pub struct Stream { opened:Option<u64>, first_frame:Option<u64>, sequence:u64 }
 // ------------------=
 pub fn stop(stream:&mut Stream) {
     if stream.opened.is_some() {call(0x1262,[0;6]);}
-    *stream=Stream::default();
+    *stream=Stream {admission:stream.admission,..Stream::default()};
 }
 
 // ------------------------=
@@ -49,7 +49,7 @@ fn read(command:u64,encoded:&mut [u8],stream:&mut Stream,live:bool,login:bool)->
     let begin=clock()?;
     // Renew before the existing bounded camera lease expires, never per click.
     if stream.opened.is_some_and(|opened|begin.saturating_sub(opened)>=8000) {
-        call(0x1262,[0;6]);*stream=Stream::default();
+        call(0x1262,[0;6]);*stream=Stream {admission:stream.admission,..Stream::default()};
     }
     let result=(|| {
         open(command,stream)?;
@@ -79,11 +79,15 @@ fn read(command:u64,encoded:&mut [u8],stream:&mut Stream,live:bool,login:bool)->
             stream.sequence=meta[0];
             let settled=if login {now.saturating_sub(stream.opened.unwrap_or(first))>=2000}
                 else {now.saturating_sub(first)>=2000};
-            if fresh && after_click && settled {return Ok((length,meta[0],now));}
+            if fresh && after_click && settled {
+                // Device counters restart with the stream; enrollment tickets must not.
+                stream.admission=stream.admission.checked_add(1).ok_or(104u32)?;
+                return Ok((length,stream.admission,now));
+            }
             after_click=true;
         }
     })();
     // A Capture command superseding preview must not power-cycle the camera.
-    if result.is_err() && visit(command) {call(0x1262,[0;6]);*stream=Stream::default();}
+    if result.is_err() && visit(command) {call(0x1262,[0;6]);*stream=Stream {admission:stream.admission,..Stream::default()};}
     result
 }

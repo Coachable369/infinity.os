@@ -9,7 +9,7 @@ final class FacialScreenTests: XCTestCase {
     // ------------------=
     func testMigrationPreservesExistingScreensAndEdits() throws {
         var old = InstallerStudioDocument.factoryConfiguration()
-        old.screens.removeLast()
+        old.screens.removeLast(2)
         old.screens[0].title = "My welcome screen"
         var migrated = old.migratedForFacialEnrollment()
         XCTAssertEqual(Array(migrated.screens.prefix(8)), old.screens)

@@ -441,6 +441,14 @@ $(BUILD)/face/x86_64/face-worker.elf: $(NATIVE_FACE_SOURCES)
 	CLANG="$(CLANG)" LLD="$(LD_LLD)" sh tools/build-face-worker.sh x86_64
 $(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: $(BUILD)/face/aarch64/face-worker.elf
 $(BUILD)/x86_64/installed-kernel.o $(BUILD)/x86_64/kernel.o: $(BUILD)/face/x86_64/face-worker.elf
+
+NATIVE_SPEAKER_SOURCES := $(wildcard sdk/infinity-speaker-core/*.rs sdk/infinity-speaker-worker/*.rs) sdk/infinity-speaker-core/Cargo.toml sdk/infinity-speaker-worker/Cargo.toml tools/build-speaker-worker.sh tools/speaker-model-pack.py tools/speaker-assets-fetch.py
+$(BUILD)/speaker/aarch64/speaker-worker.elf: $(NATIVE_SPEAKER_SOURCES) $(NATIVE_FACE_SOURCES)
+	CLANG="$(CLANG)" LLD="$(LD_LLD)" sh tools/build-speaker-worker.sh aarch64
+$(BUILD)/speaker/x86_64/speaker-worker.elf: $(NATIVE_SPEAKER_SOURCES) $(NATIVE_FACE_SOURCES)
+	CLANG="$(CLANG)" LLD="$(LD_LLD)" sh tools/build-speaker-worker.sh x86_64
+$(BUILD)/aarch64/installed-kernel.stamp $(BUILD)/aarch64/kernel.stamp: $(BUILD)/speaker/aarch64/speaker-worker.elf
+$(BUILD)/x86_64/installed-kernel.o $(BUILD)/x86_64/kernel.o: $(BUILD)/speaker/x86_64/speaker-worker.elf
 $(BUILD)/aarch64/loader.obj $(BUILD)/x86_64/loader.obj: boot/common/uefi_camera.h
 NATIVE_PYTHON_SOURCES := tools/native-python/uikit-artwork.py tools/native-python/uikit-artwork.rs kernel/ui/panel_recipe.rs assets/ui-design-kit/default/eclipse-precision-v1.rgba tools/native-python/media_build.py tools/native-python/build.py tools/native-python/bundled_packages.py tools/native-python/dependencies.py tools/native-python/tcl_sources.py tools/native-python/tcl_build.py tools/native-python/tk_build.py tools/native-python/ffi_build.py tools/native-python/module_inventory.py tools/native-python/extension.c tools/native-python/library.c tools/native-python/ffi-library.c $(shell find sdk/python sdk/compiler -type f)
 
@@ -872,7 +880,7 @@ test-mouse-menu: x86_64 aarch64
 	@tools/mouse-menu-test.sh x86_64
 	@tools/mouse-menu-test.sh aarch64
 
-test: task-automation-test desktop-session-test command-terminal-test ssh-test accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
+test: voice-identity-test task-automation-test desktop-session-test command-terminal-test ssh-test accounts-test face-login-test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
 
 .PHONY: ssh-test
 ssh-test:
@@ -1127,3 +1135,8 @@ desktop-session-test:
 .PHONY: aikit-memory-test
 aikit-memory-test:
 	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin aikit-memory-test
+
+.PHONY: voice-identity-test
+voice-identity-test:
+	@CARGO_TARGET_DIR=build/speaker/cargo cargo test --release --manifest-path sdk/infinity-speaker-core/Cargo.toml
+	@CARGO_TARGET_DIR=build/behavior-tests/cargo cargo test --manifest-path tools/behavior-harness/Cargo.toml --bin voice-identity-test

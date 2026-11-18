@@ -1,13 +1,29 @@
 //! Shared Eclipse Access setup geometry for painting and hit testing.
 use super::geometry::{Rect,Point};
+#[derive(Clone,Copy)]
 pub struct Layout {pub card:Rect,pub title:Rect,pub guidance:Rect,pub field:Rect,pub preview:Rect,pub mask:Rect,
     pub status:Rect,pub back:Rect,pub skip:Rect,pub primary:Rect,pub pixels:usize}
+// Accessed only by the serialized native console/compositor thread.
+#[cfg(target_os="none")]
+static mut LAYOUT_CACHE:Option<(usize,usize,Layout)>=None;
 impl Layout {
     // ------------------------=
     // FUNC: new
     // DESC: Keeps 4:3 camera pixels and generous shared gutters within the existing configuration content frame.
     // ------------------=
     pub fn new(width:usize,height:usize)->Self {
+        #[cfg(target_os="none")]
+        unsafe {if let Some((cached_w,cached_h,layout))=*core::ptr::addr_of!(LAYOUT_CACHE) {if (cached_w,cached_h)==(width,height) {return layout;}}}
+        let layout=Self::resolve(width,height);
+        #[cfg(target_os="none")]
+        unsafe {*core::ptr::addr_of_mut!(LAYOUT_CACHE)=Some((width,height,layout));}
+        layout
+    }
+    // ------------------------=
+    // FUNC: resolve
+    // DESC: Resolves immutable authored geometry once per viewport size.
+    // ------------------=
+    fn resolve(width:usize,height:usize)->Self {
         let mut layout=Self::fallback(width,height);
         if let Ok(template)=super::installer_template::InstallerTemplate::parse(super::installer_layout::CONFIGURATION_TEMPLATE_BYTES) {
             if template.element_count(9).is_some() {

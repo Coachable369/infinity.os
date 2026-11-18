@@ -1,0 +1,17 @@
+InfinityOS native speaker verification model attribution
+
+WeSpeaker contributors: https://github.com/wenet-e2e/wespeaker
+Model: English VoxCeleb ResNet34, distributed by k2-fsa/sherpa-onnx.
+Source: https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx
+SHA-256: 5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94
+
+WeSpeaker states that pretrained models follow the license of their training
+corpus; its VoxCeleb models use Creative Commons Attribution 4.0 International.
+https://github.com/wenet-e2e/wespeaker/blob/master/docs/pretrained.md
+License: https://creativecommons.org/licenses/by/4.0/
+VoxCeleb: https://mm.kaist.ac.kr/datasets/voxceleb/
+
+InfinityOS converts the fixed ONNX network into a native tensor format and
+executes it using its Rust inference code. Network weights are not retrained.
+Speaker similarity does not establish liveness or protection against recordings.
+No endorsement by WeSpeaker, VoxCeleb, or sherpa-onnx is implied.

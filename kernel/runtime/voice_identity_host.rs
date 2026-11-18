@@ -1,0 +1,241 @@
+//! Login-only microphone ownership and isolated speaker inference. Desktop voice
+//! capture, wake detection, recognition, playback and interruption are not used.
+use super::{identity::{StableId,UserState},execution::SecurityIdentity,native_app_task::Task,native_process::State};
+use infinity_speaker_core::{self as speaker,policy};
+use super::ai::voice_pcm::Resampler;
+use zeroize::Zeroizing;
+#[path="face_schedule.rs"] mod schedule;
+#[cfg(target_arch="aarch64")]
+static WORKER:&[u8]=include_bytes!("../../build/speaker/aarch64/speaker-worker.elf");
+#[cfg(target_arch="x86_64")]
+static WORKER:&[u8]=include_bytes!("../../build/speaker/x86_64/speaker-worker.elf");
+static MODEL:&[u8]=include_bytes!("../../build/speaker/models/resnet34.iface");
+static HEAD:&[u8]=include_bytes!("../../build/speaker/models/resnet34.head");
+const OWNER:SecurityIdentity=SecurityIdentity(*b"VOICEIDENTITY\0\0\0");
+pub use crate::ui::voice_setup_layout::{Stage,Failure};
+struct Host{
+ account:Option<StableId>,stage:Stage,enrollment:policy::Enrollment,pending:Option<super::voice_identity_login::Pending>,
+ proof:Option<super::voice_identity_login::Proof>,template:[u8;policy::BYTES],pcm:[i16;speaker::SAMPLES],length:usize,
+ cap:u64,resampler:Resampler,deadline:u64,captured:u64,renew:u64,level:u16,task:Option<Task>,terminal:Option<State>,scrubbed:usize,result:Option<[f32;speaker::DIM]>,login:bool,
+}
+static mut HOST:Host=Host{account:None,stage:Stage::Idle,enrollment:policy::Enrollment::new(),pending:None,proof:None,
+ template:[0;policy::BYTES],pcm:[0;speaker::SAMPLES],length:0,cap:0,resampler:Resampler::empty(),deadline:0,captured:0,renew:0,level:0,task:None,terminal:None,scrubbed:0,result:None,login:false};
+// ------------------------=
+// FUNC: now
+// DESC: Reads the existing monotonic clock without changing audio scheduling.
+// ------------------=
+fn now()->u64{super::ai::qwen::workers::clock_ns()}
+// ------------------------=
+// FUNC: snapshot
+// DESC: Exposes only presentation state and sample count, never raw audio or embeddings.
+// ------------------=
+pub fn snapshot()->(Stage,usize,u16){unsafe{let h=&*core::ptr::addr_of!(HOST);(h.stage,h.enrollment.count(),h.level)}}
+// ------------------------=
+// FUNC: caption
+// DESC: Supplies actionable login status while retaining password fallback.
+// ------------------=
+pub fn caption()->Option<&'static[u8]>{unsafe{let h=&*core::ptr::addr_of!(HOST);if !h.login{return None;}Some(match h.stage{
+ Stage::Capturing=>b"Face verified - speak naturally for 2 seconds",
+ Stage::Comparing=>b"Face verified - verifying your voice...",
+ Stage::Verified=>b"Face and voice verified",
+ Stage::Failed(Failure::NoEnrollment)=>b"Voice not enrolled - use your password",
+ Stage::Failed(Failure::Mismatch)=>b"Voice not matched - retry facial sign-in",
+ Stage::Failed(Failure::Quiet|Failure::Timeout)=>b"No clear voice captured - retry sign-in",
+ Stage::Failed(_)=>b"Voice check unavailable - use your password",
+ _=>return None,
+})}}
+// ------------------------=
+// FUNC: stop_capture
+// DESC: Revokes only this workflow's microphone lease and clears its private resampler history.
+// ------------------=
+fn stop_capture(h:&mut Host){
+ if h.cap!=0{crate::drivers::audio::stop_capture(OWNER);super::with_runtime(|r|{let _=r.capabilities.retire_leaf(h.cap,OWNER);});h.cap=0;}
+ h.resampler.clear();h.level=0;
+}
+// ------------------------=
+// FUNC: fail
+// DESC: Fails closed, erasing captured samples and pending face authority without creating a session.
+// ------------------=
+fn fail(h:&mut Host,error:Failure){
+ let stamp=super::ai::clock::SYSTEM.utc_nanoseconds(now()).map(|n|n/1_000_000_000);
+ let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"enrollment-or-login",format_args!("failure={} samples={} captured_samples={}",error as u8,h.enrollment.count(),h.length));
+ stop_capture(h);h.pcm.fill(0);h.length=0;h.pending=None;h.result=None;h.template.fill(0);h.stage=Stage::Failed(error);}
+// ------------------------=
+// FUNC: cancel
+// DESC: Cancels account/page transitions; worker memory is scrubbed cooperatively by the next poll.
+// ------------------=
+pub fn cancel(){unsafe{let h=&mut *core::ptr::addr_of_mut!(HOST);stop_capture(h);h.account=None;h.pending=None;h.proof=None;h.result=None;h.pcm.fill(0);h.template.fill(0);h.enrollment.clear();h.length=0;h.stage=Stage::Idle;h.login=false;}}
+// ------------------------=
+// FUNC: begin_enrollment
+// DESC: Authorizes enrollment with the configured account password before granting any microphone access.
+// ------------------=
+pub fn begin_enrollment(account:StableId,secret:&[u8])->bool{unsafe{
+ let h=&mut *core::ptr::addr_of_mut!(HOST);if h.task.is_some(){return false;}
+ let authorized=super::with_runtime(|r|r.identity.authenticate(account,secret,now()/1_000_000).is_ok()).unwrap_or(false);
+ if !authorized{fail(h,Failure::Unauthorized);return false;}
+ cancel();let h=&mut *core::ptr::addr_of_mut!(HOST);h.account=Some(account);h.deadline=now().saturating_add(240_000_000_000);h.stage=Stage::Ready;true
+}}
+// ------------------------=
+// FUNC: record
+// DESC: Starts explicit fresh enrollment capture using only an account-authorized short-lived lease.
+// ------------------=
+pub fn record()->bool{unsafe{let h=&mut *core::ptr::addr_of_mut!(HOST);
+ if h.account.is_none()||h.task.is_some()||!matches!(h.stage,Stage::Ready|Stage::Failed(Failure::Mismatch|Failure::Quiet|Failure::Clipped|Failure::Worker|Failure::Timeout|Failure::AnalysisTimeout|Failure::Unavailable)){return false;}
+ capture(h)
+}}
+// ------------------------=
+// FUNC: capture
+// DESC: Opens a bounded login-only capture lease and starts with empty private sample history.
+// ------------------=
+fn capture(h:&mut Host)->bool{
+ stop_capture(h);h.pcm.fill(0);h.length=0;h.captured=0;
+ let clock=now();
+ let cap=super::with_runtime(|r|r.capabilities.grant(super::capability::CapabilityType::AudioInput,0,1,0,OWNER,OWNER,Some(clock/1_000_000_000+20),0).ok()).flatten();
+ let Some(cap)=cap else{fail(h,Failure::Unavailable);return false;};h.cap=cap;
+ if !crate::drivers::audio::capture(OWNER,cap){fail(h,Failure::Unavailable);return false;}
+ let rate=crate::drivers::audio::capture_status().map(|s|s.sample_rate).unwrap_or(0);
+ if !h.resampler.configure(rate){fail(h,Failure::Unavailable);return false;}
+ h.renew=clock+1_000_000_000;h.deadline=clock+20_000_000_000;h.stage=Stage::Capturing;true
+}
+// ------------------------=
+// FUNC: accept_face
+// DESC: Consumes face proof, opens the selected account's authenticated template, then captures a new voice sample.
+// ------------------=
+pub fn accept_face(account:StableId,face:super::face_login::Proof)->bool{unsafe{
+ let h=&mut *core::ptr::addr_of_mut!(HOST);if h.task.is_some(){return false;}
+ cancel();let h=&mut *core::ptr::addr_of_mut!(HOST);h.login=true;h.account=Some(account);
+ h.pending=super::voice_identity_login::Pending::begin(account,face,now()/1_000_000);
+ if h.pending.is_none(){fail(h,Failure::Unauthorized);return false;}
+ let Some(key)=super::with_runtime(|r|r.nodes.voice_vault_key(&account.0)).flatten() else{fail(h,Failure::NoEnrollment);return false;};
+ let mut record=Zeroizing::new([0;super::voice_identity_vault::BYTES]);
+ let model:[u8;32]=MODEL[8..40].try_into().unwrap();
+ let plain=if crate::storage::voice_identity_load(account.0,&mut *record)==Ok(record.len()){
+ super::voice_identity_vault::open(&key,account,&model,&record)}else{None};
+ let Some(plain)=plain else{fail(h,Failure::NoEnrollment);return false;};h.template.copy_from_slice(&*plain);capture(h)
+}}
+// ------------------------=
+// FUNC: save
+// DESC: Persists verified speaker samples with authenticated encryption and verifies durable readback before reporting success.
+// ------------------=
+fn save(h:&mut Host)->bool{
+ let Some(account)=h.account else{return false;};
+ let mut payload=Zeroizing::new([0;policy::BYTES]);if h.enrollment.encode(&mut payload).is_err(){return false;}
+ let Some(key)=super::with_runtime(|r|r.nodes.voice_vault_key(&account.0)).flatten() else{return false;};
+ let Some(seed)=(unsafe{super::native_python_entropy::next(&account.0)})else{return false;};let seed=Zeroizing::new(seed);
+ let model:[u8;32]=MODEL[8..40].try_into().unwrap();
+ let Some(record)=super::voice_identity_vault::seal(&key,account,&model,seed[..12].try_into().unwrap(),&payload)else{return false;};
+ if crate::storage::voice_identity_commit(account.0,&*record).is_err(){return false;}
+ let mut readback=Zeroizing::new([0;super::voice_identity_vault::BYTES]);
+ crate::storage::voice_identity_load(account.0,&mut *readback)==Ok(readback.len())&&super::voice_identity_vault::open(&key,account,&model,&readback).is_some_and(|p|*p==*payload)
+}
+// ------------------------=
+// FUNC: launch
+// DESC: Starts only the packaged isolated Rust speaker worker with bounded private model memory.
+// ------------------=
+fn launch(h:&mut Host)->bool{unsafe{
+ stop_capture(h);
+ let Some((_,controller))=super::native_compile_job::platform()else{fail(h,Failure::Worker);return false;};
+ h.deadline=now()+60_000_000_000;h.result=None;h.scrubbed=0;h.terminal=None;
+ match Task::start_camera_worker(WORKER,OWNER,9,super::native_memory::memory_mut(),controller,h.deadline,128*1024*1024/4096){
+ Ok(task)=>{h.task=Some(task);h.stage=Stage::Comparing;true},Err(_)=>{fail(h,Failure::Worker);false}}
+}}
+// ------------------------=
+// FUNC: poll
+// DESC: Advances authorized capture, isolated inference, matching and private-memory reclamation without blocking desktop services.
+// ------------------=
+pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
+ let h=&mut *core::ptr::addr_of_mut!(HOST);let before=(h.stage,h.enrollment.count());let clock=now();
+ let valid=h.account.is_some()&&h.account==if h.login{selected}else{enrollment}
+  &&super::with_runtime(|r|h.account.is_some_and(|a|r.identity.user(a).is_some_and(|u|u.state==UserState::Active))).unwrap_or(false);
+ if !valid&&h.account.is_some(){cancel();}
+ let h=&mut *core::ptr::addr_of_mut!(HOST);
+ if h.stage==Stage::Capturing{
+  if clock>=h.deadline{fail(h,Failure::Timeout);}
+  else if clock>=h.renew&&!crate::drivers::audio::renew_capture(OWNER,h.cap){fail(h,Failure::Unavailable);}
+  else{
+   if clock>=h.renew{h.renew=clock+1_000_000_000;}
+   let mut raw=[0i16;4096];let mut mono=[0i16;4096];
+   let n=crate::drivers::audio::read_capture(OWNER,&mut raw);let(used,nout)=h.resampler.process(&raw[..n],&mut mono);
+   if used!=n{fail(h,Failure::Unavailable);}else{
+    h.level=mono[..nout].iter().map(|s|s.unsigned_abs()).max().unwrap_or(0);
+    if h.captured==0&&nout>0&&mono[..nout].iter().map(|&s|(s as i64)*(s as i64)).sum::<i64>()/nout as i64>90_000{h.captured=clock/1_000_000;}
+    if h.captured!=0{let take=nout.min(speaker::SAMPLES-h.length);h.pcm[h.length..h.length+take].copy_from_slice(&mono[..take]);h.length+=take;}
+    if h.length==speaker::SAMPLES{launch(h);}
+   }
+   raw.fill(0);mono.fill(0);
+  }
+ }
+ if let Some(mut task)=h.task.take(){
+  if let Some(state)=h.terminal{
+   if schedule::batch(now,|_|task.scrub_private(&mut h.scrubbed).then_some(())).is_some(){
+    if task.release(super::native_memory::memory_mut()).is_ok(){finish(h,state,valid&&h.stage==Stage::Comparing,now()/1_000_000);}
+    else{fail(h,Failure::Worker);}
+    h.terminal=None;
+   }else{h.task=Some(task);}
+  }
+  else{
+   let alive=valid&&h.stage==Stage::Comparing&&clock<h.deadline;
+   let state=schedule::batch(now,|tick| {
+   let state=task.poll(tick,alive&&tick<h.deadline,|caller,tables,op,args|{
+    use super::native_memory::{copy_to_user,copy_from_user};
+    if !alive||caller!=OWNER{return -13;}
+    match op{
+     0x1280=>{
+      let data=match args[0]{1=>MODEL,2=>HEAD,3=>core::slice::from_raw_parts(h.pcm.as_ptr()as *const u8,speaker::SAMPLES*2),_=>return -2};
+      if args[4]!=0||args[5]!=0{return -22;}
+      if args[3]==0{return if args[1]==0&&args[2]==0{data.len()as i64}else{-22};}
+      if args[3]>65536{return -22;}
+      let Some(end)=args[1].checked_add(args[3])else{return -22;};
+      let Some(bytes)=data.get(args[1]as usize..end as usize)else{return -22;};
+      if copy_to_user(tables,args[2],bytes).is_ok(){bytes.len()as i64}else{-14}
+     },
+     0x1281=>1,
+     0x1282=>{
+      if args[1]!=1024||h.result.is_some()||args[2..].iter().any(|&v|v!=0){return -22;}
+      let mut b=[0u8;1024];if copy_from_user(tables,args[0],&mut b).is_err(){return -14;}
+      let mut vector=[0f32;256];for (v,b)in vector.iter_mut().zip(b.chunks_exact(4)){*v=f32::from_le_bytes(b.try_into().unwrap());}
+      b.fill(0);if speaker::normalize(&mut vector).is_err(){return -22;}h.result=Some(vector);1024
+     },_=>-38,
+    }
+   });
+   (state!=State::Runnable).then_some(state)
+   }).unwrap_or(State::Runnable);
+   if state!=State::Runnable{
+    h.terminal=Some(state);h.pcm.fill(0);h.length=0;
+
+   }
+   h.task=Some(task);
+  }
+ }
+ before!=(h.stage,h.enrollment.count())
+}}
+// ------------------------=
+// FUNC: take_proof
+// DESC: Delivers a completed combined proof only once to the kernel login controller.
+// ------------------=
+pub fn take_proof()->Option<super::voice_identity_login::Proof>{unsafe{(&mut *core::ptr::addr_of_mut!(HOST)).proof.take()}}
+
+// ------------------------=
+// FUNC: finish
+// DESC: Publishes sample or authentication results only after the isolated worker's private memory has been scrubbed and released.
+// ------------------=
+fn finish(h:&mut Host,state:State,alive:bool,clock:u64){
+    if alive&&state==State::Exited(0){
+     if let Some(mut vector)=h.result.take(){
+      if h.login{
+       if policy::matches(&h.template,&vector)==Ok(true){h.proof=h.pending.take().and_then(|p|p.complete(h.account.unwrap(),h.captured,clock));
+        if h.proof.is_some(){h.stage=Stage::Verified;}else{fail(h,Failure::Unauthorized);}}
+       else{fail(h,Failure::Mismatch);}
+       h.template.fill(0);
+      }else if h.enrollment.add(vector).is_err(){h.stage=Stage::Failed(Failure::Mismatch);}
+      else if h.enrollment.count()==policy::COUNT{if save(h){h.stage=Stage::Saved;h.enrollment.clear();}else{fail(h,Failure::Storage);}}
+      else{h.stage=Stage::Ready;}
+      for x in &mut vector{unsafe{core::ptr::write_volatile(x,0.0);}}
+     }else{fail(h,Failure::Worker);}
+    }else if h.stage!=Stage::Idle{
+        let stamp=super::ai::clock::SYSTEM.utc_nanoseconds(now()).map(|n|n/1_000_000_000);
+        let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"worker",format_args!("state={state:?} deadline_expired={}",now()>=h.deadline));
+        let error=if state==State::Exited(74){Failure::Quiet}else if state==State::Exited(78){Failure::Clipped}else if now()>=h.deadline{Failure::AnalysisTimeout}else{Failure::Worker};
+        fail(h,error);
+    }
+}

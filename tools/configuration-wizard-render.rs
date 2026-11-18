@@ -10,6 +10,7 @@ use crate::ui::{geometry::Rect, installer_layout::{CONFIGURATION_TEMPLATE_BYTES,
 #[path="../kernel/core/bootstrap/access_view.rs"] mod access_view;
 #[path="../kernel/core/bootstrap/access_input_view.rs"] mod access_input_view;
 #[path="../kernel/core/bootstrap/face_setup_view.rs"] mod face_setup_view;
+#[path="../kernel/core/bootstrap/voice_setup_view.rs"] mod voice_setup_view;
 #[path="../kernel/core/bootstrap/face_scan_view.rs"] mod face_scan_view;
 #[cfg(studio_native_preview)]
 #[path="../kernel/core/bootstrap/access_scale.rs"] mod access_scale;
@@ -385,7 +386,9 @@ pub(super) fn render_draft(bytes:&[u8],kind:u8,screen:u8,width:usize,height:usiz
             return Err("Native boot scene rejected the template".into());
         }
     } else if kind==1 {
-        if screen==9 {
+        if screen==10 {
+            if !target.voice_template_frame(bytes,focus,crate::ui::voice_setup_layout::Stage::Ready,0,0) { return Err("Native voice enrollment rejected template".into()); }
+        } else if screen==9 {
             if !target.face_template_frame(bytes,b"Everyday",focus,false,&crate::runtime::face_setup::Setup::new(),true) {
                 return Err("Native facial enrollment scene rejected the template".into());
             }
@@ -1015,4 +1018,26 @@ fn verify_template_bitmap_damage() {
         }}
         assert_eq!(actual,expected);
     }}}
+}
+
+// ------------------------=
+// FUNC: verify_voice
+// DESC: Captures production enrollment states with real template geometry and verifies progress changes native pixels.
+// ------------------=
+pub(super) fn verify_voice(){
+    let wave=crate::ui::voice_setup_layout::wave_height;
+    assert_ne!(wave(100,19,0,false,0),wave(100,19,0,false,360));
+    assert_ne!(wave(100,19,0,true,0),wave(100,19,0,true,360));
+    assert!(wave(100,19,4000,false,0)>wave(100,19,0,false,0));
+    for h in [0,1,20,200] {for b in 0..39 {assert!(wave(h,b,u16::MAX,false,900)<=h);}}
+
+ use crate::ui::voice_setup_layout::{Stage,Failure};
+ let (w,h)=(1672,941);let mut pixels=vec![0u32;w*h];let mut d=display(&mut pixels,w,h);
+ std::fs::create_dir_all("builds/validation/voice-enrollment").unwrap();
+ let mut previous=Vec::new();
+ for (name,stage,count,level) in [("idle",Stage::Idle,0,0),("recording",Stage::Capturing,1,2000),("comparing",Stage::Comparing,1,0),("retry",Stage::Failed(Failure::Mismatch),1,0),("saved",Stage::Saved,3,0)]{
+  assert!(d.voice_template_frame(CONFIGURATION_TEMPLATE_BYTES,1,stage,count,level));
+  assert_ne!(pixels,previous);previous=pixels.clone();
+  write_ppm(&format!("builds/validation/voice-enrollment/{name}.ppm"),&pixels,w,h);
+ }
 }

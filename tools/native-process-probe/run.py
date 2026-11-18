@@ -15,6 +15,28 @@ ROOT = Path(__file__).resolve().parents[2]
 PYTHON_SOURCE_LIMIT = 1024 * 1024
 
 # ------------------------=
+# FUNC: speaker_result
+# DESC: Validates binary native-worker output and memory recovery without interpreting diagnostic text as acceptance.
+# ------------------=
+def speaker_result(data,work,args):
+    assert len(data)>=1088
+    marker,visits,before,after=struct.unpack_from('<4Q',data)
+    assert marker==0x535045414b455231 and visits>0 and before==after
+    started,prepared,inferred,reclaimed=struct.unpack_from('<4Q',data,32)
+    assert 0<started<=prepared<inferred<=reclaimed
+    timing=dict(prepare_ms=(prepared-started)/1e6,inference_ms=(inferred-prepared)/1e6,reclaim_ms=(reclaimed-inferred)/1e6)
+    vector=data[64:1088]
+    values=struct.unpack('<256f',vector)
+    import math
+    assert all(math.isfinite(v) for v in values)
+    assert abs(sum(v*v for v in values)-1)<0.001
+    destination=ROOT/'builds/validation/speaker-identity'/args.arch
+    destination.mkdir(parents=True,exist_ok=True)
+    (destination/'native-embedding.bin').write_bytes(vector)
+    (destination/'worker.json').write_text(json.dumps(dict(hardware_user_mode=True,memory_reclaimed=True,visits=visits,accelerator=args.accelerator,timing=timing,installed_login_verified=False),indent=2)+'\n')
+    print({'speaker_worker':args.arch,'visits':visits,'memory_reclaimed':True,'timing':timing})
+
+# ------------------------=
 # FUNC: snapshot_python_source
 # DESC: Reads bounded repository-owned candidate bytes once into a private read-only build input, never evaluating the candidate.
 # ------------------=
@@ -273,12 +295,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=["x86_64", "aarch64"], default="x86_64")
     parser.add_argument("--gic", choices=[2, 3], type=int, default=2)
+    parser.add_argument("--accelerator", choices=["tcg", "hvf"], default="tcg")
     parser.add_argument("--split-eoi", action="store_true")
     parser.add_argument("--firmware", action="store_true", help="Use production ARM UEFI discovery and handoff")
     parser.add_argument("--virtualbox", action="store_true", help="Build a production-handoff probe for the repository-owned VirtualBox runner")
     parser.add_argument("--validate-virtualbox-serial", type=Path, help="Validate binary records captured by the VirtualBox ARM probe")
     parser.add_argument("--validate-virtualbox-compiler-serial", type=Path, help="Validate compiler records captured by the VirtualBox ARM probe")
     parser.add_argument("--memory", choices=["512M", "1G"], default="1G", help="Firmware guest RAM for low-memory boot coverage")
+    parser.add_argument("--speaker-pcm", type=Path, help="Run native speaker embedding on bounded test PCM; requires --compiler worker ELF")
     parser.add_argument("--compiler", type=Path, help="Run a native Clang/LLD image in isolated hardware user mode")
     parser.add_argument("--python-script", action="store_true", help="Execute a real Python script using the supplied native interpreter image")
     parser.add_argument("--python-source", type=Path, help="Use this repository-owned immutable guest source; with --python-validation only trusted syntax/import validation runs")
@@ -322,6 +346,8 @@ def main():
     assert not args.python_runtime_exception or ((args.python_exception_line == 0) if args.python_runtime_exception == "none" else (args.python_exception_line > 0))
     assert not args.reject_invalid_source or (args.compiler and args.compile_source and not args.link_object)
     arm = args.arch == "aarch64"
+    if args.accelerator == "hvf" and (not arm or args.gic != 3 or args.virtualbox):
+        parser.error("HVF requires the ARM GICv3 QEMU probe")
     assert not args.firmware or (arm and not args.split_eoi)
     assert not args.virtualbox or (arm and args.firmware)
     target = "aarch64-unknown-none-softfloat" if arm else "x86_64-unknown-none"
@@ -418,7 +444,14 @@ def main():
         env["INFINITY_COMPILER_SOURCE"] = "1"
     if args.python_source_snapshot:
         verify_python_snapshot(args.python_source_snapshot)
+    if args.speaker_pcm:
+        assert args.compiler and not args.firmware and not args.python_script
+        sample=args.speaker_pcm.resolve()
+        assert sample.is_relative_to(ROOT) and sample.stat().st_size==64480
+        env["INFINITY_SPEAKER_PCM"]=str(sample)
     features = (["compiler-clock-probe"] if args.compiler else []) + (["python-pip-probe"] if args.python_pip else [])
+    if args.speaker_pcm:
+        features.append("speaker-probe")
     subprocess.run(["cargo", "build", "--release", "-Z", "build-std=core", "--target",
         target, "--manifest-path", "tools/native-process-probe/Cargo.toml"] +
         (["--features", ",".join(features)] if features else []), env=env, check=True)
@@ -443,11 +476,14 @@ def main():
             boot_args=["-bios","/opt/homebrew/share/qemu/edk2-aarch64-code.fd",
                 "-drive",f"if=none,id=esp,format=raw,file=fat:rw:{esp}","-device","virtio-blk-pci,drive=esp","-net","none"]
         with (work / "qemu.log").open("wb") as log:
-            subprocess.run(["qemu-system-aarch64", "-machine", f"virt,gic-version={args.gic}", "-cpu", "max",
+            subprocess.run(["qemu-system-aarch64", "-machine", f"virt,gic-version={args.gic}", "-accel", args.accelerator, "-cpu", "host" if args.accelerator=="hvf" else "max",
                 "-m", args.memory if args.firmware else "512M", "-display", "none", "-monitor", "none",
                 "-qmp", f"unix:{work / 'monitor.sock'},server=on,wait=off", "-serial", f"file:{work / 'result.bin'}",
-                *boot_args], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600 if args.python_pip else 120 if args.compiler or args.firmware else 30)
+                *boot_args], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600 if args.python_pip or args.speaker_pcm else 120 if args.compiler or args.firmware else 30)
         data = (work / "result.bin").read_bytes()
+        if args.speaker_pcm:
+            speaker_result(data,work,args)
+            return
         if args.python_pip:
             pip_result(data, work, args)
             return
@@ -478,9 +514,12 @@ def main():
             "-drive", "if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd",
             "-drive", f"format=raw,file=fat:rw:{esp}", "-boot", "order=c", "-net", "none",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-debugcon", f"file:{work / 'result.bin'}",
-            "-display", "none", "-serial", "stdio", "-no-reboot"], stdout=log, stderr=subprocess.STDOUT, timeout=600 if args.python_pip else 120 if args.compiler else 60)
+            "-display", "none", "-serial", "stdio", "-no-reboot"], stdout=log, stderr=subprocess.STDOUT, timeout=600 if args.python_pip or args.speaker_pcm else 120 if args.compiler else 60)
     data = (work / "result.bin").read_bytes()
     assert run.returncode == 33, (run.returncode, data.hex(), (work / "qemu.log").read_text()[-2000:])
+    if args.speaker_pcm:
+        speaker_result(data,work,args)
+        return
     if args.python_pip:
         pip_result(data, work, args)
         return
