@@ -331,16 +331,23 @@ impl Utterance {
     // ------------------=
     pub const fn onset_threshold(&self) -> u16 { self.detector.threshold }
     // ------------------------=
-    // FUNC: idle_wake_gate
-    // DESC: Enables quiet-room recovery only during idle desktop wake capture, never during playback or recognition.
+    // FUNC: wake_prefix_retention
+    // DESC: Retains a complete soft address for non-playback wake capture, including capture pending recognition of an earlier sound.
     // ------------------=
-    pub fn idle_wake_gate(&mut self, enabled: bool) {
+    pub fn wake_prefix_retention(&mut self, enabled: bool) {
         // Retain the complete softly spoken address before a louder command
         // crosses the onset gate. This adds no endpoint delay and does not
         // alter duplex capture. Never change an already selected segment.
         if self.detector.state == VadState::Waiting {
             self.detector.pre_roll = if enabled { IDLE_WAKE_PRE_ROLL } else { PRE_ROLL };
         }
+    }
+    // ------------------------=
+    // FUNC: idle_wake_gate
+    // DESC: Enables quiet-room recovery only during idle desktop wake capture, never during playback or recognition.
+    // ------------------=
+    pub fn idle_wake_gate(&mut self, enabled: bool) {
+        self.wake_prefix_retention(enabled);
         if !enabled && self.detector.adapt_idle {
             self.detector.threshold = self.detector.calibrated_onset;
             self.detector.continuation_threshold = self.detector.continuation_threshold.max(self.detector.calibrated_tail);

@@ -1651,10 +1651,13 @@ unsafe fn capture_frame(duplex: bool) -> bool {
         clear_captured_turn();
         FOLLOWUP_ONSET_UNTIL = 0;
     }
-    let idle_wake = STATE == State::Listening && !duplex && !WAKE_ARMED && now >= ECHO_VALID_UNTIL;
+    let wake_capture = !duplex && !WAKE_ARMED && now >= ECHO_VALID_UNTIL;
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-    let idle_wake = idle_wake && OWNER != LOGIN_OWNER;
-    (&mut *(&raw mut UTTERANCE)).idle_wake_gate(idle_wake);
+    let wake_capture = wake_capture && OWNER != LOGIN_OWNER;
+    (&mut *(&raw mut UTTERANCE)).idle_wake_gate(STATE == State::Listening && wake_capture);
+    // Keep the next wake prefix while an unrelated segment is decoded, without
+    // enabling idle threshold adaptation during recognition or playback.
+    (&mut *(&raw mut UTTERANCE)).wake_prefix_retention(wake_capture);
     let consumed = if accept {
         (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[..n])
     } else {

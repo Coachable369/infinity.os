@@ -2262,16 +2262,21 @@ fn first_soft_wake_after_idle_tests(owner: runtime::execution::SecurityIdentity)
     MICROPHONE.lock().unwrap().extend([400; 8000]);
     drain_microphone();
     let captures = CAPTURES.load(Ordering::SeqCst);
-    for _ in 0..3 {
+    for recognizing_ambient in [false, true, false] {
         NOW.fetch_add(10_000_000_000, Ordering::SeqCst);
         MICROPHONE.lock().unwrap().extend(vec![400; voice_vad::RATE * 10]);
         drain_microphone();
+        if recognizing_ambient { begin_delayed_recognition(1800); }
         let turns = TURNS.load(Ordering::SeqCst);
         let requests = RECOGNITION_REQUESTS.lock().unwrap().len();
         MICROPHONE.lock().unwrap().extend(vec![600; voice_vad::RATE]);
         MICROPHONE.lock().unwrap().extend([1800; voice_vad::FRAME * 5]);
         MICROPHONE.lock().unwrap().extend(vec![400; voice_vad::END_SILENCE]);
         drain_microphone();
+        if recognizing_ambient {
+            finish_recognition(b"ambient speech");
+            conversation::poll();
+        }
         assert_eq!(conversation::state().0, conversation::State::Recognizing);
         assert_eq!(RECOGNITION_REQUESTS.lock().unwrap().len(), requests + 1);
         assert_eq!(RECOGNIZED.lock().unwrap().iter().filter(|&&v| v == 600).count(), voice_vad::RATE);
