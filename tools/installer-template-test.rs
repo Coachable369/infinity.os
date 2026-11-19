@@ -797,9 +797,9 @@ fn main() {
                 input_count += 1;
             }
         }
-        // Facial enrollment is the ninth semantic screen and owns its camera
-        // workflow; Studio's contract intentionally omits the eight-step rail.
-        assert_eq!(progress_count, if screen == 9 { 0 } else { 8 });
+        // Face and voice enrollment own their three-capture/sample workflows;
+        // neither biometric screen uses the general configuration step rail.
+        assert_eq!(progress_count, if matches!(screen, 9 | 10) { 0 } else { 8 });
         assert!(input_count <= 1);
     }
     if configuration.screen_count() >= 2 {
