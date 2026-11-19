@@ -2392,6 +2392,11 @@ impl SystemLayout {
             }
         }
         if section == 1 {
+            // Authored paired cards collapse to a readable single column on narrow windows.
+            if content_width < 800 * self.scale && self.settings_has_paired_cards(section) {
+                total_content_height = state.row_count.clamp(1, 8) * 88 + 40
+                    + state.expanded_row.map(|i| settings_detail_height(i, section) + 8).unwrap_or(0);
+            }
             total_content_height =
                 total_content_height.saturating_add(SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14);
         }
@@ -2468,6 +2473,19 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: settings_has_paired_cards
+    // DESC: Detects a Studio-authored paired row layout without overriding custom single-column documents.
+    // ------------------=
+    fn settings_has_paired_cards(self, section: usize) -> bool {
+        use crate::ui::installer_template::InstallerTemplateRole as Role;
+        match (crate::ui::settings_template::role_at(section, Role::Metadata, 0),
+               crate::ui::settings_template::role_at(section, Role::Metadata, 1)) {
+            (Some(a), Some(b)) => a.frame.y == b.frame.y && a.frame.x != b.frame.x,
+            _ => false,
+        }
+    }
+
+    // ------------------------=
     // FUNC: settings_world_shift_hero_geometry
     // DESC: Places the full-width World Shift gateway at the top of the Themes and Skins scroll content.
     // ------------------=
@@ -2516,6 +2534,8 @@ impl SystemLayout {
                 ),
             ) {
                 let window = self.settings_window_geometry_for_section(state, section);
+                let stacked = section == 1 && window.viewport.width < (800 * self.scale) as u32
+                    && self.settings_has_paired_cards(section);
                 let outer = window.window;
                 let map_x = |value: u16| {
                     outer.x.max(0) as usize
@@ -2531,15 +2551,16 @@ impl SystemLayout {
                     .expanded_row
                     .map(|expanded| settings_detail_height(expanded, section) * self.scale)
                     .unwrap_or(0);
-                let prior_detail =
-                    usize::from(state.expanded_row.is_some_and(|expanded| expanded < index))
-                        * (detail_height + 8 * self.scale);
+                let prior_detail = usize::from(state.expanded_row.is_some_and(|expanded| {
+                    crate::ui::settings_template::role_at(section, InstallerTemplateRole::Metadata, expanded)
+                        .is_some_and(|previous| if stacked { expanded < index } else { previous.frame.y < row.frame.y })
+                })) * (detail_height + 8 * self.scale);
                 let hero_offset = usize::from(section == 1)
                     * (SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14)
                     * self.scale;
                 let first=crate::ui::settings_template::role_at(section,InstallerTemplateRole::Metadata,0).unwrap_or(row);
                 let first_top=map_y(first.frame.y);
-                let row_top=first_top.max(window.viewport.y.max(0) as usize) + usize::from(row.frame.y.saturating_sub(first.frame.y))*800*self.scale/1000;
+                let row_top=first_top.max(window.viewport.y.max(0) as usize) + if stacked { index*88*self.scale } else { usize::from(row.frame.y.saturating_sub(first.frame.y))*800*self.scale/1000 };
                 let summary_top = row_top as i32 + hero_offset as i32 + prior_detail as i32
                     - (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
                 let mut summary = rect(
@@ -2550,6 +2571,10 @@ impl SystemLayout {
                     row.frame.height as usize * 800*self.scale/1000,
                 );
                 summary.y = summary_top;
+                if stacked {
+                    summary.x = window.viewport.x + (24 * self.scale) as i32;
+                    summary.width = window.viewport.width.saturating_sub((24 * self.scale) as u32);
+                }
                 summary.width = summary.width.min(window.viewport.right().saturating_sub(summary.x).max(0) as u32);
                 return SettingsRowGeometry {
                     summary,
@@ -2747,7 +2772,13 @@ impl SystemLayout {
             crate::ui::installer_template::InstallerTemplateRole::Metadata,
             index,
         )?;
-        child.x += row.x - anchor.x;
+        if section == 1 && self.settings_has_paired_cards(section)
+            && self.settings_window_geometry_for_section(state, section).viewport.width < (800*self.scale) as u32 {
+            child.x = row.x + ((child.x-anchor.x) as i64 * row.width as i64 / anchor.width.max(1) as i64) as i32;
+            child.width = (child.width as u64 * row.width as u64 / anchor.width.max(1) as u64) as u32;
+        } else {
+            child.x += row.x - anchor.x;
+        }
         let row_frame=crate::ui::settings_template::role_at(section,crate::ui::installer_template::InstallerTemplateRole::Metadata,index)?.frame;
         let frame=crate::ui::settings_template::role_at(section,role,index)?.frame;
         child.y=row.y+(i32::from(frame.y)-i32::from(row_frame.y))*800*self.scale as i32/1000;

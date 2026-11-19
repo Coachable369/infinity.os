@@ -19,8 +19,9 @@ No all-application 95% result has been established.
 ## Remaining visual acceptance
 
 - Live-rendered Themes & Skins still has legacy authored navigation color,
-  dense single-column rows, clipped hero caption and proportions different from
-  the approved layout. This page has not passed.
+  proportions different from the approved layout. The two-column cards,
+  responsive fallback and reference-size hero clipping are corrected and
+  host-rendered; the complete page has not passed the 95% gate.
 - App-specific menus, tabs, scrollbars, text baselines and full control states
   require reference-size screenshots for every affected application.
 - Desktop launcher, tray, top bar and widget composition need separate review;

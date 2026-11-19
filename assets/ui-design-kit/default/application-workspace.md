@@ -74,7 +74,7 @@ mismatch explicitly; do not claim exact visual parity while defects remain.
 
 The reusable button and input adapter uses production-rendered Precision pixels,
 not hand-drawn substitutes. `tools/native-python/uikit-artwork.py` compiles the
-OS surface sampler and exports normal, focused/hovered, and pressed states for
+OS surface sampler and exports normal, focused/hovered, pressed, and disabled states for
 secondary buttons, primary buttons, and fields. Native Python builds regenerate
 these states from the current kit. The SDK ships the same artwork module.
 Inspectors must scroll when explicit zoom or a smaller viewport reduces space.

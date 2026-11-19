@@ -99,7 +99,9 @@ fn dock_panel_coverage() {
         glass.paint(&mut actual,stride,(4,4,width,height),(0,0,stride,height+8),material);
         let panel=panel_recipe::Material{fill:(16,27,58),edge:(134,199,255),opacity:255,
             edge_opacity:0,focus:0,pressed:false,scale};
-        let packed=if bgr {0x234567}else{0x674523};
+        let fill=panel_recipe::surface_style(panel_recipe::Surface::Panel).fill
+            .map(|color|color&0xffffff).unwrap_or(material.primary);
+        let packed=if bgr {fill}else{((fill&255)<<16)|(fill&0xff00)|((fill>>16)&255)};
         let mut fractional=0;let mut edge_pixels=0;
         for y in 0..height {for x in 0..width {
             let coverage=panel_recipe::pixel(panel_recipe::Surface::Panel,width,height,x,y,panel).3;

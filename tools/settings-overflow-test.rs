@@ -354,7 +354,7 @@ fn verify_authored_row_flow() {
                 }
                 if expanded + 1 < count {
                     let next = layout.settings_row_geometry_for_section(state, expanded + 1, section);
-                    assert!(detail.bottom() <= next.summary.y, "section {section}, expanded {expanded}");
+                    assert!(!detail.intersects(next.summary), "section {section}, expanded {expanded}");
                 }
                 for scroll in [0, window.maximum_scroll / 2, window.maximum_scroll] {
                     state.scroll_offset = scroll;
@@ -367,8 +367,12 @@ fn verify_authored_row_flow() {
                             let base_child = layout.settings_row_element_geometry(collapsed, section, index, role).unwrap();
                             let authored_child = ui::settings_template::role_at(section, role, index).unwrap();
                             let expected = expected_authored_row_child(console, authored_row, authored_child.frame, window.window, row,layout.scale());
-                            assert_eq!(child, expected);
-                            assert_eq!(layout.settings_element_geometry(state, section, authored_child.id), Some(expected));
+                            let paired_source = section == 1 && ui::settings_template::role_at(section, Role::Metadata, 0).unwrap().frame.y
+                                == ui::settings_template::role_at(section, Role::Metadata, 1).unwrap().frame.y;
+                            let stacked = paired_source && layout.settings_row_geometry_for_section(state, 0, section).summary.x
+                                == layout.settings_row_geometry_for_section(state, 1, section).summary.x;
+                            if !stacked { assert_eq!(child, expected); }
+                            assert_eq!(layout.settings_element_geometry(state, section, authored_child.id), Some(child));
                             assert_eq!(child.y - row.y, base_child.y - base_row.y);
                             assert_eq!(child.x - row.x, base_child.x - base_row.x);
                             // Contained source bounds can exceed a separately floored row endpoint

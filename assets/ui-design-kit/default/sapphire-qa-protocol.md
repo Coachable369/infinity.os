@@ -54,6 +54,8 @@ remaining failures. Do not change the frozen desktop audio pipeline during UI QA
 
 ## Current checkpoint
 
-Inventory created; all state checks remain unverified. A separate Settings
-payload has been compiled from the pending Studio document for current-design
-captures. Existing installed-runtime and publication acceptance remain open.
+Inventory created. Themes geometry, expansion, scrolling and reference-size
+clipping have been corrected and verified in production-painter host captures.
+Shared opacity and Python disabled-state defects are corrected. Native painter
+and Python GUI behavioral suites pass. Per-element 95% visual scores and
+installed-runtime acceptance remain open; see `sapphire-defects.md` for evidence.

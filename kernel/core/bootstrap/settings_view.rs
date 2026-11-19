@@ -456,13 +456,13 @@ impl DisplayDevice {
             self.ui_text_elided_strong(
                 hero_left + 24 * scale,
                 hero_top + 62 * scale,
-                hero_width * 48 / 100,
+                hero_width.saturating_sub(48 * scale),
                 b"Move your complete workspace between living worlds.",
                 190,
                 224,
                 243,
             );
-            let action=crate::ui::geometry::Rect{x:(hero_left+24*scale)as i32,y:(hero_top+hero_height.saturating_sub(56*scale))as i32,width:(176*scale)as u32,height:(38*scale)as u32};
+            let action=crate::ui::geometry::Rect{x:(hero_left+24*scale)as i32,y:(hero_top+hero_height.saturating_sub(56*scale))as i32,width:(260*scale).min(hero_width.saturating_sub(48*scale))as u32,height:(40*scale)as u32};
             self.app_button_surface(action,true,0,false,scale);
             self.ui_text_elided_strong(action.x as usize+8*scale,action.y as usize+6*scale,action.width as usize-16*scale,b"Open World Shift",235,250,255);
     }

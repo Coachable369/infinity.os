@@ -611,13 +611,17 @@
           "result": "captured-not-accepted",
           "fixture": "simulated services",
           "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
-        }
+        },
+        "builds/validation/sapphire-coverage/themes-responsive.png",
+        "builds/manifests/20261119T231931661446Z-42458.json",
+        "builds/manifests/20261119T232132731795Z-42708.json"
       ],
       "defects": [
         "SAPPHIRE-001",
         "SAPPHIRE-002",
         "SAPPHIRE-003"
-      ]
+      ],
+      "correction_status": "Three initial geometry/clipping failures corrected; full visual acceptance remains open"
     },
     {
       "id": "settings-screens:3",
@@ -644,8 +648,11 @@
           "result": "captured-not-accepted",
           "fixture": "simulated services",
           "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
-        }
-      ]
+        },
+        "builds/validation/sapphire-coverage/tasks-accounts.png",
+        "builds/manifests/20261119T232341417327Z-43080.json"
+      ],
+      "review_note": "Host production painter and state checks reviewed; installed and per-element 95% acceptance unverified"
     },
     {
       "id": "settings-screens:4",
@@ -1116,7 +1123,11 @@
         "unsaved-close"
       ],
       "status": "unverified",
-      "evidence": []
+      "evidence": [
+        "builds/validation/sapphire-coverage/tasks-accounts.png",
+        "builds/manifests/20261119T232341417327Z-43080.json"
+      ],
+      "review_note": "Host production painter and state checks reviewed; installed and per-element 95% acceptance unverified"
     },
     {
       "id": "launcher:Network",
@@ -1472,7 +1483,11 @@
         "resize"
       ],
       "status": "unverified",
-      "evidence": []
+      "evidence": [
+        "builds/manifests/20261119T232341417327Z-43080.json",
+        "builds/manifests/20261119T232142957288Z-42729.json"
+      ],
+      "review_note": "Shared pixel/adapter checks and Python GUI behavior passed; complete reference-state visual scoring remains open"
     },
     {
       "id": "supplement:Generated native C application",

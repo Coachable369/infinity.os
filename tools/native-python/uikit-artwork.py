@@ -17,7 +17,7 @@ def main():
     executable.parent.mkdir(parents=True,exist_ok=True)
     subprocess.run(["rustc","--edition=2021",str(Path(__file__).with_suffix('.rs')),"-o",str(executable)],check=True)
     raw=subprocess.check_output([str(executable)])
-    assert len(raw)==9*80*40*3
+    assert len(raw)==12*80*40*3
     data=base64.b64encode(zlib.compress(raw,9)).decode()
     tokens=(root/"assets/ui-design-kit/default/uikit-tokens.bin").read_bytes()
     assert tokens[:8]==b"IUIKIT01" and len(tokens)==64

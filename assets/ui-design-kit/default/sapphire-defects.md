@@ -6,9 +6,9 @@ correcting default presentation.
 
 | ID | Surface | Observed failure | Required verification | Status |
 | --- | --- | --- | --- | --- |
-| SAPPHIRE-001 | Themes & Skins | Dense single-column setting rows do not match the approved two-column reference composition and spacing. | Normal/maximized/restored layouts, row hit targets, expanded details and keyboard order. | Open |
-| SAPPHIRE-002 | Themes & Skins | Hero subtitle and action label are truncated at the reference capture size. | Complete readable copy with adequate button width and responsive wrapping; no overlap at supported sizes. | Open |
-| SAPPHIRE-003 | Themes & Skins | Wallpaper row is cut off at the bottom of the initial viewport. | Reference layout density, complete visible controls and usable scrolling at smaller sizes. | Open |
+| SAPPHIRE-001 | Themes & Skins | Dense single-column setting rows do not match the approved two-column reference composition and spacing. | Normal/maximized/restored layouts, row hit targets, expanded details and keyboard order. | Corrected in host production render; installed verification pending |
+| SAPPHIRE-002 | Themes & Skins | Hero subtitle and action label are truncated at the reference capture size. | Complete readable copy with adequate button width and responsive wrapping; no overlap at supported sizes. | Corrected in host production render; installed verification pending |
+| SAPPHIRE-003 | Themes & Skins | Wallpaper row is cut off at the bottom of the initial viewport. | Reference layout density, complete visible controls and usable scrolling at smaller sizes. | Corrected in host production render; installed verification pending |
 
 Evidence: `builds/validation/sapphire-coverage/settings-2.png`, 1536×1024,
 compiled from the current pending Studio document. Manifest:
@@ -26,3 +26,26 @@ compiled from the current pending Studio document. Manifest:
 - Desktop preview scenes use different authored backgrounds. Do not score their
   relative colors against one another until backdrop and transparency fixtures
   are normalized to each approved reference.
+
+## Correction evidence — 2026-11-19
+
+- Themes cards now use the reference two-column composition, with a one-column
+  fallback below 800 logical content pixels. Expansion moves subsequent rows
+  without moving the adjacent card in the same row. All eight cards fit the
+  1536×1024 default capture. Hero action and subtitle fit that reference size.
+- Reviewed default and expanded first/second cards at 1024, 1536 and 1920 widths:
+  `builds/validation/sapphire-coverage/themes-responsive.png`. Native capture
+  manifest: `20261119T232132731795Z-42708.json`.
+- Responsive geometry, hit targets, expansion and scrolling passed the behavioral
+  harness: `20261119T231931661446Z-42458.json`.
+- Shared panel 100% opacity now yields an opaque center on different backdrops.
+  Python UIKit includes genuine disabled artwork for buttons and fields.
+- Active production-painter suite passed:
+  `20261119T232341417327Z-43080.json`. This includes Settings, Task Manager,
+  shared surfaces, clipping and retained-window rendering. It is host evidence.
+- Task Manager and account-management state captures were reviewed in
+  `builds/validation/sapphire-coverage/tasks-accounts.png`.
+
+These corrections do not establish a 95% score for complete screens. Legacy
+Studio-authored sidebar color, app-specific composition and installed runtime
+states still require comparison. Narrow hero copy can elide at small widths.

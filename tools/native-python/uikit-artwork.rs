@@ -13,10 +13,10 @@ fn main() {
     let colors=kit_tokens::colors();
     let channels=|value:u32|((value>>16)as u8,(value>>8)as u8,value as u8);
     for kind in [Surface::Secondary,Surface::Primary,Surface::Field] {
-        for state in 0..3 {
+        for state in 0..4 {
             for y in 0..40 { for x in 0..80 {
                 let fill=channels(colors[if kind==Surface::Primary {6}else{1}]);
-                let m=Material{fill,edge:channels(colors[3]),opacity:255,edge_opacity:255,
+                let m=Material{fill,edge:channels(colors[3]),opacity:if state==3 {96}else{255},edge_opacity:if state==3 {96}else{255},
                     focus:if state==1 {255}else{0},pressed:state==2,scale:1};
                 let (r,g,b,a)=panel_recipe::pixel(kind,80,40,x,y,m);
                 let rgb=[r,g,b].map(|c|c as u32);

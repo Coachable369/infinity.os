@@ -22,6 +22,7 @@ def workspace_theme(root, style, scale=1):
                   fieldbackground=[("readonly",c["panel"])])
     for name in ("TButton","Accent.TButton","TMenubutton","Workspace.TMenubutton"):
         style.configure(name,foreground=c["text"],padding=(round(12*scale),round(8*scale)),font=body)
+        style.map(name,foreground=[("disabled",c["muted"])])
     root.option_add("*TCombobox*Listbox.background",c["panel"])
     root.option_add("*TCombobox*Listbox.foreground",c["text"])
     root.option_add("*TCombobox*Listbox.selectBackground",c["accent"])
@@ -81,7 +82,7 @@ def workspace_controls(root, style, scale=1):
         raw=zlib.decompress(base64.b64decode(SURFACES))
         width,height=round(80*scale),round(40*scale)
         images=[]
-        for state in range(9):
+        for state in range(12):
             pixels=raw[state*9600:(state+1)*9600]
             rows=[]
             for y in range(height):
@@ -90,8 +91,9 @@ def workspace_controls(root, style, scale=1):
             data=f"P6\n{width} {height}\n255\n".encode()+b"".join(rows)
             images.append(tk.PhotoImage(master=root,data=data,format="PPM"))
         cache[key]=images;root._infinity_control_images=cache
-        for prefix,offset in (("Secondary",0),("Primary",3),("Field",6)):
+        for prefix,offset in (("Secondary",0),("Primary",4),("Field",8)):
             style.element_create(f"UIKit{key}.{prefix}","image",images[offset],
+                ("disabled",images[offset+3]),
                 ("pressed",images[offset+2]),("focus",images[offset+1]),("active",images[offset+1]),
                 border=round(8*scale),padding=(round(12*scale),round(8*scale)),sticky="nsew")
     for name,prefix in (("TButton","Secondary"),("Accent.TButton","Primary")):
