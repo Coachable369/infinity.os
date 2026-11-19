@@ -27,6 +27,13 @@ impl Proof {
     // ------------------=
     pub(super) fn new(account:StableId,now:u64)->Self {Self{account,expires:now.saturating_add(5000)}}
     // ------------------------=
+    // FUNC: consume_after
+    // DESC: Requires a fresh face result issued after the voice factor completed for the same account.
+    // ------------------=
+    pub(super) fn consume_after(self,account:StableId,after:u64,now:u64)->bool {
+        self.expires.saturating_sub(5000)>after && self.consume(account,now)
+    }
+    // ------------------------=
     // FUNC: consume
     // DESC: Consumes the non-cloneable result and rejects expiration or account switching.
     // ------------------=

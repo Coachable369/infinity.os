@@ -1,14 +1,14 @@
-//! One-use combined biometric proof; face verification cannot itself open a voice-protected session.
+//! One-use ordered biometric proof: voice first, then a fresh face comparison.
 use super::identity::StableId;
-pub struct Pending{account:StableId,started:u64,expires:u64}
+pub struct Pending{account:StableId,started:u64,expires:u64,voice_verified:Option<u64>}
 pub struct Proof{account:StableId,issued:u64}
 impl Pending{
     // ------------------------=
     // FUNC: begin
-    // DESC: Consumes a fresh face proof and binds the subsequent voice recording to this account and a bounded deadline.
+    // DESC: Binds an explicit voice-first attempt to one account and a bounded deadline without granting session authority.
     // ------------------=
-    pub(super) fn begin(account:StableId,face:super::face_login::Proof,now:u64)->Option<Self>{
-        face.consume(account,now).then_some(Self{account,started:now,expires:now.saturating_add(90_000)})
+    pub(super) fn begin(account:StableId,now:u64)->Self{
+        Self{account,started:now,expires:now.saturating_add(90_000),voice_verified:None}
     }
     // ------------------------=
     // FUNC: valid
@@ -16,11 +16,20 @@ impl Pending{
     // ------------------=
     pub(super) fn valid(&self,account:StableId,now:u64)->bool{account==self.account&&now>=self.started&&now<self.expires}
     // ------------------------=
-    // FUNC: complete
-    // DESC: Consumes pending face authority only after a later matching voice capture from the trusted native workflow.
+    // FUNC: accept_voice
+    // DESC: Records one trusted speaker match from audio captured after this attempt began; does not issue a login proof.
     // ------------------=
-    pub(super) fn complete(self,account:StableId,captured:u64,now:u64)->Option<Proof>{
-        (self.valid(account,now)&&captured>self.started&&captured<=now).then_some(Proof{account,issued:now})
+    pub(super) fn accept_voice(&mut self,account:StableId,captured:u64,now:u64)->bool{
+        if !self.valid(account,now)||self.voice_verified.is_some()||captured<=self.started||captured>now{return false;}
+        self.voice_verified=Some(now);true
+    }
+    // ------------------------=
+    // FUNC: complete
+    // DESC: Consumes voice authority only with a fresh same-account face proof issued after speaker verification.
+    // ------------------=
+    pub(super) fn complete(self,account:StableId,face:super::face_login::Proof,now:u64)->Option<Proof>{
+        (self.valid(account,now)&&self.voice_verified.is_some_and(|verified|face.consume_after(account,verified,now)))
+            .then_some(Proof{account,issued:now})
     }
 }
 impl Proof{

@@ -235,9 +235,9 @@ impl DisplayDevice {
             let action = crate::ui::installer_template::login_action(&element);
             if action == Some(0) { element.text = account; }
             if action == Some(3) {
-                element.text=b"Sign In with Facial Recognition";
+                element.text=b"Sign In with Voice and Face";
                 #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
-                {element.text=crate::runtime::voice_identity_host::caption().unwrap_or_else(crate::runtime::face_setup_host::login_caption);}
+                {element.text=crate::runtime::voice_identity_host::caption().unwrap_or(b"Sign In with Voice and Face");}
             }
             if element.role == InstallerTemplateRole::ProgressHero as u8 {
                 self.login_motion_layer(element, template.asset(element.image_asset), motion.unwrap_or_else(||

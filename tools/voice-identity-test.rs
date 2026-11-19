@@ -11,24 +11,32 @@ mod identity {#[derive(Clone,Copy,PartialEq,Eq)] pub struct StableId(pub [u8;16]
 fn main() {}
 // ------------------------=
 // FUNC: sequential_account_bound_authorization
-// DESC: Rejects stale face proof, account switching, pre-face audio, future audio and expired voice authorization.
+// DESC: Requires fresh voice before fresh face; rejects account substitution, old/future audio, repeated factors and expired attempts.
 // ------------------=
 #[test]
 fn sequential_account_bound_authorization(){
  use identity::StableId;use voice_identity_login::Pending;
  let a=StableId([1;16]);let b=StableId([2;16]);
- assert!(Pending::begin(a,face_login::Proof::new(a,100),5100).is_none());
- assert!(Pending::begin(b,face_login::Proof::new(a,100),101).is_none());
- for (account,capture,complete) in [(b,102,103),(a,100,103),(a,101,103),(a,104,103),(a,102,90101)] {
-  let p=Pending::begin(a,face_login::Proof::new(a,100),101).unwrap();
-  assert!(p.complete(account,capture,complete).is_none());
+ // Face alone cannot complete a newly started attempt.
+ assert!(Pending::begin(a,100).complete(a,face_login::Proof::new(a,102),103).is_none());
+ for (account,capture,verified) in [(b,101,102),(a,99,102),(a,100,102),(a,103,102),(a,101,90100)] {
+  let mut p=Pending::begin(a,100);assert!(!p.accept_voice(account,capture,verified));
+  assert!(p.complete(a,face_login::Proof::new(a,104),105).is_none());
  }
- let p=Pending::begin(a,face_login::Proof::new(a,100),101).unwrap();
- assert!(p.complete(a,102,103).unwrap().consume(a,104));
- let p=Pending::begin(a,face_login::Proof::new(a,100),101).unwrap();
- assert!(!p.complete(a,102,103).unwrap().consume(b,104));
- let p=Pending::begin(a,face_login::Proof::new(a,100),101).unwrap();
- assert!(!p.complete(a,102,103).unwrap().consume(a,5103));
+ for (account,face_time,complete) in [(b,104,105),(a,101,105),(a,103,105),(a,106,105),(a,104,5104),(a,90100,90101)] {
+  let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+  assert!(p.complete(account,face_login::Proof::new(account,face_time),complete).is_none());
+ }
+ let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ assert!(!p.accept_voice(a,104,105));
+ assert!(p.complete(a,face_login::Proof::new(a,106),107).unwrap().consume(a,108));
+ let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ assert!(!p.complete(a,face_login::Proof::new(a,104),105).unwrap().consume(b,106));
+ let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ assert!(!p.complete(a,face_login::Proof::new(a,104),105).unwrap().consume(a,5105));
+ // A face result for a different account cannot complete the selected account.
+ let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ assert!(p.complete(a,face_login::Proof::new(b,104),105).is_none());
 }
 // ------------------------=
 // FUNC: encrypted_voice_owner_model_and_integrity

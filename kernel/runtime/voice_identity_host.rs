@@ -16,10 +16,10 @@ pub use crate::ui::voice_setup_layout::{Stage,Failure};
 struct Host{
  account:Option<StableId>,stage:Stage,enrollment:policy::Enrollment,pending:Option<super::voice_identity_login::Pending>,
  proof:Option<super::voice_identity_login::Proof>,template:[u8;policy::BYTES],pcm:[i16;speaker::SAMPLES],length:usize,
- cap:u64,resampler:Resampler,deadline:u64,captured:u64,renew:u64,level:u16,task:Option<Task>,terminal:Option<State>,scrubbed:usize,result:Option<[f32;speaker::DIM]>,login:bool,
+ cap:u64,resampler:Resampler,deadline:u64,captured:u64,renew:u64,level:u16,task:Option<Task>,terminal:Option<State>,scrubbed:usize,result:Option<[f32;speaker::DIM]>,login:bool,waiting_face:bool,face_started:bool,
 }
 static mut HOST:Host=Host{account:None,stage:Stage::Idle,enrollment:policy::Enrollment::new(),pending:None,proof:None,
- template:[0;policy::BYTES],pcm:[0;speaker::SAMPLES],length:0,cap:0,resampler:Resampler::empty(),deadline:0,captured:0,renew:0,level:0,task:None,terminal:None,scrubbed:0,result:None,login:false};
+ template:[0;policy::BYTES],pcm:[0;speaker::SAMPLES],length:0,cap:0,resampler:Resampler::empty(),deadline:0,captured:0,renew:0,level:0,task:None,terminal:None,scrubbed:0,result:None,login:false,waiting_face:false,face_started:false};
 // ------------------------=
 // FUNC: now
 // DESC: Reads the existing monotonic clock without changing audio scheduling.
@@ -34,12 +34,12 @@ pub fn snapshot()->(Stage,usize,u16){unsafe{let h=&*core::ptr::addr_of!(HOST);(h
 // FUNC: caption
 // DESC: Supplies actionable login status while retaining password fallback.
 // ------------------=
-pub fn caption()->Option<&'static[u8]>{unsafe{let h=&*core::ptr::addr_of!(HOST);if !h.login{return None;}Some(match h.stage{
- Stage::Capturing=>b"Face verified - speak naturally for 2 seconds",
- Stage::Comparing=>b"Face verified - verifying your voice...",
+pub fn caption()->Option<&'static[u8]>{unsafe{let h=&*core::ptr::addr_of!(HOST);if !h.login{return None;}if h.waiting_face{return Some(super::face_setup_host::login_caption());}if h.face_started&&matches!(h.stage,Stage::Failed(_)){return Some(b"Face not verified - retry sign-in");}Some(match h.stage{
+ Stage::Capturing=>b"Speak naturally for 2 seconds",
+ Stage::Comparing=>b"Verifying your voice...",
  Stage::Verified=>b"Face and voice verified",
  Stage::Failed(Failure::NoEnrollment)=>b"Voice not enrolled - use your password",
- Stage::Failed(Failure::Mismatch)=>b"Voice not matched - retry facial sign-in",
+ Stage::Failed(Failure::Mismatch)=>b"Voice not matched - retry sign-in",
  Stage::Failed(Failure::Quiet|Failure::Timeout)=>b"No clear voice captured - retry sign-in",
  Stage::Failed(_)=>b"Voice check unavailable - use your password",
  _=>return None,
@@ -59,12 +59,12 @@ fn stop_capture(h:&mut Host){
 fn fail(h:&mut Host,error:Failure){
  let stamp=super::ai::clock::SYSTEM.utc_nanoseconds(now()).map(|n|n/1_000_000_000);
  let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"enrollment-or-login",format_args!("failure={} samples={} captured_samples={}",error as u8,h.enrollment.count(),h.length));
- stop_capture(h);h.pcm.fill(0);h.length=0;h.pending=None;h.result=None;h.template.fill(0);h.stage=Stage::Failed(error);}
+ stop_capture(h);h.pcm.fill(0);h.length=0;h.pending=None;h.waiting_face=false;h.result=None;h.template.fill(0);h.stage=Stage::Failed(error);}
 // ------------------------=
 // FUNC: cancel
 // DESC: Cancels account/page transitions; worker memory is scrubbed cooperatively by the next poll.
 // ------------------=
-pub fn cancel(){unsafe{let h=&mut *core::ptr::addr_of_mut!(HOST);stop_capture(h);h.account=None;h.pending=None;h.proof=None;h.result=None;h.pcm.fill(0);h.template.fill(0);h.enrollment.clear();h.length=0;h.stage=Stage::Idle;h.login=false;}}
+pub fn cancel(){unsafe{let h=&mut *core::ptr::addr_of_mut!(HOST);stop_capture(h);h.account=None;h.pending=None;h.proof=None;h.result=None;h.pcm.fill(0);h.template.fill(0);h.enrollment.clear();h.length=0;h.stage=Stage::Idle;h.login=false;h.waiting_face=false;h.face_started=false;}}
 // ------------------------=
 // FUNC: begin_enrollment
 // DESC: Authorizes enrollment with the configured account password before granting any microphone access.
@@ -98,20 +98,36 @@ fn capture(h:&mut Host)->bool{
  h.renew=clock+1_000_000_000;h.deadline=clock+20_000_000_000;h.stage=Stage::Capturing;true
 }
 // ------------------------=
-// FUNC: accept_face
-// DESC: Consumes face proof, opens the selected account's authenticated template, then captures a new voice sample.
+// FUNC: start_login
+// DESC: Opens the active selected account's speaker template and starts voice capture before any face comparison.
 // ------------------=
-pub fn accept_face(account:StableId,face:super::face_login::Proof)->bool{unsafe{
- let h=&mut *core::ptr::addr_of_mut!(HOST);if h.task.is_some(){return false;}
+pub fn start_login(account:StableId)->bool{unsafe{
+ let h=&mut *core::ptr::addr_of_mut!(HOST);if h.task.is_some()||super::face_setup_host::login_busy()||matches!(h.stage,Stage::Capturing|Stage::Comparing){return false;}
+ let authorized=super::with_runtime(|r|r.identity.user(account).is_some_and(|u|u.state==UserState::Active)&&r.identity.user_profile(account).is_some_and(|p|p.face_login_enabled)).unwrap_or(false);
+ if !authorized{return false;}
  cancel();let h=&mut *core::ptr::addr_of_mut!(HOST);h.login=true;h.account=Some(account);
- h.pending=super::voice_identity_login::Pending::begin(account,face,now()/1_000_000);
- if h.pending.is_none(){fail(h,Failure::Unauthorized);return false;}
+ h.pending=Some(super::voice_identity_login::Pending::begin(account,now()/1_000_000));
  let Some(key)=super::with_runtime(|r|r.nodes.voice_vault_key(&account.0)).flatten() else{fail(h,Failure::NoEnrollment);return false;};
  let mut record=Zeroizing::new([0;super::voice_identity_vault::BYTES]);
  let model:[u8;32]=MODEL[8..40].try_into().unwrap();
  let plain=if crate::storage::voice_identity_load(account.0,&mut *record)==Ok(record.len()){
  super::voice_identity_vault::open(&key,account,&model,&record)}else{None};
  let Some(plain)=plain else{fail(h,Failure::NoEnrollment);return false;};h.template.copy_from_slice(&*plain);capture(h)
+}}
+// ------------------------=
+// FUNC: waiting_for_face
+// DESC: Allows camera polling only after successful speaker verification in this attempt.
+// ------------------=
+pub fn waiting_for_face()->bool{unsafe{(*core::ptr::addr_of!(HOST)).waiting_face}}
+// ------------------------=
+// FUNC: accept_face
+// DESC: Completes the voice-first attempt with one fresh face proof and never restarts voice capture.
+// ------------------=
+pub fn accept_face(account:StableId,face:super::face_login::Proof)->bool{unsafe{
+ let h=&mut *core::ptr::addr_of_mut!(HOST);
+ if !h.waiting_face||h.account!=Some(account){return false;}
+ h.proof=h.pending.take().and_then(|p|p.complete(account,face,now()/1_000_000));h.waiting_face=false;
+ if h.proof.is_some(){h.stage=Stage::Verified;true}else{fail(h,Failure::Unauthorized);false}
 }}
 // ------------------------=
 // FUNC: save
@@ -149,6 +165,7 @@ pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
   &&super::with_runtime(|r|h.account.is_some_and(|a|r.identity.user(a).is_some_and(|u|u.state==UserState::Active))).unwrap_or(false);
  if !valid&&h.account.is_some(){cancel();}
  let h=&mut *core::ptr::addr_of_mut!(HOST);
+ if h.waiting_face && (!h.pending.as_ref().is_some_and(|p|p.valid(h.account.unwrap(),clock/1_000_000))||!super::face_setup_host::login_busy()){fail(h,Failure::Mismatch);}
  if h.stage==Stage::Capturing{
   if clock>=h.deadline{fail(h,Failure::Timeout);}
   else if clock>=h.renew&&!crate::drivers::audio::renew_capture(OWNER,h.cap){fail(h,Failure::Unavailable);}
@@ -223,8 +240,13 @@ fn finish(h:&mut Host,state:State,alive:bool,clock:u64){
     if alive&&state==State::Exited(0){
      if let Some(mut vector)=h.result.take(){
       if h.login{
-       if policy::matches(&h.template,&vector)==Ok(true){h.proof=h.pending.take().and_then(|p|p.complete(h.account.unwrap(),h.captured,clock));
-        if h.proof.is_some(){h.stage=Stage::Verified;}else{fail(h,Failure::Unauthorized);}}
+       if policy::matches(&h.template,&vector)==Ok(true){
+        let account=h.account.unwrap();
+        if h.pending.as_mut().is_some_and(|p|p.accept_voice(account,h.captured,clock)){
+         h.face_started=true;
+         if super::face_setup_host::start_login(account){h.waiting_face=true;h.stage=Stage::Verified;}
+         else{fail(h,Failure::Unavailable);}
+        }else{fail(h,Failure::Unauthorized);}}
        else{fail(h,Failure::Mismatch);}
        h.template.fill(0);
       }else if h.enrollment.add(vector).is_err(){h.stage=Stage::Failed(Failure::Mismatch);}

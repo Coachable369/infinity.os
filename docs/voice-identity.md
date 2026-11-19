@@ -5,12 +5,13 @@ explicit recordings create an account-specific speaker template. The third
 recording must agree with both previous recordings. Skip preserves password
 login. Captured PCM is not persisted.
 
-The login button first runs the existing face verifier. Its one-use proof is
-consumed by a 90-second account-bound voice attempt. A fresh voice capture is
-required after that face proof; account changes, cancellation, unavailable
-hardware, missing enrollment, mismatches and timeouts cannot create a session.
-The previous login greeting listener is no longer activated. Desktop assistant
-capture, wake detection, recognition, synthesis and interruption are unchanged.
+The login button starts a 90-second account-bound voice attempt. Only a fresh
+matching speaker recording starts the camera automatically. The face result must
+be issued after speaker verification and belong to the same selected account;
+only then can the combined proof create or unlock a session. Account changes,
+cancellation, missing enrollment, mismatch and timeout fail closed. Password
+login remains available. Desktop assistant capture, wake detection, recognition,
+synthesis and interruption are unchanged.
 
 ## Native implementation
 
@@ -37,7 +38,7 @@ Model attribution ships in `/System/Notices/WeSpeaker.txt`.
 
 Numerical checks compare actual native features and embeddings to Kaldi/ONNX
 outputs. Authentication tests exercise stale proofs, account substitution,
-pre-face recordings, expiry, encrypted roundtrip and corruption rejection.
+pre-attempt recordings and pre-voice face proofs, expiry, encrypted roundtrip and corruption rejection.
 A held-out genuine recording and two other speakers exercise the production
 matching policy. Native screenshot captures cover idle, recording, comparing,
 retry and saved presentation.

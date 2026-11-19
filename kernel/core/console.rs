@@ -6971,16 +6971,15 @@ impl ConsoleRuntime {
                 {
                     let account=if self.mode==ConsoleMode::Locked {Some(self.current_user)}else{
                         crate::runtime::with_runtime(|r|r.identity.user_nth(self.system_step).map(|u|u.id)).flatten()};
-                    crate::runtime::voice_identity_host::cancel();
-                    let started=account.is_some_and(crate::runtime::face_setup_host::start_login);
-                    // Face state is not credential text. Invalidate the access
+                    let started=account.is_some_and(crate::runtime::voice_identity_host::start_login);
+                    // Biometric state is not credential text. Invalidate the access
                     // scene so its button feedback is painted even when focus
                     // and password contents have not changed.
                     crate::bootstrap::system_ui_settings_changed();
                     self.redraw();
                     crate::output_text(b"[authentication] ");
-                    crate::output_text(if started {b"Look at the camera. Comparing your enrolled face."}
-                        else {crate::runtime::face_setup_host::login_caption()});
+                    crate::output_text(if started {b"Speak naturally. Verifying your voice before facial recognition."}
+                        else {crate::runtime::voice_identity_host::caption().unwrap_or(b"Voice sign-in is unavailable or already in progress")});
                     crate::output_text(b"\n");
                 }
                 return;
@@ -14834,7 +14833,7 @@ fn poll_native_ai_inner() {
             crate::runtime::with_runtime(|r|r.identity.user_nth(runtime.system_step).map(|u|u.id)).flatten()};
         let was_busy=crate::runtime::face_setup_host::login_busy();
         crate::runtime::ai::voice_conversation::sync_login_listener(None);
-        if let Some(proof)=crate::runtime::face_setup_host::poll_login(selected) {
+        if let Some(proof)=crate::runtime::face_setup_host::poll_login(if crate::runtime::voice_identity_host::waiting_for_face(){selected}else{None}) {
             if let Some(account)=selected {crate::runtime::voice_identity_host::accept_face(account,proof);runtime.redraw();}
         }
         let enrolling=(runtime.mode==ConsoleMode::Onboarding&&runtime.system_step==9).then_some(runtime.current_user);

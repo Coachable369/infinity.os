@@ -58,3 +58,12 @@ Rounded corners, or Square at zero; Kit default remains available in Corners.
 Edit Background selects the screen's existing image layer. Locked images expose
 an explicit Unlock Image action; replacement retains geometry, fit and stacking,
 resets the crop, and copies the selected raster into packaged boot assets.
+
+## Ordered biometric sign-in
+
+The native biometric action uses the existing shared button geometry and states.
+Its label is **Sign In with Voice and Face**. It starts explicit speaker capture,
+shows voice verification progress, then automatically starts the camera only
+after a match. Face comparison feedback replaces voice feedback for the second
+stage. Both factors must pass for the selected account; password sign-in remains
+available. This ordering is native behavior, independent of an authored label.
