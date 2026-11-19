@@ -2,16 +2,30 @@ import AppKit
 import SwiftUI
 
 enum GlassButtonPreset: String, CaseIterable, Identifiable {
-    case sapphire = "Sapphire Glass", smoked = "Smoked Glass", ice = "Ice Glass"
+    case sapphire = "Classic Sapphire Glass", smoked = "Smoked Glass", ice = "Frosted Ice"
+    case satin = "Satin Blue", minimal = "Minimal Blue"
     var id: String { rawValue }
     var style: UIKitSurfaceStyle {
         let fill: UInt32 = switch self {
         case .sapphire: 0xE8204DAD
         case .smoked: 0xD8101B3A
         case .ice: 0xC8447394
+        case .satin: 0xFF3159A6
+        case .minimal: 0xFF245CD8
         }
-        return UIKitSurfaceStyle(material: .glass, corners: .rounded, radius: 10,
+        let material: UIKitSurfaceMaterial = self == .satin ? .matte : self == .minimal ? .flat : .glass
+        let radius = self == .satin ? 8 : self == .minimal ? 6 : 10
+        return UIKitSurfaceStyle(material: material, corners: .rounded, radius: radius,
             fill: fill, border: 0xFF86C7FF)
+    }
+    var detail: String {
+        switch self {
+        case .sapphire: "Traditional reflective blue glass"
+        case .smoked: "Deep translucent charcoal glass"
+        case .ice: "Light frosted glass"
+        case .satin: "Opaque satin, subtle reflections"
+        case .minimal: "Flat blue, compact rounded corners"
+        }
     }
 }
 

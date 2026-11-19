@@ -10,7 +10,7 @@ struct UIKitStylesPreview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Shared glass button themes").font(.title2.weight(.semibold))
+                Text("Shared button styles").font(.title2.weight(.semibold))
                 Text("Choose a theme for primary and secondary buttons together. Individual screen appearance overrides are preserved.")
                     .foregroundStyle(.secondary)
                 LazyVGrid(columns: columns, spacing: 20) {
@@ -20,6 +20,7 @@ struct UIKitStylesPreview: View {
                                 sample(.primary, width: 250, height: 52, style: preset.style)
                                     .frame(height: 52)
                                 Text(preset.rawValue).font(.headline)
+                                Text(preset.detail).font(.caption).foregroundStyle(.secondary)
                                 Text("Apply to shared buttons").font(.caption).foregroundStyle(.secondary)
                             }.padding(16).background(InfinityUIKit.Palette.nativePanel)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))

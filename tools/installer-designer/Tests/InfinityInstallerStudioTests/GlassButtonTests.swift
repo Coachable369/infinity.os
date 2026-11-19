@@ -37,13 +37,15 @@ final class GlassButtonTests: XCTestCase {
     @MainActor func testPresetsApplyAtomicallyAndUndo() throws {
         let store = UIKitStore(projectRoot: nil)
         let original = store.document
-        store.applyButtonPreset(.smoked)
-        XCTAssertEqual(store.document.styles[3], GlassButtonPreset.smoked.style)
-        XCTAssertEqual(store.document.styles[4], GlassButtonPreset.smoked.style)
-        XCTAssertEqual(Array(store.document.styles.prefix(3)), Array(original.styles.prefix(3)))
-        XCTAssertEqual(try JSONDecoder().decode(UIKitDocument.self, from: JSONEncoder().encode(store.document)), store.document)
-        store.undo()
-        XCTAssertEqual(store.document, original)
+        for preset in GlassButtonPreset.allCases {
+            store.applyButtonPreset(preset)
+            XCTAssertEqual(store.document.styles[3], preset.style)
+            XCTAssertEqual(store.document.styles[4], preset.style)
+            XCTAssertEqual(Array(store.document.styles.prefix(3)), Array(original.styles.prefix(3)))
+            XCTAssertEqual(try JSONDecoder().decode(UIKitDocument.self, from: JSONEncoder().encode(store.document)), store.document)
+            store.undo()
+            XCTAssertEqual(store.document, original)
+        }
     }
 
     // ------------------------=
@@ -60,9 +62,10 @@ final class GlassButtonTests: XCTestCase {
             images.insert(pixels)
             let center = atlas.pixel(.primary, width: 250, height: 52, x: 125, y: 26, material: material)
             XCTAssertGreaterThan(center.alpha, 0)
-            XCTAssertLessThan(center.alpha, 255)
+            if preset.style.material == .glass { XCTAssertLessThan(center.alpha, 255) }
+            else { XCTAssertEqual(center.alpha, 255) }
             XCTAssertEqual(atlas.pixel(.primary, width: 250, height: 52, x: 0, y: 0, material: material).alpha, 0)
         }
-        XCTAssertEqual(images.count, 3)
+        XCTAssertEqual(images.count, 5)
     }
 }

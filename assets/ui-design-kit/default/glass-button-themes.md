@@ -1,4 +1,4 @@
-# Shared glass button themes
+# Shared button styles
 
 Reuse the shared Precision atlas, Inter type and 140ms focus transition.
 The six button cells are regenerated from `glass-buttons-v2-reference.png`.
@@ -18,12 +18,30 @@ darker inset pressed state, no text or glyphs, frontal orthographic view.
 reference sheet's background and gutters are not runtime artwork. Labels
 remain live Inter text; hit rectangles and focus timing are unchanged.
 
-Studio Surface Styles presents three 250×52 production-sampled buttons above
-the component grid: Sapphire Glass, Smoked Glass and Ice Glass. Their existing
-10px antialiased rounded geometry uses the approved icy-silver rim. Reflections
+Studio Surface Styles presents five 250×52 production-sampled buttons above
+the component grid. `button-styles-v2-reference.png` is the generated design board:
+
+| Style | Material | Corner radius | Fill ARGB |
+| --- | --- | --- | --- |
+| Classic Sapphire Glass | Glass | 10 | E8204DAD |
+| Smoked Glass | Glass | 10 | D8101B3A |
+| Frosted Ice | Glass | 10 | C8447394 |
+| Satin Blue | Matte | 8 | FF3159A6 |
+| Minimal Blue | Flat | 6 | FF245CD8 |
+
+Generation prompt: an aligned InfinityOS reusable button board on midnight navy,
+five labeled rows and Normal/Hover/Pressed columns; traditional sapphire and
+smoked glass with fine icy rims and upper reflections, soft frosted ice glass,
+opaque satin cobalt, and restrained flat blue. White Inter-like Continue labels.
+Hover increases edge light without changing geometry; pressed darkens. Reference
+the approved Eclipse board and regenerated glass family. These are shared native
+material, tint and corner variants, not separately baked controls.
+
+All presets use the approved icy-silver rim. Glass reflections
 are sampled from the current normal/focus/pressed artwork, neutralized relative
 to that state's center, then applied after tint. The fill transmits the scene;
-the rim remains independently opaque. Matte and authored pixels are unchanged.
+the rim remains independently opaque. Satin and Minimal use opaque fills through
+the existing matte and flat samplers. The authored material remains available.
 
 A preset changes shared primary and secondary recipes atomically, with undo.
 Buttons whose material is Kit default inherit the recipe including its colors.
