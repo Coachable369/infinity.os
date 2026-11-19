@@ -44,6 +44,13 @@ the rim remains independently opaque. Satin and Minimal use opaque fills through
 the existing matte and flat samplers. The authored material remains available.
 
 A preset changes shared primary and secondary recipes atomically, with undo.
+The selected Button inspector also exposes a dropdown immediately beneath its
+header. Each choice includes a 112x32 native-rendered thumbnail and selection
+indicator. Selecting a preset stores its material, corners, radius, fill and rim
+on that element, clears color-token bindings, and preserves its action and frame.
+Use shared UIKit style restores inheritance. Locked layers must be unlocked;
+custom recipes remain labeled Custom appearance. The dropdown is a reusable
+popover using the kit panel and typography, with click-outside dismissal.
 Buttons whose material is Kit default inherit the recipe including its colors.
 An explicit layer material uses the layer's own colors instead. Other surface
 families retain their prior independent color contract. Existing authored

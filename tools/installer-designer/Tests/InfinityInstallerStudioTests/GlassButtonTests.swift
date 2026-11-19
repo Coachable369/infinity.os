@@ -4,6 +4,28 @@ import SwiftUI
 
 final class GlassButtonTests: XCTestCase {
     // ------------------------=
+    // FUNC: testElementPresetsPersistWithoutChangingBehavior
+    // DESC: Verifies individual style selection survives saving while preserving button identity, label, placement and role.
+    // ------------------=
+    func testElementPresetsPersistWithoutChangingBehavior() throws {
+        let original = StudioElement.make(name: "Record", kind: .button, role: .primaryButton,
+            frame: CanvasRect(x: 100, y: 200, width: 250, height: 52), text: "Record sample")
+        for preset in GlassButtonPreset.allCases {
+            var button = original
+            preset.apply(to: &button)
+            let decoded = try JSONDecoder().decode(StudioElement.self, from: JSONEncoder().encode(button))
+            XCTAssertEqual(GlassButtonPreset.matching(decoded), preset)
+            XCTAssertEqual(decoded.id, original.id)
+            XCTAssertEqual(decoded.role, original.role)
+            XCTAssertEqual(decoded.frame, original.frame)
+            XCTAssertEqual(decoded.text, original.text)
+            XCTAssertEqual(decoded.opacity, original.opacity)
+            button.surfaceMaterial = .authored
+            button.surfaceCorners = .authored
+            XCTAssertNil(GlassButtonPreset.matching(button))
+        }
+    }
+    // ------------------------=
     // FUNC: testPreviewBoard
     // DESC: Captures the actual Studio surface selector for visual review without changing the saved UIKit document.
     // ------------------=

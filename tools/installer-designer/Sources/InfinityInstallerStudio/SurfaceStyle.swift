@@ -27,6 +27,34 @@ enum GlassButtonPreset: String, CaseIterable, Identifiable {
         case .minimal: "Flat blue, compact rounded corners"
         }
     }
+
+    // ------------------------=
+    // FUNC: apply
+    // DESC: Stores a per-button preset through existing native material and color fields without changing actions or geometry.
+    // ------------------=
+    func apply(to element: inout StudioElement) {
+        let recipe = style
+        element.surfaceMaterial = recipe.material
+        element.surfaceCorners = recipe.corners
+        element.cornerRadius = recipe.radius
+        element.fill = studioColor(recipe.fill!)
+        element.border = studioColor(recipe.border!)
+        element.fillToken = nil
+        element.borderToken = nil
+    }
+
+    // ------------------------=
+    // FUNC: matching
+    // DESC: Identifies an exact preset while leaving custom local appearances explicitly labeled as custom.
+    // ------------------=
+    static func matching(_ element: StudioElement) -> Self? {
+        allCases.first { preset in
+            let style = preset.style
+            return element.surfaceMaterial == style.material && element.surfaceCorners == style.corners
+                && element.cornerRadius == style.radius && element.fill == studioColor(style.fill!)
+                && element.border == studioColor(style.border!) && element.fillToken == nil && element.borderToken == nil
+        }
+    }
 }
 
 enum UIKitSurfaceMaterial: Int, Codable, CaseIterable, Identifiable, Hashable {

@@ -156,6 +156,10 @@ struct ElementInspector: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
             }
+            if element.kind == .button {
+                ElementButtonStylePicker(store: store, element: element)
+                    .disabled(element.locked)
+            }
             GroupBox("Identity") {
                 VStack(alignment: .leading, spacing: 7) {
                     TextField("Element ID", text: codeIdentifierBinding)

@@ -144,7 +144,7 @@ struct UIKitStylesPreview: View {
     }
 }
 
-@MainActor private enum UIKitStylePreviewImage {
+@MainActor enum UIKitStylePreviewImage {
     private static let cache = NSCache<NSString, CGImage>()
 
     // ------------------------=
@@ -192,5 +192,75 @@ struct UIKitStylesPreview: View {
         cache.totalCostLimit = 16 * 1024 * 1024
         cache.setObject(image, forKey: key, cost: raw.count)
         return image
+    }
+}
+
+/// Per-element dropdown reuses the shared native preview and style payload.
+struct ElementButtonStylePicker: View {
+    @ObservedObject var store: TemplateStore
+    let element: StudioElement
+    @State private var expanded = false
+
+    private var title: String {
+        element.surfaceMaterial == .authored ? "Use shared UIKit style"
+            : GlassButtonPreset.matching(element)?.rawValue ?? "Custom appearance"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Button style").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Button { expanded.toggle() } label: {
+                HStack {
+                    Text(title).lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+                }.frame(maxWidth: .infinity, minHeight: 28)
+            }
+            .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+            .accessibilityIdentifier("studio.element.button-style")
+            .popover(isPresented: $expanded, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Button style").font(.headline)
+                    Button {
+                        store.updateSelected("Shared button style restored") {
+                            $0.surfaceMaterial = .authored
+                            $0.surfaceCorners = .authored
+                        }
+                        expanded = false
+                    } label: {
+                        row("Use shared UIKit style", style: .resolved(for: .primary, styles: store.uiKit.document.styles),
+                            selected: element.surfaceMaterial == .authored)
+                    }.buttonStyle(.plain)
+                    Divider()
+                    ForEach(GlassButtonPreset.allCases) { preset in
+                        Button {
+                            store.updateSelected("Button style: \(preset.rawValue)") { preset.apply(to: &$0) }
+                            expanded = false
+                        } label: {
+                            row(preset.rawValue, style: preset.style, selected: GlassButtonPreset.matching(element) == preset)
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(16).frame(width: 320)
+                    .background(InfinityUIKit.Palette.nativePanel)
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: row
+    // DESC: Shows each dropdown choice using the actual native button sampler and a visible selection checkmark.
+    // ------------------=
+    private func row(_ name: String, style: UIKitSurfaceStyle, selected: Bool) -> some View {
+        HStack(spacing: 12) {
+            if let image = UIKitStylePreviewImage.image(store: store.uiKit, kind: .primary,
+                width: 112, height: 32, material: PrecisionMaterial(style: style)) {
+                Image(decorative: image, scale: 1).overlay {
+                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                }.frame(width: 112, height: 32)
+            }
+            Text(name).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(selected ? InfinityUIKit.Palette.nativeAccent : .secondary)
+        }.padding(6).contentShape(Rectangle())
     }
 }
