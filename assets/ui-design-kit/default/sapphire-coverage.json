@@ -1,0 +1,1529 @@
+{
+  "schema_version": 1,
+  "scope": "All known OS surfaces and application interfaces; expand during runtime discovery",
+  "acceptance": "Each element and applicable state >=95%; no aggregate substitution",
+  "evidence_layers": [
+    "host-production-render",
+    "installed-arm",
+    "installed-x86"
+  ],
+  "state_policy": "Inapplicable states require a recorded rationale; missing evidence remains unverified",
+  "reference": "sapphire-controls-reference.png",
+  "entries": [
+    {
+      "id": "boot-screens:1",
+      "surface": "Pre-installation Boot",
+      "source": "assets/boot/boot-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "boot-screens:2",
+      "surface": "Installed OS Boot",
+      "source": "assets/boot/boot-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:1",
+      "surface": "Welcome",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:2",
+      "surface": "Node Name",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:3",
+      "surface": "Profile Name",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:4",
+      "surface": "Display Name",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:5",
+      "surface": "Password",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:6",
+      "surface": "Privacy & Appearance",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:7",
+      "surface": "Network",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:8",
+      "surface": "Ready",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:9",
+      "surface": "Facial Recognition",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "configuration-screens:10",
+      "surface": "Voice Identity",
+      "source": "assets/boot/configuration-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "desktop-screens:1",
+      "surface": "Desktop Navigation",
+      "source": "assets/boot/desktop-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/desktop-1.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "3009e18b115ddcfb1327e19ec23f22dab33c4388742d99d5f098f0dfe09d2632"
+        }
+      ]
+    },
+    {
+      "id": "desktop-screens:2",
+      "surface": "System Overview Widget",
+      "source": "assets/boot/desktop-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/desktop-2.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "3009e18b115ddcfb1327e19ec23f22dab33c4388742d99d5f098f0dfe09d2632"
+        }
+      ]
+    },
+    {
+      "id": "desktop-screens:3",
+      "surface": "AI Voice Widget",
+      "source": "assets/boot/desktop-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/desktop-3.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "3009e18b115ddcfb1327e19ec23f22dab33c4388742d99d5f098f0dfe09d2632"
+        }
+      ]
+    },
+    {
+      "id": "desktop-screens:4",
+      "surface": "Desktop App Dock",
+      "source": "assets/boot/desktop-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/desktop-4.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "3009e18b115ddcfb1327e19ec23f22dab33c4388742d99d5f098f0dfe09d2632"
+        }
+      ]
+    },
+    {
+      "id": "desktop-screens:5",
+      "surface": "App Launcher Panel",
+      "source": "assets/boot/desktop-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/desktop-5.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "3009e18b115ddcfb1327e19ec23f22dab33c4388742d99d5f098f0dfe09d2632"
+        }
+      ]
+    },
+    {
+      "id": "installer-screens:1",
+      "surface": "Welcome",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:2",
+      "surface": "Infinity Pool",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:3",
+      "surface": "Disk Discovery",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:4",
+      "surface": "Resource Fabric",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:5",
+      "surface": "Date & Time",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:6",
+      "surface": "Plan Review",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:7",
+      "surface": "Confirmation",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:8",
+      "surface": "Installing",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:9",
+      "surface": "Complete",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:10",
+      "surface": "Attention",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "installer-screens:11",
+      "surface": "Help",
+      "source": "assets/boot/installer-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "login-screens:1",
+      "surface": "Login",
+      "source": "assets/boot/login-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "settings-screens:1",
+      "surface": "General",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-1.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:2",
+      "surface": "Themes & Skins",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "failed",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-2.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ],
+      "defects": [
+        "SAPPHIRE-001",
+        "SAPPHIRE-002",
+        "SAPPHIRE-003"
+      ]
+    },
+    {
+      "id": "settings-screens:3",
+      "surface": "Users & Accounts",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-3.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:4",
+      "surface": "AI & Voice",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-4.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:5",
+      "surface": "Privacy & Security",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-5.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:6",
+      "surface": "Devices",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-6.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:7",
+      "surface": "Network",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-7.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:8",
+      "surface": "Nodes & Mesh",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-8.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:9",
+      "surface": "Storage",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-9.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:10",
+      "surface": "About",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-10.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "settings-screens:11",
+      "surface": "Input",
+      "source": "assets/boot/settings-screens.infinityui",
+      "states": [
+        "default",
+        "keyboard-focus",
+        "hover",
+        "pressed",
+        "disabled",
+        "error",
+        "resize-small",
+        "resize-large"
+      ],
+      "status": "unverified",
+      "evidence": [
+        {
+          "layer": "host-production-render",
+          "state": "default",
+          "path": "builds/validation/sapphire-coverage/settings-11.png",
+          "width": 1536,
+          "height": 1024,
+          "result": "captured-not-accepted",
+          "fixture": "simulated services",
+          "source_sha256": "5474712a5e7729287dc3c19a6c3cead980dbe9687c8e5b92f26f8fad9b7a034a"
+        }
+      ]
+    },
+    {
+      "id": "launcher:File Navigator",
+      "surface": "File Navigator",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Documents",
+      "surface": "Documents",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Projects",
+      "surface": "Projects",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Media Player",
+      "surface": "Media Player",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Recycle Bin",
+      "surface": "Recycle Bin",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Settings",
+      "surface": "Settings",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Text Editor",
+      "surface": "Text Editor",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:AI & Voice",
+      "surface": "AI & Voice",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Security",
+      "surface": "Security",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Storage",
+      "surface": "Storage",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:About",
+      "surface": "About",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Command Window",
+      "surface": "Command Window",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Task Manager",
+      "surface": "Task Manager",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Network",
+      "surface": "Network",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Nodes & Mesh",
+      "surface": "Nodes & Mesh",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Holographic Desktop",
+      "surface": "Holographic Desktop",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:World Shift",
+      "surface": "World Shift",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Infinity Browser",
+      "surface": "Infinity Browser",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:InfinityCode",
+      "surface": "InfinityCode",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Media Files",
+      "surface": "Media Files",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "launcher:Infinity Memory",
+      "surface": "Infinity Memory",
+      "source": "kernel/ui/app_launcher.rs",
+      "states": [
+        "launch",
+        "normal",
+        "maximized",
+        "restored",
+        "menu-open",
+        "keyboard-focus",
+        "scroll",
+        "empty",
+        "error",
+        "unsaved-close"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Weather widget",
+      "surface": "Weather widget",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Widget visibility menu",
+      "surface": "Widget visibility menu",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Widget configuration and transparency",
+      "surface": "Widget configuration and transparency",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Widget dragging and stacking",
+      "surface": "Widget dragging and stacking",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Desktop trash and restore",
+      "surface": "Desktop trash and restore",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Task tray",
+      "surface": "Task tray",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Dock pinning and reorder",
+      "surface": "Dock pinning and reorder",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Top bar system menus",
+      "surface": "Top bar system menus",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Notifications",
+      "surface": "Notifications",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Application AI adorner",
+      "surface": "Application AI adorner",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:File open/save dialogs",
+      "surface": "File open/save dialogs",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Shared controls gallery",
+      "surface": "Shared controls gallery",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Generated native C application",
+      "surface": "Generated native C application",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Generated Python application",
+      "surface": "Generated Python application",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    },
+    {
+      "id": "supplement:Terminal help and disk interfaces",
+      "surface": "Terminal help and disk interfaces",
+      "source": "runtime discovery required",
+      "states": [
+        "default",
+        "hover",
+        "focus",
+        "pressed",
+        "disabled",
+        "expanded",
+        "error",
+        "resize"
+      ],
+      "status": "unverified",
+      "evidence": []
+    }
+  ]
+}
