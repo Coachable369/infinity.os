@@ -105,6 +105,8 @@ static void wm_geometry(ClientData client, Tk_Window tkwin) {
     if (!wm || window->flags & TK_ALREADY_DEAD) return;
     int width = wm_limit(wm->width > 0 ? wm->width : window->reqWidth, wm->min_width, wm->max_width);
     int height = wm_limit(wm->height > 0 ? wm->height : window->reqHeight, wm->min_height, wm->max_height);
+    int64_t available_height = infinity_gui_geometry(7);
+    if (available_height > 0 && available_height < height) height = (int)available_height;
     if (window->window == None) {
         window->changes.width = width; window->changes.height = height;
         window->dirtyChanges |= CWWidth | CWHeight;
@@ -166,7 +168,9 @@ void TkWmNewWindow(TkWindow *window) {
     // Preferred placement excludes the task tray; it is not a maximum size.
     // The compositor supplies the maximized client bounds within this display.
     wm->max_width = DisplayWidth(window->display, window->screenNum);
-    wm->max_height = DisplayHeight(window->display, window->screenNum);
+    int64_t available_height = infinity_gui_geometry(7);
+    wm->max_height = available_height > 0 && available_height <= INT_MAX
+        ? (int)available_height : DisplayHeight(window->display, window->screenNum);
     wm->resize_width = wm->resize_height = 1;
     wm->width_step = wm->height_step = 1;
     wm->title = Tcl_NewStringObj(window->nameUid ? window->nameUid : "Tk", -1);

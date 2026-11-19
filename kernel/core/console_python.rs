@@ -27,6 +27,7 @@ impl Snapshot {
 struct Job {
     memory_browser: bool,
     memory_launching: bool,
+    startup_deadline:u64,
     media_open: Option<crate::runtime::object_navigation::ByteText<96>>,
     tool_export: Option<crate::runtime::object_navigation::ByteText<96>>,
     monitor:Option<crate::runtime::execution::ContextHandle>,
@@ -62,7 +63,7 @@ struct Generated {
 }
 static mut MONITOR_SAMPLE_NS:u64=0;
 static mut MONITOR_RESUME_NS:u64=0;
-static mut JOB: Job = Job { memory_browser:false, memory_launching:false, media_open:None, tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
+static mut JOB: Job = Job { memory_browser:false, memory_launching:false, startup_deadline:0, media_open:None, tool_export:None, monitor:None, task: None, owner: SecurityIdentity([0; 16]),
     files: [const { Snapshot::EMPTY }; 8], count: 0, output: [0; 32768], errors: [0; 8192], initial_pages: 0, generated: None,
     recovery: None, exception: None,
     filesystem: Vfs::new(), data: app_data::Data::new(), archive: [0; MAX_ARCHIVE], package_revision: None, package_owner: [0; 16], pip: false,
@@ -298,7 +299,7 @@ unsafe fn start(console: &ConsoleRuntime, path: &[u8], arguments: &[&[u8]], expe
 // ------------------=
 unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],expected_source:Option<&[u8]>,candidate:Option<&[u8]>)->Result<(),&'static [u8]> {
     let job = &mut *(&raw mut JOB);
-    if job.task.is_some() { return Err(b"python: a script is already running; use python-cancel."); }
+    if job.task.is_some() { return Err(b"A Python app is already running. End it in Task Manager or use python-cancel."); }
     if !active(console) { return Err(b"python: an authenticated session is required."); }
     let bundled_ide=candidate.is_none() && path.ends_with(b"/documents/InfinityCode.py") &&
         expected_source==Some(include_bytes!("../../sdk/python/examples/infinitycode.py").as_slice()) && arguments.len()==2 && arguments[1]==path;
@@ -508,9 +509,9 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     job.memory_browser = path == memory_browser::PATH && arguments.len()==2 && job.generated.is_none()
         && &job.files[0].bytes[..job.files[0].len] == include_bytes!("../../runtime/install/System/infinity-memory.py");
     job.memory_launching=job.memory_browser || bundled_ide;
-    let name=if path==memory_browser::PATH { b"Infinity Memory".as_slice() } else if path==media::PLAYER {b"Media Player".as_slice()} else {path.rsplit(|b|*b==b'/').next().unwrap_or(path)};
+    job.startup_deadline=if job.memory_launching{now.saturating_add(30_000_000_000)}else{0};
     MONITOR_RESUME_NS=0;
-    job.monitor=crate::runtime::with_runtime(|r|r.task_manager.native_start(&mut r.execution,crate::runtime::task_manager::IMAGE_NATIVE_PYTHON,name.strip_suffix(b".py").unwrap_or(name)).ok()).flatten();
+    job.monitor=job.task.as_ref().and_then(Task::monitor_handle);
     if job.monitor.is_none(){if job.application.take().is_some(){crate::runtime::ai::application_host::detach();}
         let _=job.task.take().unwrap().release(memory_mut());return Err(b"python: no process slot available.");}
     publish(1, 0, 0, 0, job.initial_pages, memory_mut().available_pages() as u64);
@@ -872,7 +873,7 @@ pub(super) fn command(console: &mut ConsoleRuntime, input: &[u8]) -> bool { unsa
     }
     if count >= 3 && args[1] == b"-m" || count == 2 && matches!(args[1], b"--version" | b"-V") {
         let job = &mut *(&raw mut JOB);
-        let result = if job.task.is_some() { Err(b"python: a script is already running; use python-cancel.".as_slice()) }
+        let result = if job.task.is_some() { Err(b"A Python app is already running. End it in Task Manager or use python-cancel.".as_slice()) }
             else if !active(console) { Err(b"python: an authenticated session is required.".as_slice()) }
             else { prepare_packages(console, job, false,false).and_then(|_| {
                 job.network.reset(SecurityIdentity(console.current_session.0), allow_network);
@@ -915,6 +916,9 @@ pub(super) fn waiting_input(console:&ConsoleRuntime)->bool {unsafe{let job=&*(&r
 pub(super) fn input(console:&mut ConsoleRuntime,key:super::ConsoleKey)->bool {unsafe {
     let job=&mut *(&raw mut JOB);
     if job.task.is_none()||job.owner!=SecurityIdentity(console.current_session.0)||job.pip{return false;}
+    // A GUI or computing script must not consume independent shell commands.
+    // Route stdin only after an actual read request; retain explicit Ctrl-C cancellation.
+    if !job.input.waiting && !matches!(key,super::ConsoleKey::Shortcut(b'c')) {return false;}
     match key {
         super::ConsoleKey::Shortcut(b'c')=>{job.input.close();if let Some(task)=job.task.as_mut(){task.cancel();}job.child.cancel();console.reset_input();},
         super::ConsoleKey::Shortcut(b'd')=>job.input.close(),
@@ -979,8 +983,16 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
         job.child.poll(now, authorized, memory_mut(), &mut job.filesystem, &mut job.network);
         return;
     }
+    let startup_expired=job.memory_launching && job.startup_deadline!=0 && now>=job.startup_deadline;
+    if startup_expired {
+        job.memory_launching=false;
+        let path=&job.files[0].path[..job.files[0].path_len];
+        let _=crate::storage::app_errors::record(path,super::certificate_time(console.system.firmware_runtime_services),"startup-timeout",format_args!("No window before deadline; process {:?}",job.monitor));
+        crate::ui::app_launcher::set_launch_notice(b"Application startup timed out. Resources released; reopen to retry. See /Logs.");
+        job.task.as_mut().unwrap().cancel();
+    }
     let task = job.task.as_mut().unwrap();
-    if authorized&&job.input.waiting&&now<task.deadline(){return;}
+    if authorized&&!startup_expired&&job.input.waiting&&now<task.deadline(){return;}
     let mut files: [File<'_>; 16] = core::array::from_fn(|_| File { path: b"", bytes: b"" });
     for (file, source) in files.iter_mut().zip(job.files.iter()).take(job.count) {
         *file = File { path: &source.path[..source.path_len], bytes: &source.bytes[..source.len] };
@@ -1004,7 +1016,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
             |memory, tables, operation, arguments| crate::runtime::with_runtime(|runtime|job.gui.dispatch(runtime,memory,tables,job.owner,native_owner,gui_allowed,operation,arguments,work,display,now)).flatten()
                 .or_else(||{let result=memory_browser::dispatch(gui_allowed && job.memory_browser,
                     console.current_user.0, console.current_session.0, tables, operation, arguments);
-                    if result.is_some(){job.memory_launching=false;}result})
+                    result})
                 .or_else(||media::dispatch(gui_allowed && ((operation==0x12e6 && job.memory_browser) || (job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER)),console.current_user.0,console.current_session.0,&mut job.archive,&mut job.media_open,tables,operation,arguments))
                 .or_else(||exception_call(&mut job.exception,job.generated,&job.files[0],tables,operation,arguments))
                 .or_else(|| application_call(&mut job.application,job.pip,console.current_user.0,console.current_session.0,tables,operation,arguments))
@@ -1016,7 +1028,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
                     }))
                 .or_else(||job.network.syscall(tables, operation, arguments))
                 .or_else(|| job.data.syscall(&mut job.filesystem, &mut job.archive, tables, operation, arguments)));
-        if !job.memory_browser && job.gui.revision()!=job.gui_revision {job.memory_launching=false;}
+        if job.memory_launching && crate::runtime::with_runtime(|r|(0..r.ui.windows.count()).any(|i|r.ui.windows.ordered_window(i).is_some_and(|w|w.owner==native_owner && w.visible))).unwrap_or(false) {job.memory_launching=false;}
         if !(job.memory_launching || gui_allowed) || !matches!(result,State::Runnable) {break result;}
         remaining-=1;
         let next=crate::runtime::ai::qwen::workers::clock_ns();
@@ -1029,7 +1041,7 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
         MONITOR_RESUME_NS=timestamp.saturating_add(crate::runtime::task_manager::TaskManager::native_cooldown_ns(busy,monitor.map_or(100,|v|v.1.cpu_weight)));
         let sample=timestamp.saturating_sub(MONITOR_SAMPLE_NS)>=1_000_000_000;
         let bytes=if sample{MONITOR_SAMPLE_NS=timestamp;Some(memory_mut().resident_bytes(native_owner.0))}else{None};
-        crate::runtime::with_runtime(|r|{let hung=job.gui.unresponsive(r,timestamp);if let Some(c)=r.execution.get_mut(h){c.usage.unresponsive=hung;c.usage.timed=true;c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);if let Some(n)=bytes{c.usage.memory_bytes=n;}}});
+        crate::runtime::with_runtime(|r|{let hung=job.gui.unresponsive(r,timestamp);if let Some(c)=r.execution.get_mut(h){c.usage.unresponsive=hung;c.usage.timed=true;if let Some(n)=bytes{c.usage.memory_bytes=n;}}});
     }
     let progress=task.result_lengths(b"",&mut job.output,&mut job.errors);
     if job.generated.is_some_and(|g|g.phase==workflow::Phase::Run) {
@@ -1128,6 +1140,10 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
     }
     let _ = crate::runtime::with_runtime(|runtime|job.gui.close(runtime,memory_mut()));
     job.gui_keyboard = false;
+    if startup_expired {
+        console.open_app_launcher();
+        crate::ui::app_launcher::set_launch_notice(b"Application startup timed out. Reopen to retry. See /Logs.");
+    }
     if let Some(owned)=job.application.take(){
         if crate::runtime::ai::application_host::context().is_some_and(|live|live.instance==owned.instance){
             crate::runtime::ai::application_host::detach();crate::ui::native_uikit::close();

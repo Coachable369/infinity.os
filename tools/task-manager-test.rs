@@ -50,6 +50,32 @@ fn main() {
     tasks.sample_system(3_000_000_000,3_000_000_000,4,8<<30,4<<30);
     assert_eq!(tasks.system.cpu_percent,0);
 
+    // Native startup is observable before a window exists; hung tasks stay controllable.
+    let pending=tasks.process_start(&mut execution,b"InfinityCode").unwrap();
+    let other=tasks.process_start(&mut execution,b"background.py").unwrap();
+    assert_ne!(pending,other);
+    execution.get_mut(pending).unwrap().usage.unresponsive=true;
+    execution.get_mut(pending).unwrap().usage.memory_bytes=4096;
+    assert!(tasks.inspect(&execution,pending).unwrap().usage.unresponsive);
+    tasks.pause(&mut execution,pending).unwrap();
+    assert_eq!(tasks.inspect(&execution,pending).unwrap().state,ContextState::Waiting);
+    tasks.resume(&mut execution,pending).unwrap();
+    tasks.end(&mut execution,pending).unwrap();
+    assert_eq!(tasks.task_nth(&execution,0).unwrap().handle,other);
+    let before_release=tasks.process_start(&mut execution,b"pending cleanup").unwrap();
+    assert_ne!(before_release,pending);
+    tasks.process_release(&mut execution,before_release);
+    tasks.process_release(&mut execution,pending);
+    assert_eq!(tasks.inspect(&execution,pending).unwrap().usage.memory_bytes,0);
+    assert!(!tasks.inspect(&execution,pending).unwrap().usage.unresponsive);
+    assert_eq!(tasks.process_start(&mut execution,b"Infinity Memory").unwrap(),pending);
+    tasks.process_release(&mut execution,pending);tasks.process_release(&mut execution,other);
+    for _ in 0..256 {
+        let h=tasks.process_start(&mut execution,b"short task").unwrap();
+        tasks.end(&mut execution,h).unwrap();
+        assert_eq!(tasks.relaunch(&mut execution,h),Err(TaskManagerError::InvalidState));
+        tasks.process_release(&mut execution,h);
+    }
     let light = tasks.launch(&mut execution, IMAGE_TEXT_EDITOR).unwrap();
     let heavy = tasks.launch(&mut execution, IMAGE_FILE_NAVIGATOR).unwrap();
     let mut budget = execution.get(light).unwrap().budget;

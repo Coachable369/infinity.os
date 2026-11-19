@@ -2,7 +2,7 @@
 //! Native contexts bind to a CR3-compatible root only after the architecture
 //! mapper has completed every required mapping and protection transition.
 
-pub const MAX_CONTEXTS: usize = 48;
+pub const MAX_CONTEXTS: usize = 128;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SecurityIdentity(pub [u8; 16]);

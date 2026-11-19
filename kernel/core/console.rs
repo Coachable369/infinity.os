@@ -1987,7 +1987,7 @@ impl ConsoleRuntime {
         if action==0 && task.image_identity==crate::runtime::task_manager::IMAGE_TEXT_EDITOR && !self.editor_document.is_saved() {
             self.open_text_editor();self.request_editor_action(PendingDocumentAction::Close);return;
         }
-        if action==1 && matches!(task.image_identity,crate::runtime::task_manager::IMAGE_NATIVE_C|crate::runtime::task_manager::IMAGE_NATIVE_PYTHON){return;}
+        if action==1 && (task.image_identity>=crate::runtime::task_manager::IMAGE_PROCESS_BASE || matches!(task.image_identity,crate::runtime::task_manager::IMAGE_NATIVE_C|crate::runtime::task_manager::IMAGE_NATIVE_PYTHON)){return;}
         if action==1 && (task.image_identity==crate::runtime::task_manager::IMAGE_PREVIEW||task.image_identity.wrapping_sub(crate::runtime::task_manager::IMAGE_SCENE_BASE)<=32){return;}
         let changed = crate::runtime::with_runtime(|runtime| match action {
             0 | 5 => runtime
@@ -8162,6 +8162,12 @@ impl ConsoleRuntime {
             return false;
         }
         self.session_idle.note_activity();
+        if self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::TaskManager
+            && crate::ui::task_management::current().state.tab==crate::ui::task_management::Tab::Processes {
+            let count=crate::runtime::with_runtime(|r|r.task_manager.task_count(&r.execution)).unwrap_or(0);
+            self.task_manager_selected=(self.task_manager_selected as isize-vertical as isize).clamp(0,count.saturating_sub(1) as isize) as usize;
+            self.refresh_task_manager_output();self.redraw();return true;
+        }
         if self.mode == ConsoleMode::AppLauncher {
             let layout = SystemLayout::new(
                 self.system.framebuffer_width,
@@ -12991,7 +12997,7 @@ impl ConsoleRuntime {
                         .ok()
                 })
                 .flatten();
-                if task.is_some_and(|t|action==1 && (matches!(t.image_identity,crate::runtime::task_manager::IMAGE_NATIVE_C|crate::runtime::task_manager::IMAGE_NATIVE_PYTHON|crate::runtime::task_manager::IMAGE_PREVIEW)||t.image_identity.wrapping_sub(crate::runtime::task_manager::IMAGE_SCENE_BASE)<=32)){
+                if task.is_some_and(|t|action==1 && (t.image_identity>=crate::runtime::task_manager::IMAGE_PROCESS_BASE || matches!(t.image_identity,crate::runtime::task_manager::IMAGE_NATIVE_C|crate::runtime::task_manager::IMAGE_NATIVE_PYTHON|crate::runtime::task_manager::IMAGE_PREVIEW)||t.image_identity.wrapping_sub(crate::runtime::task_manager::IMAGE_SCENE_BASE)<=32)){
                     self.output.write_line(b"Open this application normally to start a new process.");return true;
                 }
                 if action==0 && task.is_some_and(|t|t.image_identity==crate::runtime::task_manager::IMAGE_TEXT_EDITOR)&&!self.editor_document.is_saved(){

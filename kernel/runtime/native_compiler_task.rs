@@ -68,6 +68,9 @@ pub static INTERACTION: &[u8] = include_bytes!("../../sdk/c/include/infinity/int
 pub static APP: &[u8] = include_bytes!("../../sdk/c/include/infinity/app.h");
 pub static APP_API: &[u8] = include_bytes!("../../sdk/c/include/infinity/app_api.h");
 
+#[no_mangle]
+pub static mut INFINITY_NATIVE_PROCESS_PROGRESS:[u64;10]=[1,0,0,0,0,0,0,0,0,0];
+
 pub struct Task {
     process: Option<Process<cpu::BoundContext>>,
     address_space: Option<ProcessAddressSpace<cpu::Tables>>,
@@ -83,6 +86,9 @@ pub struct Task {
     sleep_until: u64,
     cache_offset: usize,
     cancelled: bool,
+    monitor: Option<super::execution::ContextHandle>,
+    monitor_sample:u64,
+    monitor_resume:u64,
     mappings: PrivateMappings,
     files: Files,
     libraries: super::native_extensions::Libraries,
@@ -99,6 +105,11 @@ impl Task {
     // DESC: Returns the dispatcher-owned native process identifier before and after deferred image preparation.
     // ------------------=
     pub const fn context_id(&self) -> u32 { self.id }
+    // ------------------------=
+    // FUNC: monitor_handle
+    // DESC: Exposes the mandatory native lifecycle record to its application host.
+    // ------------------=
+    pub const fn monitor_handle(&self)->Option<super::execution::ContextHandle>{self.monitor}
     // ------------------------=
     // FUNC: deadline
     // DESC: Allows a scoped child to inherit an equal or tighter execution deadline, never extend its parent budget.
@@ -139,6 +150,9 @@ impl Task {
         memory: &mut NativeMemory, _kernel: KernelAccessMap, controller: cpu::Controller,
         deadline: u64, heap_pages: u32,
     ) -> Result<Self, MemoryError> {
+        let label=args.get(1).filter(|p|!p.starts_with(b"-")).or(args.first()).copied().unwrap_or(b"Native process");
+        let label=label.rsplit(|b|*b==b'/').next().unwrap_or(label);
+        let label=match label {b"infinity-memory.py"=>b"Infinity Memory".as_slice(),b"InfinityCode.py"=>b"InfinityCode".as_slice(),b"media-player.py"=>b"Media Player".as_slice(),_=>label};
         let args = super::native_arguments::Arguments::new(args).ok_or(MemoryError::InvalidAddress)?;
         let image =
             Image::parse_compiler(bytes, cpu::MACHINE).map_err(|_| MemoryError::InvalidAddress)?;
@@ -150,7 +164,15 @@ impl Task {
             stack_pages: 256,
         };
         let preparation = ProcessPreparation::<cpu::Tables>::new(memory, id, image, layout)?;
+        #[cfg(feature="native-compiler")]
+        let monitor=match super::with_runtime(|r|r.task_manager.process_start(&mut r.execution,label)) {
+            Some(Ok(h))=>Some(h),
+            _=>{preparation.release(memory)?;return Err(MemoryError::AllocationTableFull);}
+        };
+        #[cfg(not(feature="native-compiler"))]
+        let monitor=None;
         Ok(Self {
+            monitor,monitor_sample:0,monitor_resume:0,
             process: None,
             address_space: None,
             preparation: Some(preparation),
@@ -320,6 +342,21 @@ impl Task {
         input: &[u8], files: &[File<'_>], output: &mut [u8], diagnostics: &mut [u8],
         mut filesystem: impl FnMut(&mut NativeMemory, &mut cpu::Tables, u64, [u64; 6]) -> Option<i64>,
     ) -> State {
+        #[cfg(feature="native-compiler")]
+        if let Some(h)=self.monitor {
+            if now.saturating_sub(self.monitor_sample)>=1_000_000_000 {
+                self.monitor_sample=now;let bytes=memory.resident_bytes(self.id);
+                super::with_runtime(|r|{if let Some(c)=r.execution.get_mut(h){c.usage.memory_bytes=bytes;}});
+            }
+            let record=super::with_runtime(|r|r.execution.get(h).map(|c|(c.state,c.budget))).flatten();
+            let state=record.map(|r|r.0);
+            if let Some((_,budget))=record {
+                memory.monitor_limit(true,self.id,budget.memory_limit);
+                if authorized && !self.cancelled && state!=Some(super::execution::ContextState::Stopped) && budget.cpu_weight<100 && now<self.monitor_resume{return State::Runnable;}
+            }
+            if state==Some(super::execution::ContextState::Stopped){self.cancel();}
+            if authorized && !self.cancelled && state==Some(super::execution::ContextState::Waiting){return State::Runnable;}
+        }
         if !authorized {
             self.cancel();
         }
@@ -347,6 +384,11 @@ impl Task {
                     _ => break,
                 }
             }
+            #[cfg(feature="native-compiler")]
+            if let Some(h)=self.monitor {
+                let busy=unsafe{cpu::clock_ns()}.unwrap_or(now).saturating_sub(started.unwrap_or(now));
+                super::with_runtime(|r|{if let Some(c)=r.execution.get_mut(h){c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);}});
+            }
             return State::Runnable;
         }
         let Some(mut streams) =
@@ -365,11 +407,13 @@ impl Task {
         let entropy_sequence = &mut self.entropy_sequence;
         let directories = &mut self.directories;
         let sleep_until = &mut self.sleep_until;
+        let started=unsafe{cpu::clock_ns()}.unwrap_or(now);
         let state = self
             .process
             .as_mut()
             .unwrap()
             .step(now, |_, operation, a| {
+                unsafe{let p=core::ptr::addr_of_mut!(INFINITY_NATIVE_PROCESS_PROGRESS).cast::<u64>();core::ptr::write_volatile(p.add(4),operation);core::ptr::write_volatile(p.add(5),a[0]);}
                 // Only explicitly bound application, console, filesystem and HTTPS operations
                 // may be delegated; memory, entropy and process authority stay native.
                 if matches!(operation, 0x1100..=0x110a | 0x1110..=0x1112 | 0x1120..=0x1124 | 0x1140..=0x1142 | 0x1150..=0x1156 | 0x1206..=0x1208 | 0x120b..=0x121a | 0x121b | 0x121d | 0x1233..=0x1237 | 0x1240..=0x1243 | 0x1251..=0x1254 | 0x1270..=0x1274 | 0x1280..=0x1283 | 0x1290 | 0x12e0..=0x12e7 | 0x12f8) {
@@ -452,6 +496,20 @@ impl Task {
                 }
             });
         self.streams = streams.checkpoint();
+        let (visits,calls)=self.process.as_ref().unwrap().counters();
+        unsafe{let p=core::ptr::addr_of_mut!(INFINITY_NATIVE_PROCESS_PROGRESS).cast::<u64>();
+            core::ptr::write_volatile(p.add(1),self.id as u64);core::ptr::write_volatile(p.add(2),visits);
+            core::ptr::write_volatile(p.add(3),calls);core::ptr::write_volatile(p.add(6),self.sleep_until);core::ptr::write_volatile(p.add(7),now);
+            core::ptr::write_volatile(p.add(8),self.monitor.map_or(0,|h|h.0 as u64));
+            #[cfg(feature="native-compiler")]
+            core::ptr::write_volatile(p.add(9),self.monitor.and_then(|h|super::with_runtime(|r|r.execution.get(h).map(|c|c.state as u64)).flatten()).unwrap_or(0));}
+
+        #[cfg(feature="native-compiler")]
+        if let Some(h)=self.monitor {
+            let busy=unsafe{cpu::clock_ns()}.unwrap_or(started).saturating_sub(started);
+            let weight=super::with_runtime(|r|{if let Some(c)=r.execution.get_mut(h){c.usage.timed=true;c.usage.cpu_ticks=visits;c.usage.io_units=calls;c.usage.busy_ns=c.usage.busy_ns.saturating_add(busy);c.budget.cpu_weight}else{100}}).unwrap_or(100);
+            self.monitor_resume=now.saturating_add(busy).saturating_add(super::task_manager::TaskManager::native_cooldown_ns(busy,weight));
+        }
         state
     }
     // ------------------------=
@@ -488,6 +546,9 @@ impl Task {
         if let Some(secret) = self.entropy_secret.as_mut() { secret.fill(0); }
         self.entropy_secret = None;
         self.cancel();
+        memory.monitor_limit(true,self.id,u64::MAX);
+        #[cfg(feature="native-compiler")]
+        if let Some(h)=self.monitor {super::with_runtime(|r|{let _=r.task_manager.end(&mut r.execution,h);});}
         if let Some(preparation) = self.preparation.take() {
             preparation.release(memory)?;
         }
@@ -496,6 +557,8 @@ impl Task {
             self.mappings.release_all(&mut space.page_tables, memory)?;
             space.release(memory)?;
         }
+        #[cfg(feature="native-compiler")]
+        if let Some(h)=self.monitor.take(){super::with_runtime(|r|r.task_manager.process_release(&mut r.execution,h));}
         Ok(())
     }
 }

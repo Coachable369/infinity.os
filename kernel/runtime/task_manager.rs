@@ -16,6 +16,7 @@ pub const IMAGE_PREVIEW:u32=0xa00b;
 pub const IMAGE_SCENE_BASE:u32=0xa100;
 pub const IMAGE_NATIVE_C:u32=0xa008;
 pub const IMAGE_NATIVE_PYTHON:u32=0xa009;
+pub const IMAGE_PROCESS_BASE:u32=0xf0000000;
 pub const DEFAULT_APP_MEMORY_LIMIT: u64 = 8 * 1024 * 1024;
 pub const FILE_NAVIGATOR_INSTALLED_BYTES: u64 = 224 * 1024;
 pub const TEXT_EDITOR_INSTALLED_BYTES: u64 = 176 * 1024;
@@ -66,6 +67,8 @@ pub struct TaskManager {
     system_busy_ns:u64,
     previous_busy_ns:[u64;super::execution::MAX_CONTEXTS],
     native_names:[[u8;64];2],
+    process_names:[[u8;64];super::execution::MAX_CONTEXTS],
+    process_owned:[bool;super::execution::MAX_CONTEXTS],
     installed_names: [[u8; 64]; MAX_CUSTOM_APPLICATION_IMAGES],
     installed_application_images: [u32; MAX_CUSTOM_APPLICATION_IMAGES],
 }
@@ -85,6 +88,8 @@ impl TaskManager {
             history_count:0,system_busy_ns:0,
             sample_time_ns:0,previous_busy_ns:[0;super::execution::MAX_CONTEXTS],
             native_names:[[0;64];2],
+            process_names:[[0;64];super::execution::MAX_CONTEXTS],
+            process_owned:[false;super::execution::MAX_CONTEXTS],
             installed_names: [[0; 64]; MAX_CUSTOM_APPLICATION_IMAGES],
             installed_application_images: [0; MAX_CUSTOM_APPLICATION_IMAGES],
         }
@@ -140,6 +145,7 @@ impl TaskManager {
             IMAGE_LAUNCHER=>b"App Launcher",IMAGE_PREVIEW=>b"File Preview",
             IMAGE_SPATIAL=>b"Spatial Desktop",
             IMAGE_NATIVE_C|IMAGE_NATIVE_PYTHON=>self.native_names[(image-IMAGE_NATIVE_C)as usize].split(|b|*b==0).next().unwrap_or_default(),
+            id if id>=IMAGE_PROCESS_BASE && id<IMAGE_PROCESS_BASE+super::execution::MAX_CONTEXTS as u32=>self.process_names[(id-IMAGE_PROCESS_BASE)as usize].split(|b|*b==0).next().unwrap_or(b"Native process"),
             _=>self.installed_application_images.iter().position(|id|*id==image && image!=0)
                 .map(|i|self.installed_names[i].split(|c|*c==0).next().unwrap_or_default())
                 .filter(|s|!s.is_empty()).unwrap_or(b"Application"),
@@ -161,6 +167,39 @@ impl TaskManager {
         let slot=&mut self.native_names[(image-IMAGE_NATIVE_C)as usize];slot.fill(0);
         let n=name.len().min(slot.len());slot[..n].copy_from_slice(&name[..n]);
         Ok(h)
+    }
+
+    // ------------------------=
+    // FUNC: process_start
+    // DESC: Registers native work before image preparation, retaining stopped slots for bounded reuse.
+    // ------------------=
+    pub fn process_start(&mut self,execution:&mut ExecutionManager,name:&[u8])->Result<ContextHandle,TaskManagerError>{
+        for index in 0..super::execution::MAX_CONTEXTS {
+            if self.process_owned[index]{continue;}
+            let image=IMAGE_PROCESS_BASE+index as u32;
+            let old=(0..execution.count()).filter_map(|i|execution.nth(i)).find(|c|c.image_identity==image);
+            if old.is_some_and(|c|c.state!=ContextState::Stopped){continue;}
+            let h=if let Some(c)=old {let h=c.handle;self.relaunch(execution,h)?;h}else{self.launch(execution,image)?};
+            self.process_owned[index]=true;
+            let label=&mut self.process_names[index];label.fill(0);let n=name.len().min(label.len());label[..n].copy_from_slice(&name[..n]);
+            if let Some(c)=execution.get_mut(h){c.budget.memory_limit=256*1024*1024;c.usage.timed=true;}
+            return Ok(h);
+        }
+        Err(TaskManagerError::Runtime(ExecutionError::Full))
+    }
+
+    // ------------------------=
+    // FUNC: process_release
+    // DESC: Retires a native record only after its owner has released resources, preventing stale-owner reuse.
+    // ------------------=
+    pub fn process_release(&mut self,execution:&mut ExecutionManager,handle:ContextHandle){
+        if let Some(c)=execution.get(handle){
+            let index=c.image_identity.wrapping_sub(IMAGE_PROCESS_BASE) as usize;
+            if index<self.process_owned.len(){
+                self.process_owned[index]=false;let _=self.end(execution,handle);
+                if let Some(c)=execution.get_mut(handle){c.usage.memory_bytes=0;c.usage.unresponsive=false;}
+            }
+        }
     }
 
     // ------------------------=
@@ -226,9 +265,17 @@ impl TaskManager {
     // DESC: Returns one typed monitoring snapshot without exposing mutable context storage.
     // ------------------=
     pub fn task_nth(&self, execution: &ExecutionManager, index: usize) -> Option<TaskSnapshot> {
-        execution
-            .nth(index)
-            .map(|context| snapshot(context, self.cpu_share_percent[index]))
+        let mut ordinal=0;
+        for group in 0..3 {
+            for slot in 0..execution.count() {
+                let c=execution.nth(slot)?;
+                let category=if c.service_identity==0 && c.state!=ContextState::Stopped{0}else if c.service_identity!=0{1}else{2};
+                if category!=group{continue;}
+                if ordinal==index{return Some(snapshot(c,self.cpu_share_percent[slot]));}
+                ordinal+=1;
+            }
+        }
+        None
     }
 
     // ------------------------=
@@ -398,6 +445,8 @@ impl TaskManager {
         handle: ContextHandle,
     ) -> Result<(), TaskManagerError> {
         require_application(execution, handle)?;
+        let index=execution.get(handle).unwrap().image_identity.wrapping_sub(IMAGE_PROCESS_BASE) as usize;
+        if index<self.process_owned.len() && self.process_owned[index]{return Err(TaskManagerError::InvalidState);}
         execution
             .relaunch(handle)
             .map_err(TaskManagerError::Runtime)
@@ -506,7 +555,7 @@ fn require_application(
 // DESC: Validates one installed native application image identity.
 // ------------------=
 pub const fn is_application_image(image: u32) -> bool {
-    (image>IMAGE_SCENE_BASE && image<=IMAGE_SCENE_BASE+32) || matches!(
+    (image>=IMAGE_PROCESS_BASE && image<IMAGE_PROCESS_BASE+super::execution::MAX_CONTEXTS as u32) || (image>IMAGE_SCENE_BASE && image<=IMAGE_SCENE_BASE+32) || matches!(
         image,
         IMAGE_FILE_NAVIGATOR | IMAGE_TEXT_EDITOR | IMAGE_COMMAND_WINDOW | IMAGE_TASK_MANAGER | IMAGE_BROWSER | IMAGE_SETTINGS | IMAGE_SPATIAL | IMAGE_NATIVE_C | IMAGE_NATIVE_PYTHON | IMAGE_LAUNCHER | IMAGE_PREVIEW
     )

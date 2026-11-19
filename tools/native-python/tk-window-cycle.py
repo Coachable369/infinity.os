@@ -15,6 +15,10 @@ def observed_interval():
     root.wait_variable(resumed)
 
 
+root.geometry(f"300x{root.winfo_screenheight()}")
+root.update()
+assert root.winfo_height() <= root.maxsize()[1] < root.winfo_screenheight()
+root.geometry("300x180+80+120")
 root.update()
 assert root.state() == "normal" and root.winfo_ismapped()
 root.withdraw()
