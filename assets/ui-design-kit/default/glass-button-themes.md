@@ -1,7 +1,22 @@
 # Shared glass button themes
 
-Reuse the approved Precision atlas, its reflection lightmap, edge states, Inter
-type and 140ms focus transition. No new icon or bitmap family is introduced.
+Reuse the shared Precision atlas, Inter type and 140ms focus transition.
+The six button cells are regenerated from `glass-buttons-v2-reference.png`.
+Frames, panels, fields and progress markers retain their previous artwork.
+
+## Regenerated glass artwork, November 19, 2026
+
+The built-in image generator produced the reference using the approved
+Eclipse Precision board as a style example. Prompt: six blank optical-glass
+buttons in two columns (sapphire primary, smoked navy secondary) and three
+rows (normal, hover, pressed), matching geometry, 250x52 logical footprint,
+modest rounded corners, icy-silver rim, soft upper reflection, brighter hover,
+darker inset pressed state, no text or glyphs, frontal orthographic view.
+
+`tools/build-precision-artwork.py` extracts the six states into the existing
+256px nine-slice cells with independently translucent fill and rim. The
+reference sheet's background and gutters are not runtime artwork. Labels
+remain live Inter text; hit rectangles and focus timing are unchanged.
 
 Studio Surface Styles presents three 250×52 production-sampled buttons above
 the component grid: Sapphire Glass, Smoked Glass and Ice Glass. Their existing

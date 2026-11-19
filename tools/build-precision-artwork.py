@@ -109,6 +109,23 @@ def reflective_primary(layers, access, box):
     return fill, edge
 
 # ------------------------=
+# FUNC: generated_button_layers
+# DESC: Packs the regenerated glass artwork at its 250x52 logical size using the existing independently translucent fill and rim contract.
+# ------------------=
+def generated_button_layers(reference, box, primary=False):
+    scale = 250 / (box[2] - box[0])
+    board = reference.resize((round(reference.width * scale), round(reference.height * scale)), Image.Resampling.LANCZOS)
+    bounds = tuple(round(value * scale) for value in box)
+    fill, edge = reference_layers(board, bounds, 8, 14)
+    if primary:
+        center = fill.getpixel((128, 128))[:3]
+        delta = tuple(target - source for target, source in zip((62, 111, 255), center))
+        pixels = [fill.getpixel((x, y)) for y in range(SIZE) for x in range(SIZE)]
+        fill.putdata([(*(max(0, min(255, pixel[c] + delta[c])) for c in range(3)), pixel[3])
+                      for pixel in pixels])
+    return fill, edge
+
+# ------------------------=
 # FUNC: main
 # DESC: Packs reference-derived normal/focused/pressed surfaces plus the existing clean dot artwork into independent fill and edge atlases.
 # ------------------=
@@ -147,6 +164,12 @@ def main():
         layers.append((art.resize((SIZE, SIZE), Image.Resampling.LANCZOS), Image.new("RGBA", (SIZE, SIZE))))
     for box in [(1161, 569, 1265, 620), (1278, 569, 1384, 620), (1397, 569, 1504, 620)]:
         layers.append(reference_layers(reference, box, 8, 14))
+    glass = Image.open(kit / "glass-buttons-v2-reference.png").convert("RGB")
+    # Only the six button cells change. Frames, fields, panels and markers
+    # retain the approved Precision artwork and existing sampling contract.
+    for row, (top, bottom) in enumerate(((229, 376), (449, 596), (673, 820))):
+        layers[4 + row] = generated_button_layers(glass, (50, top, 742, bottom), primary=row != 2)
+        layers[11 + row] = generated_button_layers(glass, (794, top, 1486, bottom))
     packed = b"".join(cell[layer].tobytes() for layer in range(2) for cell in layers)
     (kit / "eclipse-precision-v1.rgba").write_bytes(packed)
 

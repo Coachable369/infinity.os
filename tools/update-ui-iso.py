@@ -511,13 +511,27 @@ def verify_boot_catalog(iso, efi):
 
 # ------------------------=
 # FUNC: require_staging_space
-# DESC: Budgets three concurrent media extents plus compiler growth without counting the already allocated original ISO.
+# DESC: Checks remaining phase-specific allocations using measured FAT sizes, preserving compiler headroom and the original ISO.
 # ------------------=
-def require_staging_space(iso):
-    # Peak payload creation: editable live FAT + installed FAT + new shards.
-    # Peak final verification: candidate + extracted live FAT + installed FAT.
-    # release_repacked_image prevents a fourth extent during verification.
-    required = iso.stat().st_size * 3 + 8 * 1024**3
+def require_staging_space(iso, live=None, installed=None, kernel=None):
+    media = iso.stat().st_size
+    headroom = 8 * 1024**3
+    if live is None:
+        # Admission covers extracting the live FAT and its installed payload.
+        # Check the exact remaining peak once both sizes are known. Neither
+        # phase modifies the source ISO, and TemporaryDirectory cleans failures.
+        required = media * 2 + headroom
+    else:
+        live_bytes = live.stat().st_size
+        installed_bytes = installed.stat().st_size
+        kernel_bytes = kernel.stat().st_size
+        allocated = live_bytes + installed_bytes
+        peak = max(
+            allocated + installed_bytes + kernel_bytes,  # new P0/P1 shards
+            live_bytes + media,                          # ISO repack
+            media + live_bytes + installed_bytes,        # final verification
+        )
+        required = max(0, peak - allocated) + headroom
     available = shutil.disk_usage(ROOT).free
     if available < required:
         gib = 1024**3
@@ -585,6 +599,8 @@ def update_iso(iso, target):
         members = payload_members(live)
         reassemble(live, validate_shard_names(members, 0), installed)
         validate_shard_names(members, 1)
+        require_staging_space(iso, live, installed,
+                              ROOT / f"build/{target}/installed-kernel.elf")
         model_before = payload_inventory(installed)
         for model in bundle.MODELS:
             bundle.verify_model(installed, *model)

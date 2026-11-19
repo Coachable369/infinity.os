@@ -583,12 +583,35 @@ class UpdateISOTests(unittest.TestCase):
         with iso.open("wb") as output:
             output.truncate(10 * gib)
         before = updater.file_identity(iso)
-        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=38 * gib)):
-            self.assertEqual(updater.require_staging_space(iso), 38 * gib)
-        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=38 * gib - 1)):
+        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=28 * gib)):
+            self.assertEqual(updater.require_staging_space(iso), 28 * gib)
+        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=28 * gib - 1)):
             with self.assertRaises(RuntimeError):
                 updater.require_staging_space(iso)
         self.assertEqual(updater.file_identity(iso), before)
+
+    # ------------------------=
+    # FUNC: test_measured_staging_peak_includes_shards_and_verification
+    # DESC: Exercises both remaining-space peaks with sparse artifacts and rejects one-byte shortfalls without altering inputs.
+    # ------------------=
+    def test_measured_staging_peak_includes_shards_and_verification(self):
+        gib = 1024**3
+        files = [self.work / name for name in ("media.iso", "live.img", "installed.img", "kernel.elf")]
+        for path, size in zip(files, (10, 10, 7, 1)):
+            with path.open("wb") as output:
+                output.truncate(size * gib)
+        identities = [updater.file_identity(path) for path in files]
+        # 17 GiB already staged + 18 GiB remaining = 35 GiB total, not 38.
+        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=18 * gib)):
+            self.assertEqual(updater.require_staging_space(*files), 18 * gib)
+        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=18 * gib - 1)):
+            with self.assertRaises(RuntimeError):
+                updater.require_staging_space(*files)
+        self.assertEqual([updater.file_identity(path) for path in files], identities)
+        with files[3].open("wb") as output:
+            output.truncate(4 * gib)
+        with mock.patch.object(updater.shutil, "disk_usage", return_value=mock.Mock(free=19 * gib)):
+            self.assertEqual(updater.require_staging_space(*files), 19 * gib)
 
 
 if __name__ == "__main__":
