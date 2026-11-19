@@ -149,7 +149,7 @@ struct UIKitStylesPreview: View {
 
     // ------------------------=
     // FUNC: image
-    // DESC: Composes draft native surface pixels over an aspect-filled OS bitmap and caches exact style/artwork identities.
+    // DESC: Composes native buttons over neutral navy so previews show only saved texture; other surfaces retain the wallpaper scene.
     // ------------------=
     static func image(store: UIKitStore, kind: PrecisionSurfaceKind, width: Int, height: Int, material: PrecisionMaterial) -> CGImage? {
         let wallpaperPath = "assets/ui-design-kit/default/eclipse-access-wallpaper-v1.bmp"
@@ -165,10 +165,15 @@ struct UIKitStylesPreview: View {
         let painted = raw.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) -> Bool in
             guard let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
                 bytesPerRow: width * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
-            let scale = max(CGFloat(width) / CGFloat(source.width), CGFloat(height) / CGFloat(source.height))
-            let size = CGSize(width: CGFloat(source.width) * scale, height: CGFloat(source.height) * scale)
-            context.draw(source, in: CGRect(x: (CGFloat(width) - size.width) / 2, y: (CGFloat(height) - size.height) / 2,
-                width: size.width, height: size.height))
+            if kind == .primary || kind == .secondary {
+                context.setFillColor(CGColor(red: 9.0 / 255, green: 15.0 / 255, blue: 38.0 / 255, alpha: 1))
+                context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            } else {
+                let scale = max(CGFloat(width) / CGFloat(source.width), CGFloat(height) / CGFloat(source.height))
+                let size = CGSize(width: CGFloat(source.width) * scale, height: CGFloat(source.height) * scale)
+                context.draw(source, in: CGRect(x: (CGFloat(width) - size.width) / 2, y: (CGFloat(height) - size.height) / 2,
+                    width: size.width, height: size.height))
+            }
             return true
         }
         guard painted else { return nil }

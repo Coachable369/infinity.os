@@ -4,6 +4,28 @@ import SwiftUI
 
 final class GlassButtonTests: XCTestCase {
     // ------------------------=
+    // FUNC: testPersistentCloudTexture
+    // DESC: Checks native and Studio texture bytes agree and glass has visible horizontal detail without a wallpaper behind it.
+    // ------------------=
+    func testPersistentCloudTexture() throws {
+        let root = URL(fileURLWithPath: "/opt/codebase/infinity.os")
+        let texture = try Data(contentsOf: root.appending(path: "assets/ui-design-kit/default/glass-button-clouds-v1.rgb"))
+        XCTAssertEqual(texture.count, 256 * 72 * 3)
+        XCTAssertEqual(texture, try Data(contentsOf: root.appending(path: "tools/installer-designer/Sources/InfinityInstallerStudio/Resources/glass-button-clouds-v1.rgb")))
+        let atlas = try XCTUnwrap(PrecisionAtlas(data: Data(contentsOf: root.appending(path: "assets/ui-design-kit/default/eclipse-precision-v1.rgba"))))
+        for pressed in [false, true] {
+            let material = PrecisionMaterial(pressed: pressed, style: GlassButtonPreset.smoked.style)
+            let row = (30..<220).map { atlas.pixel(.primary, width: 250, height: 72, x: $0, y: 36, material: material).blue }
+            XCTAssertGreaterThan(try XCTUnwrap(row.max()) - XCTUnwrap(row.min()), 20)
+            XCTAssertEqual(atlas.pixel(.primary, width: 250, height: 72, x: 0, y: 0, material: material).alpha, 0)
+        }
+        var hidden = GlassButtonPreset.smoked.style
+        hidden.fill = 0x00101B3A
+        hidden.border = 0x0086C7FF
+        XCTAssertEqual(atlas.pixel(.primary, width: 250, height: 72, x: 125, y: 36,
+            material: PrecisionMaterial(style: hidden)).alpha, 0)
+    }
+    // ------------------------=
     // FUNC: testElementPresetsPersistWithoutChangingBehavior
     // DESC: Verifies individual style selection survives saving while preserving button identity, label, placement and role.
     // ------------------=

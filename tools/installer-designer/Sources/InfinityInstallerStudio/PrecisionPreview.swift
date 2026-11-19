@@ -49,6 +49,32 @@ struct PrecisionAtlas {
     static let cellCount = 14
     static let byteCount = 2 * cellCount * cellSize * cellSize * 4
     let bytes: Data
+    private static let buttonClouds: Data = {
+        guard let url = Bundle.module.url(forResource: "glass-button-clouds-v1", withExtension: "rgb"),
+              let data = try? Data(contentsOf: url), data.count == 256 * 72 * 3 else {
+            preconditionFailure("Packaged glass-button texture is missing or invalid")
+        }
+        return data
+    }()
+
+    // ------------------------=
+    // FUNC: buttonCloud
+    // DESC: Mirrors the native bilinear texture sampler without depending on the preview backdrop.
+    // ------------------=
+    private static func buttonCloud(width: Int, height: Int, x: Int, y: Int, alpha: Int) -> PrecisionPixel {
+        let fx = x * 255 * 256 / max(1, width - 1), fy = y * 71 * 256 / max(1, height - 1)
+        let sx = fx / 256, sy = fy / 256, wx = fx % 256, wy = fy % 256
+        let channel: (Int) -> Int = { c in
+            var sum = 0
+            for (dy, vy) in [(0, 256 - wy), (1, wy)] {
+                for (dx, vx) in [(0, 256 - wx), (1, wx)] {
+                    sum += Int(buttonClouds[(min(71, sy + dy) * 256 + min(255, sx + dx)) * 3 + c]) * vx * vy
+                }
+            }
+            return sum >> 16
+        }
+        return PrecisionPixel(red: channel(0), green: channel(1), blue: channel(2), alpha: alpha)
+    }
 
     // ------------------------=
     // FUNC: init
@@ -331,6 +357,8 @@ struct PrecisionAtlas {
             background.green = (background.green + delta).clamped(to: 0...255)
             background.blue = (background.blue + delta).clamped(to: 0...255)
             background.alpha = background.alpha * 210 / 255
+            background = Self.over(background, edge: Self.buttonCloud(width: width, height: height, x: x, y: y,
+                alpha: Int(m.opacity) * (m.pressed ? 70 : 90) / 255))
         }
         var edge = PrecisionPixel.clear
         if kind != .windowFill && m.edgeOpacity != 0 {

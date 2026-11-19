@@ -4,6 +4,24 @@ pub type Rgb = (u8, u8, u8);
 const SIZE: usize = 256;
 const CELLS: usize = 14;
 const ART: &[u8; 2 * CELLS * SIZE * SIZE * 4] = include_bytes!("../../assets/ui-design-kit/default/eclipse-precision-v1.rgba");
+const BUTTON_CLOUDS: &[u8; 256 * 72 * 3] = include_bytes!("../../assets/ui-design-kit/default/glass-button-clouds-v1.rgb");
+
+// ------------------------=
+// FUNC: button_cloud
+// DESC: Samples the persistent glass texture smoothly across a button independently of its desktop backdrop.
+// ------------------=
+fn button_cloud(width:usize,height:usize,x:usize,y:usize)->Rgb {
+    let (fx,fy)=(x*255*256/width.saturating_sub(1).max(1),y*71*256/height.saturating_sub(1).max(1));
+    let (sx,sy,wx,wy)=(fx/256,fy/256,fx%256,fy%256);
+    let channel=|c:usize| {
+        let mut sum=0usize;
+        for (dy,vy) in [(0,256-wy),(1,wy)] {for (dx,vx) in [(0,256-wx),(1,wx)] {
+            sum+=usize::from(BUTTON_CLOUDS[((sy+dy).min(71)*256+(sx+dx).min(255))*3+c])*vx*vy;
+        }}
+        (sum>>16) as u8
+    };
+    (channel(0),channel(1),channel(2))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface { Frame, WindowFill, Panel, Primary, Secondary, Field, Current, Inactive }
@@ -396,6 +414,9 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
         let channel=|c:u8| (i32::from(c)+delta).clamp(0,255) as u8;
         background=(channel(background.0),channel(background.1),channel(background.2),
             (u16::from(background.3)*210/255) as u8);
+        let cloud=button_cloud(width,height,x,y);
+        let alpha=(u16::from(m.opacity)*if m.pressed {70}else{90}/255) as u8;
+        background=over(background,(cloud.0,cloud.1,cloud.2,alpha));
     }
     let edge=if kind==Surface::WindowFill || m.edge_opacity==0 {(0,0,0,0)}else {
         let raw=if rounded {

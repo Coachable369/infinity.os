@@ -56,6 +56,22 @@ An explicit layer material uses the layer's own colors instead. Other surface
 families retain their prior independent color contract. Existing authored
 documents are not rewritten merely by opening Studio.
 
+## Persistent cloudy glass texture
+
+The user-approved cloudy appearance is part of the glass surface itself.
+`glass-button-clouds-v1.rgb` is a 256×72 RGB texture extracted from the existing
+UIKit preview wallpaper by `tools/build-button-cloud-texture.py`. Its identical
+Studio resource copy is an active packaging input, verified byte-for-byte.
+Native and Studio samplers bilinearly map it over the button interior, composite
+at 90/255 opacity (70/255 when pressed), and apply the existing rounded coverage
+and independent rim last. Layer opacity still fades the whole control. Matte,
+flat, fields and panels do not sample this texture. No runtime allocation is
+needed. The texture is embedded in both live and installed kernels.
+
+Button dropdown previews use a plain navy backdrop, so cloud detail visible in
+the preview is saved artwork, not an unrelated wallpaper. Real backdrops remain
+visible through the translucent result. Keyboard focus retains the brighter rim.
+
 Preview and native integer samplers must match byte-for-byte. Validate preset
 distinctness, translucency, corner coverage, serialization and undo. The saved
 recipe uses the existing UIKit JSON/style payload and existing ISO-update path.
