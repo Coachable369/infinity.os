@@ -25,21 +25,21 @@ enum InfinityUIKit {
     }
 
     enum Palette {
-        static let canvas = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
-        static let panel = StudioColor(red: 16, green: 27, blue: 58, alpha: 230)
-        static let panelRaised = StudioColor(red: 16, green: 27, blue: 58, alpha: 240)
-        static let border = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
+        static let canvas = StudioColor(red: 9, green: 21, blue: 34, alpha: 255)
+        static let panel = StudioColor(red: 14, green: 28, blue: 54, alpha: 230)
+        static let panelRaised = StudioColor(red: 14, green: 28, blue: 54, alpha: 240)
+        static let border = StudioColor(red: 54, green: 87, blue: 116, alpha: 255)
         static let textPrimary = StudioColor(red: 241, green: 245, blue: 250, alpha: 255)
         static let textSecondary = StudioColor(red: 174, green: 184, blue: 198, alpha: 255)
-        static let accent = StudioColor(red: 32, green: 191, blue: 255, alpha: 255)
-        static let accentBright = StudioColor(red: 156, green: 232, blue: 255, alpha: 255)
+        static let accent = StudioColor(red: 36, green: 90, blue: 212, alpha: 255)
+        static let accentBright = StudioColor(red: 89, green: 149, blue: 245, alpha: 255)
         static let focus = StudioColor(red: 255, green: 255, blue: 255, alpha: 255)
-        static let primaryAction = StudioColor(red: 62, green: 111, blue: 255, alpha: 255)
-        static let primaryActionBorder = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
-        static let secondaryAction = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
-        static let secondaryActionBorder = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
-        static let field = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
-        static let fieldBorder = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
+        static let primaryAction = StudioColor(red: 36, green: 90, blue: 212, alpha: 255)
+        static let primaryActionBorder = StudioColor(red: 54, green: 87, blue: 116, alpha: 255)
+        static let secondaryAction = StudioColor(red: 9, green: 21, blue: 34, alpha: 255)
+        static let secondaryActionBorder = StudioColor(red: 54, green: 87, blue: 116, alpha: 255)
+        static let field = StudioColor(red: 9, green: 21, blue: 34, alpha: 255)
+        static let fieldBorder = StudioColor(red: 54, green: 87, blue: 116, alpha: 255)
         static let placeholder = StudioColor(red: 119, green: 133, blue: 149, alpha: 255)
 
         static let nativeCanvas = canvas.color
@@ -53,11 +53,11 @@ enum InfinityUIKit {
     }
 
     enum EclipseAccess {
-        static let background = StudioColor(red: 9, green: 15, blue: 38, alpha: 255)
-        static let surface = StudioColor(red: 16, green: 27, blue: 58, alpha: 255)
+        static let background = StudioColor(red: 9, green: 21, blue: 34, alpha: 255)
+        static let surface = StudioColor(red: 14, green: 28, blue: 54, alpha: 255)
         static let elevated = StudioColor(red: 26, green: 46, blue: 99, alpha: 255)
-        static let primary = StudioColor(red: 62, green: 111, blue: 255, alpha: 255)
-        static let border = StudioColor(red: 134, green: 199, blue: 255, alpha: 255)
+        static let primary = StudioColor(red: 36, green: 90, blue: 212, alpha: 255)
+        static let border = StudioColor(red: 54, green: 87, blue: 116, alpha: 255)
         static let mutedBorder = StudioColor(red: 67, green: 88, blue: 140, alpha: 255)
         static let focus = StudioColor(red: 255, green: 255, blue: 255, alpha: 255)
         static let text = StudioColor(red: 255, green: 255, blue: 255, alpha: 255)

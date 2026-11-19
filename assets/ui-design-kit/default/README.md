@@ -1,9 +1,18 @@
 # Infinity UI Design Kit — Default
 
-## Authoritative OS panel standard: Eclipse Precision
+## Authoritative desktop standard: Sapphire
 
-The user-approved `eclipse-precision-v1-reference.png` is the normative visual
-target for all OS panels and application window chrome. See
+The approved [Sapphire control sheet](sapphire-controls-reference.png) and
+[component contract](sapphire-desktop.md) supersede the older electric-blue
+default surface styling. Default controls use the shared Sapphire atlas.
+Explicit Studio material overrides retain their selected glass/matte/flat
+recipes. See the original [layout reference](teal-sapphire-desktop-reference.png)
+for the requested density and the Sapphire sheet for the corrected blue palette.
+
+## Shared composition architecture: Eclipse Precision
+
+The original `eclipse-precision-v1-reference.png` documents the earlier surface
+family retained for explicit material overrides. Sapphire is the default. See
 `eclipse-precision-v1.md`. This shared surface contract takes precedence over
 older kit-specific panel and outer-frame geometry. Applications own their
 content, not their outer corners, edge artwork, focus treatment or rendering.

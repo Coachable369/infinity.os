@@ -15,7 +15,7 @@ DOCUMENT = KIT / "uikit.infinityui"
 CATALOG = KIT / "uikit-catalog.json"
 BASELINES = KIT / "uikit-baselines.json"
 BUILDERS = {
-    "tools/build-precision-artwork.py": ["eclipse-precision-v1.rgba"],
+    "tools/build-sapphire-artwork.py": ["eclipse-precision-v1.rgba"],
     "tools/build-access-artwork.py": ["eclipse-access-glyphs-v1.rgba", "eclipse-access-wallpaper-v1.bmp"],
     "tools/build-browser-glyphs.py": ["browser-glyphs-v1.rgba"],
     "tools/build-window-controls.py": ["window-controls-v1.rgba"],

@@ -1,3 +1,5 @@
+The approved default visual system is [Sapphire](sapphire-desktop.md).
+
 # Eclipse native controls
 
 Reuse the Precision reference surfaces and Access glyph atlas; no substitute
@@ -31,5 +33,5 @@ The Precision choice field uses a left-aligned value and a separate trailing
 chevron well. Its text, inset, and indicator share one geometry calculation so
 long values cannot paint underneath the indicator. The field uses the kit's
 Secondary surface and focus state. Boolean controls use a separate trailing
-checkbox. Open menus use a Panel surface and an inset, image-backed selection
+filled pill toggle with a solid optical thumb. Open menus use a Panel surface and an inset, image-backed selection
 row. Row highlighting changes paint only and preserves the full hit target.

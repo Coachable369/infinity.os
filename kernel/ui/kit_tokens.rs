@@ -5,9 +5,7 @@ pub const BYTES: usize = 12 + COUNT * 4;
 #[used]
 static TOKEN_PAYLOAD: [u8; BYTES] = *include_bytes!("../../assets/ui-design-kit/default/uikit-tokens.bin");
 const DATA: &[u8; BYTES] = &TOKEN_PAYLOAD;
-pub const FALLBACK: [u32; COUNT] = [0xff090f26, 0xe6101b3a, 0xf01a2e63, 0xff86c7ff,
-    0xffffffff, 0xffbebebe, 0xff3e6fff, 0xff86c7ff, 0xffffffff, 0xff50d890,
-    0xffffc857, 0xffff6170, 0x99000000];
+pub const FALLBACK: [u32; COUNT] = [0xff091522, 0xf00e1c36, 0xf5172b48, 0xff365774, 0xfff2f6fc, 0xffaec3da, 0xff245ad4, 0xff5995f5, 0xff5995f5, 0xff00c8ff, 0xffffc857, 0xffff6170, 0x99000000,];
 
 // ------------------------=
 // FUNC: decode

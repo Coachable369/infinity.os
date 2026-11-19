@@ -146,7 +146,7 @@ UIKIT_RUNTIME_ASSETS := assets/ui-design-kit/default/uikit-tokens.bin \
 UIKIT_SOURCES := assets/ui-design-kit/uikit.infinityui assets/ui-design-kit/uikit-catalog.json \
 	assets/ui-design-kit/uikit-baselines.json $(wildcard assets/ui-design-kit/default/*.png) \
 	$(shell find assets/ui-design-kit/overrides -type f 2>/dev/null) \
-	tools/compile-uikit.py tools/build-precision-artwork.py tools/build-access-artwork.py \
+	tools/compile-uikit.py tools/build-sapphire-artwork.py tools/build-precision-artwork.py tools/build-access-artwork.py \
 	tools/build-browser-glyphs.py tools/build-window-controls.py tools/build-assistant-artwork.py \
 	tools/build-wait-artwork.py tools/build-browser-welcome-artwork.py
 DESIGN_KIT_ASSETS += $(UIKIT_RUNTIME_ASSETS)

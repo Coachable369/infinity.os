@@ -49,6 +49,13 @@ struct PrecisionAtlas {
     static let cellCount = 14
     static let byteCount = 2 * cellCount * cellSize * cellSize * 4
     let bytes: Data
+    private static let explicitAtlas: PrecisionAtlas = {
+        guard let url = Bundle.module.url(forResource: "explicit-glass-styles-v2", withExtension: "rgba"),
+              let data = try? Data(contentsOf: url), let atlas = PrecisionAtlas(data: data) else {
+            preconditionFailure("Explicit button styles are missing")
+        }
+        return atlas
+    }()
     private static let buttonClouds: Data = {
         guard let url = Bundle.module.url(forResource: "glass-button-clouds-v1", withExtension: "rgb"),
               let data = try? Data(contentsOf: url), data.count == 256 * 72 * 3 else {
@@ -217,7 +224,7 @@ struct PrecisionAtlas {
             if m.focus == 255 { return texture(focused, x: sx, y: sy) }
             return Self.transition(texture(normal, x: sx, y: sy), texture(focused, x: sx, y: sy), amount: m.focus)
         }
-        let base = kind == .primary || kind == .current ? (62, 111, 255) : (16, 27, 58)
+        let base = kind == .primary ? (36, 90, 212) : (circular ? (212, 227, 245) : (14, 28, 54))
         var background = PrecisionPixel.clear
         if m.opacity != 0 && kind != .frame && (kind == .windowFill || circular || distance >= 2 * scale) {
             var sample = kind == .windowFill ? texture(2, x: min(243 * 256, max(12 * 256, fx)),
@@ -230,7 +237,7 @@ struct PrecisionAtlas {
             background = Self.themed(sample, base: base, target: m.fill, opacity: m.opacity)
         }
         let edge = m.edgeOpacity != 0 && !circular && distance < rim
-            ? Self.themed(state(1), base: (134, 199, 255), target: m.edge, opacity: m.edgeOpacity) : .clear
+            ? Self.themed(state(1), base: (54, 87, 116), target: m.edge, opacity: m.edgeOpacity) : .clear
         return Self.over(background, edge: edge)
     }
 
@@ -326,13 +333,17 @@ struct PrecisionAtlas {
         let cap = rounded ? style.radius * scale : cut * scale
         let fx = rounded ? Self.styledAxis(x, length: width, cut: cut, cap: cap) : Self.axis(x, length: width, cut: cut, scale: scale)
         let fy = rounded ? Self.styledAxis(y, length: height, cut: cut, cap: cap) : Self.axis(y, length: height, cut: cut, scale: scale)
+        let explicit = style.material != .authored && (kind == .primary || kind == .secondary)
+        let texture: (Int, Int, Int) -> PrecisionPixel = { index, x, y in
+            (explicit ? Self.explicitAtlas : self).texture(index, x: x, y: y)
+        }
         let state: (Int, Int, Int) -> PrecisionPixel = { layer, sx, sy in
             let normal = pair.0 + layer * Self.cellCount, focused = pair.1 + layer * Self.cellCount
-            if normal == focused || m.focus == 0 { return texture(normal, x: sx, y: sy) }
-            if m.focus == 255 { return texture(focused, x: sx, y: sy) }
-            return Self.transition(texture(normal, x: sx, y: sy), texture(focused, x: sx, y: sy), amount: m.focus)
+            if normal == focused || m.focus == 0 { return texture(normal, sx, sy) }
+            if m.focus == 255 { return texture(focused, sx, sy) }
+            return Self.transition(texture(normal, sx, sy), texture(focused, sx, sy), amount: m.focus)
         }
-        let base = kind == .primary ? (62, 111, 255) : (16, 27, 58)
+        let base = explicit ? (kind == .primary ? (62, 111, 255) : (16, 27, 58)) : (kind == .primary ? (36, 90, 212) : (14, 28, 54))
         let (coverage, depth) = rounded ? Self.roundedShape(x: x, y: y, width: width, height: height, radius: cap) : (255, 0)
         if coverage == 0 { return .clear }
         var fill = square || rounded || kind == .windowFill
@@ -377,7 +388,7 @@ struct PrecisionAtlas {
                 let vertical = min(x, width - 1 - x) < cut * scale ? state(1, fx, 128 * 256) : .clear
                 raw = Self.over(horizontal, edge: vertical)
             } else if distance < max(cap, cut * scale) { raw = state(1, fx, fy) }
-            edge = Self.themed(raw, base: (134, 199, 255), target: m.edge, opacity: m.edgeOpacity)
+            edge = Self.themed(raw, base: explicit ? (134, 199, 255) : (54, 87, 116), target: m.edge, opacity: m.edgeOpacity)
         }
         var result = Self.over(background, edge: edge)
         result.alpha = result.alpha * coverage / 255

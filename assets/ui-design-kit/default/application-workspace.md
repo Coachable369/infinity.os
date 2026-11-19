@@ -30,7 +30,8 @@ Use Inter 18 px for readable workspace text, Inter 20 px semibold for section
 headings, and IBM Plex Mono 18 px for source. Use 8 px spacing increments and
 12 px panel insets. Keep labels aligned with their fields. Use existing UIKit
 input, button, toggle, scrollbar and menu controls. No extra outer app border.
-Content background #090F26; pane #101B3A; foreground #E6EAF2. Text and controls
+Default colors come from the [Sapphire shared kit](sapphire-desktop.md):
+content #091522, pane #0E1C36, foreground #F2F6FC. Text and controls
 remain legible under the selected theme. Focus must be visible without shifting
 layout. Help anchors at the right end of the menu row.
 
@@ -56,6 +57,10 @@ owned by the native toolkit. Keep menu commands on the same application action
 handlers used by toolbar and keyboard shortcuts.
 
 ## Acceptance
+
+Every applied component and state must meet the Sapphire kit's 95% visual
+fidelity threshold. This applies separately to each application and OS surface;
+an overall screen score cannot compensate for an individual failing control.
 
 Capture the real native application at normal, maximized and restored sizes,
 and at supported zoom levels. Compare with the design reference: menu/toolbar

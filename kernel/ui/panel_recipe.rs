@@ -4,6 +4,7 @@ pub type Rgb = (u8, u8, u8);
 const SIZE: usize = 256;
 const CELLS: usize = 14;
 const ART: &[u8; 2 * CELLS * SIZE * SIZE * 4] = include_bytes!("../../assets/ui-design-kit/default/eclipse-precision-v1.rgba");
+const EXPLICIT_ART: &[u8; 2 * CELLS * SIZE * SIZE * 4] = include_bytes!("../../assets/ui-design-kit/default/explicit-glass-styles-v2.rgba");
 const BUTTON_CLOUDS: &[u8; 256 * 72 * 3] = include_bytes!("../../assets/ui-design-kit/default/glass-button-clouds-v1.rgb");
 
 // ------------------------=
@@ -153,10 +154,19 @@ fn axis(at: usize, length: usize, cut: usize, scale: usize) -> usize {
 // DESC: Bilinearly filters premultiplied authored coverage without introducing dark fringes around transparent light.
 // ------------------=
 fn texture(index: usize, fx: usize, fy: usize) -> Rgba {
+    sample_texture(index,fx,fy,false)
+}
+
+// ------------------------=
+// FUNC: sample_texture
+// DESC: Shares filtering while preserving explicitly selected glass artwork independently of the default Sapphire kit.
+// ------------------=
+fn sample_texture(index:usize,fx:usize,fy:usize,explicit:bool)->Rgba {
     #[cfg(studio_native_preview)]
     let art=crate::studio_native_render::precision_art().unwrap_or(ART);
     #[cfg(not(studio_native_preview))]
     let art=ART;
+    let art=if explicit {EXPLICIT_ART}else{art};
     let (sx,sy)=(fx/256,fy/256); let (wx,wy)=(fx%256,fy%256);
     let address=|x:usize,y:usize| (index*SIZE*SIZE+y.min(SIZE-1)*SIZE+x.min(SIZE-1))*4;
     let offsets=[address(sx,sy),address(sx+1,sy),address(sx,sy+1),address(sx+1,sy+1)];
@@ -281,7 +291,7 @@ fn pixel_authored_material(kind:Surface,width:usize,height:usize,x:usize,y:usize
         else if m.focus==255 {texture(focused+layer*CELLS,fx,fy)}
         else {transition(texture(normal+layer*CELLS,fx,fy),texture(focused+layer*CELLS,fx,fy),m.focus)}
     };
-    let base=if matches!(kind,Surface::Primary|Surface::Current) {(62,111,255)}else{(16,27,58)};
+    let base=if matches!(kind,Surface::Primary) {(36,90,212)}else if circular {(212,227,245)}else{(14,28,54)};
     let background=if m.opacity!=0 && kind!=Surface::Frame && (kind==Surface::WindowFill || circular || distance>=2*scale) {
         // WindowFill is an OS rectangular substrate, not a rounded panel mask.
         // Sample interior fill at its boundary; the compositor owns every edge.
@@ -297,7 +307,7 @@ fn pixel_authored_material(kind:Surface,width:usize,height:usize,x:usize,y:usize
         }
     }else{(0,0,0,0)};
     let edge=if m.edge_opacity!=0 && !circular && distance<rim {
-        themed(state(1),(134,199,255),m.edge,m.edge_opacity)
+        themed(state(1),(54,87,116),m.edge,m.edge_opacity)
     }else{(0,0,0,0)};
     over(background,edge)
 }
@@ -386,12 +396,14 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
     let cap=if rounded {usize::from(style.radius)*scale}else{cut*scale};
     let (fx,fy)=if rounded {(styled_axis(x,width,cut,cap),styled_axis(y,height,cut,cap))}
         else{(axis(x,width,cut,scale),axis(y,height,cut,scale))};
+    let explicit=style.material!=0 && matches!(kind,Surface::Primary|Surface::Secondary);
+    let texture=|index,fx,fy|sample_texture(index,fx,fy,explicit);
     let state=|layer:usize,sx:usize,sy:usize| {
         if normal==focused || m.focus==0 {texture(normal+layer*CELLS,sx,sy)}
         else if m.focus==255 {texture(focused+layer*CELLS,sx,sy)}
         else{transition(texture(normal+layer*CELLS,sx,sy),texture(focused+layer*CELLS,sx,sy),m.focus)}
     };
-    let base=if kind==Surface::Primary {(62,111,255)}else{(16,27,58)};
+    let base=if explicit {if kind==Surface::Primary {(62,111,255)}else{(16,27,58)}}else if kind==Surface::Primary {(36,90,212)}else{(14,28,54)};
     let (coverage,depth)=if rounded {rounded_shape(x,y,width,height,cap)}else{(255,0)};
     if coverage==0 {return (0,0,0,0);}
     let mut fill=if square || rounded || kind==Surface::WindowFill {
@@ -433,7 +445,7 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
             let vertical=if x.min(width-1-x)<cut*scale {state(1,fx,128*256)}else{(0,0,0,0)};
             over(horizontal,vertical)
         }else if distance<cap.max(cut*scale) {state(1,fx,fy)}else{(0,0,0,0)};
-        themed(raw,(134,199,255),m.edge,m.edge_opacity)
+        themed(raw,if explicit {(134,199,255)}else{(54,87,116)},m.edge,m.edge_opacity)
     };
     let result=over(background,edge);
     (result.0,result.1,result.2,(u16::from(result.3)*u16::from(coverage)/255)as u8)

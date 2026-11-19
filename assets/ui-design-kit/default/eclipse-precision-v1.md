@@ -1,3 +1,7 @@
+> Default appearance is now specified by [Sapphire](sapphire-desktop.md).
+> The historical appearance below remains the explicit glass-style contract;
+> sampling, clipping and alpha architecture remain shared.
+
 # Eclipse Precision — OS surface contract
 
 `eclipse-precision-v1-reference.png` is the approved standard, not an optional skin

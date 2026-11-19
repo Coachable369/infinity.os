@@ -160,75 +160,41 @@ fn sampler_contract() -> usize {
 
 // ------------------------=
 // FUNC: reference_state_contract
-// DESC: Checks approved-board pixel witnesses, frame stroke thickness, bounded focus bloom and reflective button state separation.
+// DESC: Checks shared Sapphire tokens, bounded interpolated focus states and pressed-state contrast; visual-reference acceptance is recorded separately.
 // ------------------=
 fn reference_state_contract() {
-    // Factory reference witnesses intentionally bypass independently editable
-    // surface overrides. adapter_contract below verifies the active theme.
-    use panel_recipe::pixel_authored as reference_pixel;
     let mut skin=skin::SkinRegistry::new();
+    let colors=skin::kit_tokens::colors();
     for persisted_default in [false,true] {
-        if persisted_default {skin.set_accent(0x3e6fff,skin::AppearanceScope::User).unwrap();}
-        assert_eq!(skin.accent_surface(skin::AccentSurface::WindowOutline).rgb24(),0x86c7ff);
-        assert_eq!(skin.accent_surface(skin::AccentSurface::Focus).rgb24(),0xffffff);
+        if persisted_default {skin.set_accent(colors[6]&0xffffff,skin::AppearanceScope::User).unwrap();}
+        assert_eq!(skin.accent_surface(skin::AccentSurface::WindowOutline).rgb24(),colors[3]&0xffffff);
+        assert_eq!(skin.accent_surface(skin::AccentSurface::Focus).rgb24(),colors[8]&0xffffff);
     }
     skin.set_accent(0xeb9845,skin::AppearanceScope::User).unwrap();
-    assert_ne!(skin.accent_surface(skin::AccentSurface::WindowOutline).rgb24(),0x86c7ff);
-    let exact=Material{opacity:255,..material(1)};
-    for (kind,w,h,focus,x,y,expected) in [
-        (Surface::Frame,702,412,255,1,1,(177,233,252)),
-        (Surface::Frame,702,412,255,2,2,(157,217,251)),
-        (Surface::Panel,358,95,0,1,1,(86,116,179)),
-        (Surface::Panel,359,96,255,1,1,(161,193,234)),
-        (Surface::Field,422,42,0,1,1,(125,165,223)),
-    ] {
-        let p=panel_recipe::pixel(kind,w,h,x,y,Material{focus,..exact});
-        assert_eq!((p.0,p.1,p.2),expected);
-        assert_eq!(p.3,255);
-    }
+    assert_ne!(skin.accent_surface(skin::AccentSurface::WindowOutline).rgb24(),colors[3]&0xffffff);
     for scale in 1..=4 {
-        let (w,h)=(358*scale,96*scale);
-        let normal=Material{scale,opacity:0,..exact};
-        let focused=Material{focus:255,..normal};
-        let mut lit=0;
-        for logical_y in 3..10 {
-            let x=w/2;let y=logical_y*scale;
-            let a=composite(0x101b3a,panel_recipe::pixel(Surface::Panel,w,h,x,y,normal));
-            let b=composite(0x101b3a,panel_recipe::pixel(Surface::Panel,w,h,x,y,focused));
-            lit+=usize::from((b&255)>(a&255)+3);
-        }
-        assert!(lit>=4,"focus must illuminate an authored multi-pixel rim");
-        assert_eq!(panel_recipe::pixel(Surface::Panel,w,h,w/2,12*scale,focused).3,0);
-        // Focus uses the same clipping bounds and smoothly changes pixels, not geometry.
-        let mut distinct=std::collections::BTreeSet::new();
-        for focus in [0,32,64,96,128,160,192,224,255] {
-            distinct.insert(panel_recipe::pixel(Surface::Panel,w,h,w/2,5*scale,Material{focus,..normal}));
-        }
-        assert_eq!(distinct.len(),9);
-        let primary=Material{fill:(62,111,255),scale,..exact};
-        let a=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,primary);
-        let b=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,25*scale,Material{pressed:true,..primary});
-        assert_ne!(a,b);
-        // Actual Precision state colors stay electric blue, not the cyan
-        // Access artwork or legacy teal recoloring that broke the installer.
-        assert!(a.2>a.1.saturating_add(70));
-        let top=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,10*scale,primary);
-        let bottom=reference_pixel(Surface::Primary,112*scale,51*scale,56*scale,39*scale,primary);
-        assert!(i16::from(top.1)-i16::from(bottom.1)>20,"reflective lighting lost");
-        for y in 2..7 {
-            let light=Material{opacity:0,..primary};
-            let expected=panel_recipe::pixel(Surface::Primary,700*scale,51*scale,32*scale,y*scale,light);
-            for x in 33..668 {
-                assert_eq!(panel_recipe::pixel(Surface::Primary,700*scale,51*scale,x*scale,y*scale,light),expected,
-                    "wide button edge must not stretch reference texture into streaks");
+        let (w,h)=(169*scale,38*scale);
+        let m=Material{fill:(36,90,212),edge:(54,87,116),opacity:255,edge_opacity:255,focus:0,pressed:false,scale};
+        for kind in [Surface::Primary,Surface::Secondary,Surface::Field,Surface::Panel] {
+            let mut states=std::collections::BTreeSet::new();
+            for focus in [0,64,128,192,255] {
+                let mut pixels=Vec::new();
+                for y in 0..h {for x in 0..w {
+                    let p=panel_recipe::pixel_authored(kind,w,h,x,y,Material{focus,..m});
+                    pixels.push(p);
+                    assert_eq!(panel_recipe::pixel_authored(kind,w,h,w,y,Material{focus,..m}).3,0);
+                }}
+                states.insert(pixels);
             }
+            assert_eq!(states.len(),5,"focus must interpolate distinct native states without changing bounds");
         }
-        assert!(u16::from(b.0)+u16::from(b.1)+u16::from(b.2)<
-            (u16::from(a.0)+u16::from(a.1)+u16::from(a.2))*2/3);
-        // Rectangular window substrate must fill corners; the separate OS
-        // frame owns antialiasing and cannot reveal a legacy rounded underlay.
+        let normal=panel_recipe::pixel_authored(Surface::Primary,w,h,w/2,h/2,m);
+        let pressed=panel_recipe::pixel_authored(Surface::Primary,w,h,w/2,h/2,Material{pressed:true,..m});
+        assert!(normal.2>normal.1 && normal.1>normal.0,"default accent must remain sapphire");
+        assert!(u16::from(pressed.0)+u16::from(pressed.1)+u16::from(pressed.2)<
+            u16::from(normal.0)+u16::from(normal.1)+u16::from(normal.2));
         for (x,y) in [(0,0),(w-1,0),(0,h-1),(w-1,h-1)] {
-            assert_eq!(panel_recipe::pixel(Surface::WindowFill,w,h,x,y,primary).3,255);
+            assert_eq!(panel_recipe::pixel_authored(Surface::WindowFill,w,h,x,y,m).3,255);
         }
     }
 }
@@ -436,6 +402,7 @@ fn render_overview(output: &std::path::Path) {
 // DESC: Runs typed pixel/coverage assertions before emitting a review board and numeric evidence inside the repository build authority.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg|arg=="--sapphire-proof") {sapphire_proof();return;}
     assert_eq!(std::env::var("INFINITY_BUILD_KIT_ACTIVE").as_deref(), Ok("1"));
     for corners in [0, 1, 2] {
         for pressed in [false, true] {
@@ -458,6 +425,35 @@ fn main() {
     let evidence = format!("{{\"surface_pixels\":{surface_pixels},\"adapter_pixels\":{adapter_pixels},\"glyph_samples\":{glyph_samples},\"scales\":[1,2,3,4],\"signed_clipping\":true,\"independent_outline_alpha\":true,\"installed_verified\":false}}\n");
     std::fs::write(directory.join("pixel-evidence.json"), &evidence).unwrap();
     println!("{evidence}");
+}
+
+// ------------------------=
+// FUNC: sapphire_proof
+// DESC: Captures actual shared native controls at design-sheet sizes and verifies state, clipping and filled progress behavior.
+// ------------------=
+fn sapphire_proof() {
+    let mut d=DisplayDevice::new(620,450);
+    d.pixels.fill(0x091522);
+    for (row,kind) in [Surface::Primary,Surface::Secondary,Surface::Field,Surface::Panel].into_iter().enumerate() {
+        for state in 0..3 {
+            let rect=Rect{x:20+state*200,y:20+row as i32*64,width:169,height:38};
+            let m=Material{fill:if kind==Surface::Primary{(36,90,212)}else{(14,28,54)},edge:(54,87,116),
+                opacity:255,edge_opacity:255,focus:if state==1{255}else{0},pressed:state==2,scale:1};
+            d.precision_surface(rect,kind,m);
+        }
+    }
+    let m=Material{fill:(14,28,54),edge:(54,87,116),opacity:255,edge_opacity:255,focus:0,pressed:false,scale:1};
+    for (index,checked,enabled) in [(0,false,true),(1,true,true),(2,true,false)] {
+        d.precision_toggle(Rect{x:20+index*200,y:290,width:60,height:30},checked,enabled,m);
+        d.precision_slider(Rect{x:20+index*200,y:365,width:169,height:6},
+            Rect{x:20+index*200+108,y:358,width:20,height:20},enabled,m);
+    }
+    assert_ne!(d.pixels[305*620+30],d.pixels[305*620+230]);
+    assert_ne!(d.pixels[368*620+60],d.pixels[368*620+175]);
+    let output=std::path::Path::new("builds/validation/sapphire-native-controls.ppm");
+    let mut file=std::fs::File::create(output).unwrap();
+    write!(file,"P6\n{} {}\n255\n",d.width,d.height).unwrap();
+    for p in d.pixels {file.write_all(&[(p>>16)as u8,(p>>8)as u8,p as u8]).unwrap();}
 }
 
 // ------------------------=

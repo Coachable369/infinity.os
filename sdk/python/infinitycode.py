@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from infinitycode_model import counter_widget, form_size, Project, KINDS, WIDTH, HEIGHT, make_widget, export_source, configure_theme, configure_workspace_bounds
 
+from infinity_uikit_artwork import COLORS
 from infinity_uikit import MENU_HEIGHT, TOOLBAR_HEIGHT, workspace_tabs, workspace_controls, workspace_menu
 
 
@@ -25,25 +26,25 @@ class Studio:
         self.scale = self.base_scale
         root.title("InfinityCode")
         configure_workspace_bounds(root)
-        root.configure(background="#090F26")
+        root.configure(background=COLORS["canvas"])
         style = configure_theme(root)
         self.style = style
         self.tab_images = workspace_tabs(root, style, self.scale)
-        style.configure("TNotebook", background="#090F26", borderwidth=0)
+        style.configure("TNotebook", background=COLORS["canvas"], borderwidth=0)
         style.configure("TNotebook.Tab", padding=(14, 8), font=("Inter",-15,"bold"))
-        style.map("TNotebook.Tab", background=[("selected", "#1A2E63")], foreground=[("selected", "#FFFFFF")])
-        style.configure("TFrame", background="#101B3A")
-        style.configure("TLabel", background="#101B3A", foreground="#FFFFFF", font=("Inter",-15))
-        style.configure("Heading.TLabel", font=("Inter",-19,"bold"), foreground="#DAE9FF")
-        style.configure("TEntry", fieldbackground="#090F26", foreground="#FFFFFF", padding=4)
+        style.map("TNotebook.Tab", background=[("selected", "#1A2E63")], foreground=[("selected", COLORS["text"])])
+        style.configure("TFrame", background=COLORS["panel"])
+        style.configure("TLabel", background=COLORS["panel"], foreground=COLORS["text"], font=("Inter",-15))
+        style.configure("Heading.TLabel", font=("Inter",-19,"bold"), foreground=COLORS["text"])
+        style.configure("TEntry", fieldbackground=COLORS["canvas"], foreground=COLORS["text"], padding=4)
         style.configure("TButton", padding=(8,5), font=("Inter",-14))
-        style.configure("Accent.TButton", background="#315ED2", foreground="white")
+        style.configure("Accent.TButton", background=COLORS["accent"], foreground="white")
         style.layout("Workspace.TMenubutton", [("Menubutton.padding", {"sticky":"nswe", "children":
             [("Menubutton.label", {"sticky":"w"})]})])
-        style.configure("Workspace.TMenubutton", background="#101B3A", foreground="#DAE9FF",
+        style.configure("Workspace.TMenubutton", background=COLORS["panel"], foreground=COLORS["text"],
                         padding=(12,6), font=("Inter",-15), relief="flat")
-        style.map("Workspace.TMenubutton", background=[("active","#244F96"),("focus","#244F96")])
-        bar = tk.Frame(root, bg="#101B3A", padx=8, height=MENU_HEIGHT)
+        style.map("Workspace.TMenubutton", background=[("active",COLORS["accent"]),("focus",COLORS["accent"])])
+        bar = tk.Frame(root, bg=COLORS["panel"], padx=8, height=MENU_HEIGHT)
         self.menu_bar = bar
         bar.pack_propagate(False)
         bar.pack(fill="x")
@@ -60,7 +61,7 @@ class Studio:
                       ("Actual size   Cmd 0", lambda:self.set_zoom(1.0)))),
             ("Help", (("Designer help", self.help),))):
             button = ttk.Menubutton(bar, text=title, style="Workspace.TMenubutton", width=0)
-            menu = tk.Menu(button, tearoff=False, bg="#101B3A", fg="white", activebackground="#244F96")
+            menu = tk.Menu(button, tearoff=False, bg=COLORS["panel"], fg="white", activebackground=COLORS["accent"])
             for label, action in actions:
                 menu.add_command(label=label, command=lambda fn=action:self.perform(fn))
             workspace_menu(button, menu)
@@ -82,7 +83,7 @@ class Studio:
         self.toolbox = left
         left.pack_propagate(False)
         left.pack(side="left", fill="y")
-        toolbox_view = tk.Canvas(left,background="#101B3A",highlightthickness=0)
+        toolbox_view = tk.Canvas(left,background=COLORS["panel"],highlightthickness=0)
         toolbox_scroll = ttk.Scrollbar(left,orient="vertical",command=toolbox_view.yview)
         toolbox_scroll.pack(side="right",fill="y")
         toolbox_view.configure(yscrollcommand=toolbox_scroll.set)
@@ -108,8 +109,8 @@ class Studio:
         self.toolbox_filter.trace_add("write",self.filter_controls)
         self.filter_controls()
         ttk.Label(left, text="Layers",style="Heading.TLabel").pack(anchor="w", pady=(15,5))
-        self.layers = tk.Listbox(left, width=18, height=4, background="#090F26", foreground="white",
-                                 selectbackground="#3E6FFF", exportselection=False, borderwidth=0)
+        self.layers = tk.Listbox(left, width=18, height=4, background=COLORS["canvas"], foreground="white",
+                                 selectbackground=COLORS["accent"], exportselection=False, borderwidth=0)
         self.layers.pack(fill="both", expand=True)
         self.layers.bind("<<ListboxSelect>>", self.layer_selected)
         ttk.Button(left, text="Delete selected", command=lambda: self.perform(self.delete)).pack(fill="x", pady=8)
@@ -117,7 +118,7 @@ class Studio:
         self.inspector = right
         right.pack_propagate(False)
         right.pack(side="right", fill="y")
-        inspector_view = tk.Canvas(right,background="#101B3A",highlightthickness=0)
+        inspector_view = tk.Canvas(right,background=COLORS["panel"],highlightthickness=0)
         inspector_scroll = ttk.Scrollbar(right,orient="vertical",command=inspector_view.yview)
         inspector_scroll.pack(side="right",fill="y")
         inspector_view.configure(yscrollcommand=inspector_scroll.set)
@@ -152,7 +153,7 @@ class Studio:
         self.tabs.add(designer, text="Form Designer")
         self.form_label = tk.StringVar(root, "Application form   640 x 420")
         ttk.Label(designer, textvariable=self.form_label).pack(anchor="w", pady=8)
-        viewport = tk.Canvas(designer,background="#070D20",highlightthickness=0,
+        viewport = tk.Canvas(designer,background=COLORS["canvas"],highlightthickness=0,
                              scrollregion=(0,0,WIDTH+24,HEIGHT+24))
         x_scroll = ttk.Scrollbar(designer,orient="horizontal",command=viewport.xview)
         y_scroll = ttk.Scrollbar(designer,orient="vertical",command=viewport.yview)
@@ -160,29 +161,29 @@ class Studio:
         y_scroll.pack(side="right",fill="y")
         viewport.pack(fill="both",expand=True)
         viewport.configure(xscrollcommand=x_scroll.set,yscrollcommand=y_scroll.set)
-        self.canvas = tk.Frame(viewport, width=WIDTH, height=HEIGHT, background="#101B3A",
-                               highlightthickness=1,highlightbackground="#456B94")
+        self.canvas = tk.Frame(viewport, width=WIDTH, height=HEIGHT, background=COLORS["panel"],
+                               highlightthickness=1,highlightbackground=COLORS["border"])
         self.viewport = viewport
         self.surface = viewport.create_window(12,12,anchor="nw",window=self.canvas,width=WIDTH,height=HEIGHT)
         self.canvas.pack_propagate(False)
         self.form_drag = None
         self.form_grips = []
         for axis in ("e","s","se"):
-            handle = tk.Frame(viewport, background="#86C7FF", width=10, height=10)
+            handle = tk.Frame(viewport, background=COLORS["focus"], width=10, height=10)
             marker = viewport.create_window(0,0,window=handle)
             self.form_grips.append((axis, marker))
             handle.bind("<ButtonPress-1>", lambda event,a=axis:self.begin_form_resize(event,a))
             handle.bind("<B1-Motion>", self.size_form)
             handle.bind("<ButtonRelease-1>", self.finish_form_resize)
         viewport.bind("<Configure>", lambda event:self.layout_form())
-        self.grip = tk.Frame(self.canvas, background="#86C7FF", width=10, height=10)
+        self.grip = tk.Frame(self.canvas, background=COLORS["focus"], width=10, height=10)
         self.grip.bind("<ButtonPress-1>", self.resize_start)
         self.grip.bind("<B1-Motion>", self.motion)
         self.grip.bind("<ButtonRelease-1>", self.release)
         source_frame = ttk.Frame(self.tabs)
         self.tabs.add(source_frame, text="Code")
-        self.source = tk.Text(source_frame, undo=True, background="#090F26", foreground="#FFFFFF",
-                              insertbackground="#86C7FF", font=("IBM Plex Mono",-16), wrap="none", borderwidth=0)
+        self.source = tk.Text(source_frame, undo=True, background=COLORS["canvas"], foreground=COLORS["text"],
+                              insertbackground=COLORS["focus"], font=("IBM Plex Mono",-16), wrap="none", borderwidth=0)
         vertical = ttk.Scrollbar(source_frame, orient="vertical", command=self.source.yview)
         horizontal = ttk.Scrollbar(source_frame, orient="horizontal", command=self.source.xview)
         vertical.pack(side="right", fill="y")
@@ -193,8 +194,8 @@ class Studio:
         self.tabs.add(methods_frame, text="Event Methods")
         ttk.Label(methods_frame, text="Define methods here; enter a method name in the control's Handler property.\n"
                   "Methods take no arguments and access native widgets through controls['id'].").pack(anchor="w", padx=10, pady=10)
-        self.methods = tk.Text(methods_frame, undo=True, background="#090F26", foreground="#FFFFFF",
-                               insertbackground="#86C7FF", font=("IBM Plex Mono",-16), wrap="none", borderwidth=0)
+        self.methods = tk.Text(methods_frame, undo=True, background=COLORS["canvas"], foreground=COLORS["text"],
+                               insertbackground=COLORS["focus"], font=("IBM Plex Mono",-16), wrap="none", borderwidth=0)
         methods_scroll = ttk.Scrollbar(methods_frame, orient="vertical", command=self.methods.yview)
         methods_scroll.pack(side="right", fill="y")
         self.methods.pack(fill="both", expand=True)
@@ -205,7 +206,7 @@ class Studio:
                 editor.tag_configure(role,foreground=color)
             editor.bind("<<Modified>>",lambda event,e=editor:self.schedule_syntax(e))
             editor.edit_modified(False)
-            editor.tag_configure("diagnostic", background="#602D42", foreground="#FFFFFF")
+            editor.tag_configure("diagnostic", background="#602D42", foreground=COLORS["text"])
             editor.bind("<Control-Return>",lambda event:self.check_python())
         ttk.Label(footer,text="Project").pack(side="left",padx=(0,6))
         self.path = ttk.Entry(footer, width=38)
@@ -213,7 +214,7 @@ class Studio:
         self.path.pack(side="left")
         self.status = tk.StringVar(root, "Ready")
         ttk.Label(footer, textvariable=self.status).pack(side="left", padx=12)
-        self.popup = tk.Menu(root, tearoff=False, bg="#101B3A", fg="white", activebackground="#244F96")
+        self.popup = tk.Menu(root, tearoff=False, bg=COLORS["panel"], fg="white", activebackground=COLORS["accent"])
         self.popup.add_command(label="View / edit code behind",command=lambda:self.perform(self.code_behind))
         self.popup.add_command(label="Save project and code",command=lambda:self.perform(self.save))
         self.canvas.bind("<Button-3>",self.context)

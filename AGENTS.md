@@ -12,11 +12,20 @@ for every UI task, without exceptions.
   element; record that gap and add the new reusable element to the kit.
 - Preserve the kit's documented geometry, transparency, styling, and interaction
   states when integrating its elements.
-- `assets/ui-design-kit/default/eclipse-precision-v1-reference.png` and its
-  companion specification are the approved OS panel standard. Use the shared
+- `assets/ui-design-kit/default/sapphire-controls-reference.png` and
+  `assets/ui-design-kit/default/sapphire-desktop.md` define the current approved
+  sapphire-dominant control standard. Preserve explicitly selected Studio
+  material overrides. Use the shared
   image-backed panel renderer and compositor-owned window frames; applications
   must not invent alternate outer borders, corner treatments, or focus states.
   Compare production-rendered pixels against this reference before acceptance.
+
+Every applied UI element and interaction state across applications and OS base
+features must meet at least 95% visual fidelity to its approved kit. Assess
+elements separately; a whole-screen average cannot conceal a failing control.
+Compare spacing, typography, palette, gradients, edge coverage, soft highlights,
+and geometry at matched scale and state. Unverified elements remain open. Build
+success and Studio/native sampler parity do not establish visual acceptance.
 
 ## Application workspace design and acceptance
 

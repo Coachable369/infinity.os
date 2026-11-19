@@ -712,6 +712,17 @@ impl DisplayDevice {
         if let (Some(track),Some(thumb))=(
             layout.settings_row_child_geometry(settings_window,section,index,Role::SettingsSliderTrack,value,maximum),
             layout.settings_row_child_geometry(settings_window,section,index,Role::SettingsSliderThumb,value,maximum)) {
+            if track.visible && thumb.visible && track.element.opacity==100 && thumb.element.opacity==100
+                && track.element.surface_material==0 && thumb.element.surface_material==0 {
+                let old=self.render_clip;
+                let clip=track.clip.intersection(thumb.clip);
+                self.intersect_render_clip(clip.x.max(0)as usize,clip.y.max(0)as usize,clip.width as usize,clip.height as usize);
+                self.precision_slider(track.bounds,thumb.bounds,true,
+                    crate::ui::panel_recipe::Material{fill:(14,28,54),edge:(54,87,116),opacity:255,
+                        edge_opacity:255,focus:0,pressed:false,scale});
+                self.render_clip=old;
+                return;
+            }
             for child in [track,thumb] {
                 if !child.visible {continue;}
                 let old=self.render_clip;
@@ -730,50 +741,9 @@ impl DisplayDevice {
             maximum,
             section,
         );
-        let (outline_r, outline_g, outline_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        self.fill_rounded_rect_alpha(
-            geometry.track.x.max(0) as usize,
-            geometry.track.y.max(0) as usize,
-            geometry.track.width as usize,
-            geometry.track.height as usize,
-            4 * scale,
-            214,
-            228,
-            241,
-            94,
-        );
-        self.outline_rounded_rect(
-            geometry.track.x.max(0) as usize,
-            geometry.track.y.max(0) as usize,
-            geometry.track.width as usize,
-            geometry.track.height as usize,
-            4 * scale,
-            outline_r,
-            outline_g,
-            outline_b,
-        );
-        self.fill_rounded_rect_alpha(
-            geometry.thumb.x.max(0) as usize,
-            geometry.thumb.y.max(0) as usize,
-            geometry.thumb.width as usize,
-            geometry.thumb.height as usize,
-            10 * scale,
-            239,
-            247,
-            255,
-            255,
-        );
-        self.outline_rounded_rect(
-            geometry.thumb.x.max(0) as usize,
-            geometry.thumb.y.max(0) as usize,
-            geometry.thumb.width as usize,
-            geometry.thumb.height as usize,
-            10 * scale,
-            outline_r,
-            outline_g,
-            outline_b,
-        );
+        self.precision_slider(geometry.track,geometry.thumb,true,
+            crate::ui::panel_recipe::Material{fill:(14,28,54),edge:(54,87,116),opacity:255,
+                edge_opacity:255,focus:0,pressed:false,scale});
     }
 
     // ------------------------=

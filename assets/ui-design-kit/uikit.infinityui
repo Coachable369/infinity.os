@@ -1,57 +1,61 @@
 {
-  "colors" : [
-    4278783782,
-    3859815226,
-    4028247651,
-    4287023103,
-    4294967295,
-    4290690750,
-    4282281983,
-    4287023103,
-    4294967295,
-    4283488400,
+  "colors": [
+    4278785314,
+    4027456566,
+    4111936328,
+    4281751412,
+    4294113020,
+    4289643482,
+    4280572628,
+    4284061173,
+    4284061173,
+    4278241535,
     4294953047,
     4294926704,
     2566914048
   ],
-  "overrides" : [
-
-  ],
-  "styles" : [
+  "overrides": [],
+  "styles": [
     {
-      "corners" : 0,
-      "material" : 0,
-      "radius" : 10
+      "material": 0,
+      "corners": 0,
+      "radius": 8
     },
     {
-      "corners" : 0,
-      "material" : 0,
-      "radius" : 10
+      "material": 0,
+      "corners": 0,
+      "radius": 8,
+      "border": 4281751412,
+      "fill": 4279114806
     },
     {
-      "corners" : 0,
-      "material" : 0,
-      "radius" : 10
+      "material": 0,
+      "corners": 0,
+      "radius": 8,
+      "border": 4281751412,
+      "fill": 4027456566
     },
     {
-      "border" : 4287023103,
-      "corners" : 2,
-      "fill" : 3624934202,
-      "material" : 1,
-      "radius" : 10
+      "material": 0,
+      "corners": 0,
+      "radius": 8,
+      "border": 4281751412,
+      "fill": 4280572628
     },
     {
-      "border" : 4287023103,
-      "corners" : 2,
-      "fill" : 3624934202,
-      "material" : 1,
-      "radius" : 10
+      "material": 0,
+      "corners": 0,
+      "radius": 8,
+      "border": 4281751412,
+      "fill": 4279114806
     },
     {
-      "corners" : 0,
-      "material" : 0,
-      "radius" : 10
+      "material": 0,
+      "corners": 0,
+      "radius": 8,
+      "border": 4281751412,
+      "fill": 4279114806
     }
   ],
-  "version" : 1
+  "version": 1
 }

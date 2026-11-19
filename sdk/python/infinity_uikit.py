@@ -4,6 +4,30 @@ MENU_HEIGHT = 36
 TOOLBAR_HEIGHT = 48
 
 # ------------------------=
+# FUNC: workspace_theme
+# DESC: Applies the Studio-authored semantic palette and fixed spacing to standard native toolkit controls.
+# ------------------=
+def workspace_theme(root, style, scale=1):
+    from infinity_uikit_artwork import COLORS
+    c=COLORS
+    body=("Inter",-round(16*scale))
+    style.configure(".",background=c["panel"],foreground=c["text"],font=body)
+    for name in ("TFrame","TLabel","TLabelframe","TLabelframe.Label"):
+        style.configure(name,background=c["panel"],foreground=c["text"],borderwidth=0)
+    for name in ("TEntry","TCombobox"):
+        style.configure(name,fieldbackground=c["panel"],background=c["panel"],foreground=c["text"],
+                        insertcolor=c["text"],arrowcolor=c["muted"],bordercolor=c["border"],
+                        lightcolor=c["panel"],darkcolor=c["panel"],padding=round(8*scale))
+        style.map(name,foreground=[("disabled",c["muted"]),("readonly",c["text"])],
+                  fieldbackground=[("readonly",c["panel"])])
+    for name in ("TButton","Accent.TButton","TMenubutton","Workspace.TMenubutton"):
+        style.configure(name,foreground=c["text"],padding=(round(12*scale),round(8*scale)),font=body)
+    root.option_add("*TCombobox*Listbox.background",c["panel"])
+    root.option_add("*TCombobox*Listbox.foreground",c["text"])
+    root.option_add("*TCombobox*Listbox.selectBackground",c["accent"])
+    return c
+
+# ------------------------=
 # FUNC: workspace_menu
 # DESC: Open native workspace menus on a completed click so the opening release cannot select or dismiss the popup.
 # ------------------=
@@ -50,6 +74,7 @@ def workspace_controls(root, style, scale=1):
     import zlib
     import tkinter as tk
     from infinity_uikit_artwork import SURFACES
+    workspace_theme(root,style,scale)
     key=round(scale*100)
     cache=getattr(root,"_infinity_control_images",{})
     if key not in cache:
@@ -72,6 +97,9 @@ def workspace_controls(root, style, scale=1):
     for name,prefix in (("TButton","Secondary"),("Accent.TButton","Primary")):
         style.layout(name,[(f"UIKit{key}.{prefix}",{"sticky":"nsew","children":[("Button.label",{"sticky":"nsew"})]})])
     style.layout("TEntry",[(f"UIKit{key}.Field",{"sticky":"nsew","children":[("Entry.textarea",{"sticky":"nsew"})]})])
+    style.layout("TCombobox",[(f"UIKit{key}.Field",{"sticky":"nsew","children":[
+        ("Combobox.downarrow",{"side":"right","sticky":"ns"}),
+        ("Combobox.padding",{"sticky":"nsew","children":[("Combobox.textarea",{"sticky":"nsew"})]})]})])
     return cache[key]
 
 # ------------------------=
@@ -80,6 +108,7 @@ def workspace_controls(root, style, scale=1):
 # ------------------=
 def workspace_tabs(root, style, scale=1):
     import tkinter as tk
+    from infinity_uikit_artwork import COLORS
     key=round(scale*100)
     cache=getattr(root,"_infinity_tab_images",{})
     element=f"Workspace{key}.tab"
@@ -93,8 +122,8 @@ def workspace_tabs(root, style, scale=1):
                              ("selected focus", images[3]), ("selected", images[1]), ("active", images[2]),
                              border=(round(28*scale),0,round(28*scale),0), padding=(round(24*scale),round(4*scale),round(24*scale),round(4*scale)), sticky="nsew")
     style.layout("Workspace.TNotebook.Tab", [(element, {"sticky":"nsew", "children":[("Notebook.label", {"sticky":"nswe"})]})])
-    style.configure("Workspace.TNotebook", background="#090F26", borderwidth=0, tabmargins=(0,0,0,0))
-    style.configure("Workspace.TNotebook.Tab", padding=(round(32*scale),round(4*scale)), font=("Inter",-round(18*scale)), foreground="#E6EAF2")
+    style.configure("Workspace.TNotebook", background=COLORS["canvas"], borderwidth=0, tabmargins=(0,0,0,0))
+    style.configure("Workspace.TNotebook.Tab", padding=(round(32*scale),round(4*scale)), font=("Inter",-round(18*scale)), foreground=COLORS["text"])
     style.map("Workspace.TNotebook.Tab", foreground=[("selected","#FFFFFF"),("active","#FFFFFF")])
     return images
 

@@ -171,12 +171,22 @@ impl DisplayDevice {
     // FUNC: active_primary_rgb
     // DESC: Supplies the deterministic default primary tint for production chrome pixel tests.
     // ------------------=
-    fn active_primary_rgb(&self)->u32 { if accounts_native_render_tests::DEFAULT_KIT.load(std::sync::atomic::Ordering::Relaxed){0x101b3a}else{0x0d2238} }
+    fn active_primary_rgb(&self)->u32 {
+        #[cfg(studio_native_preview)]
+        { return ui::skin::kit_tokens::runtime_colors()[1]&0xffffff; }
+        #[cfg(not(studio_native_preview))]
+        { if accounts_native_render_tests::DEFAULT_KIT.load(std::sync::atomic::Ordering::Relaxed){ui::skin::kit_tokens::colors()[1]&0xffffff}else{0x0d2238} }
+    }
     // ------------------------=
     // FUNC: active_accent_rgb
     // DESC: Supplies the deterministic default accent tint for production chrome pixel tests.
     // ------------------=
-    fn active_accent_rgb(&self)->u32 { if accounts_native_render_tests::DEFAULT_KIT.load(std::sync::atomic::Ordering::Relaxed){0x3e6fff}else{0x38bdf8} }
+    fn active_accent_rgb(&self)->u32 {
+        #[cfg(studio_native_preview)]
+        { return ui::skin::kit_tokens::runtime_colors()[6]&0xffffff; }
+        #[cfg(not(studio_native_preview))]
+        { if accounts_native_render_tests::DEFAULT_KIT.load(std::sync::atomic::Ordering::Relaxed){ui::skin::kit_tokens::colors()[6]&0xffffff}else{0x38bdf8} }
+    }
     // ------------------------=
     // FUNC: active_accent_surface
     // DESC: Resolves fixture tints through the production semantic skin implementation used by application painters.

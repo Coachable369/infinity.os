@@ -15,20 +15,31 @@ impl DisplayDevice {
         }
         let diameter=rect.height.min(rect.width);
         if diameter < 4 { return; }
-        let edge = if checked {material.edge} else {(78,102,129)};
-        let track=Material{fill:if checked {edge}else{material.fill},edge,..material};
-        let mut style=panel_recipe::template_style(Surface::Secondary,0,2,(diameter/2).min(40) as u8);
-        if checked {
-            style.material=3;
-            style.fill=Some(0xff000000 | (u32::from(edge.0)<<16) | (u32::from(edge.1)<<8) | u32::from(edge.2));
-        }
-        self.precision_surface_styled(rect,Surface::Secondary,track,style);
+        let edge=(54,87,116);
+        let track=Material{fill:if checked {(36,90,212)}else{(23,43,72)},edge,..material};
+        let style=SurfaceStyle{material:0,corners:2,radius:(diameter/(2*material.scale.max(1))as u32).min(40) as u8,fill:None,border:None};
+        self.precision_surface_styled(rect,if checked{Surface::Primary}else{Surface::Secondary},track,style);
         let inset=(2*material.scale.max(1)) as u32;
         let size=diameter.saturating_sub(2*inset);
         let thumb=Rect{x:if checked {rect.right()-(size+inset)as i32}else{rect.x+inset as i32},
             y:rect.y+(rect.height-size)as i32/2,width:size,height:size};
-        self.precision_surface(thumb,if checked{Surface::Current}else{Surface::Inactive},Material{fill:(212,227,245),edge,..material});
+        self.precision_surface(thumb,Surface::Current,Material{fill:if checked{(235,245,255)}else{(186,207,231)},edge,..material});
 
+    }
+
+    // ------------------------=
+    // FUNC: precision_slider
+    // DESC: Shares image-backed rail, filled progress and optical thumb artwork across native slider consumers.
+    // ------------------=
+    pub(super) fn precision_slider(&mut self, track:Rect, thumb:Rect, enabled:bool, mut material:Material) {
+        if track.width==0 || track.height==0 {return;}
+        if !enabled {material.opacity/=2;material.edge_opacity/=2;material.focus=0;}
+        let style=SurfaceStyle{material:0,corners:2,radius:(track.height/(2*material.scale.max(1))as u32).min(40) as u8,fill:None,border:None};
+        self.precision_surface_styled(track,Surface::Secondary,Material{fill:(35,61,92),edge:(54,87,116),..material},style);
+        let width=(thumb.x+thumb.width as i32/2-track.x).clamp(0,track.width as i32) as u32;
+        if width>0 {self.precision_surface_styled(Rect{width,..track},Surface::Primary,
+            Material{fill:(61,120,234),edge:(54,87,116),..material},style);}
+        self.precision_surface(thumb,Surface::Current,Material{fill:(235,245,255),edge:(54,87,116),..material});
     }
 
     // ------------------------=

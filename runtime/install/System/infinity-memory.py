@@ -3,9 +3,11 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from _infinity_app import memory_request
+from infinity_uikit import workspace_controls
+from infinity_uikit_artwork import COLORS
 
 CATEGORIES = ("All memories", "Episodic", "Semantic", "Procedural")
-NAVY, PANEL, WHITE, BLUE, MUTED = "#090f26", "#101b3a", "#ffffff", "#3e6fff", "#a7bddc"
+NAVY, PANEL, WHITE, BLUE, MUTED = (COLORS[key] for key in ("canvas","panel","text","accent","muted"))
 
 # ------------------------=
 # FUNC: stamp
@@ -58,6 +60,7 @@ class Browser:
         style.map("TCombobox", fieldbackground=[("readonly", PANEL)], foreground=[("readonly", WHITE)])
         root.option_add("*TCombobox*Listbox.background", PANEL)
         root.option_add("*TCombobox*Listbox.foreground", WHITE)
+        self.control_images = workspace_controls(root,style,body_px/16)
         self.root = root
         root.title("Infinity Memory")
         width = min(1520, root.winfo_screenwidth() - 48, root.maxsize()[0])
