@@ -529,7 +529,10 @@ def require_staging_space(iso, live=None, installed=None, kernel=None):
         peak = max(
             allocated + installed_bytes + kernel_bytes,  # new P0/P1 shards
             live_bytes + media,                          # ISO repack
-            media + live_bytes + installed_bytes,        # final verification
+            # Final gates read the candidate FAT directly via iso_fat;
+            # release_repacked_image has already deleted the extracted live
+            # FAT. Only the candidate and reconstructed installed FAT coexist.
+            media + installed_bytes,                    # final verification
         )
         required = max(0, peak - allocated) + headroom
     available = shutil.disk_usage(ROOT).free
