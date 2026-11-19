@@ -11368,7 +11368,7 @@
             "red" : 9
           },
           "fontFamily" : 0,
-          "fontSize" : 21,
+          "fontSize" : 24,
           "frame" : {
             "height" : 58,
             "width" : 100,
@@ -11421,7 +11421,7 @@
             "red" : 9
           },
           "fontFamily" : 0,
-          "fontSize" : 21,
+          "fontSize" : 24,
           "frame" : {
             "height" : 58,
             "width" : 125,
@@ -11474,7 +11474,7 @@
             "red" : 35
           },
           "fontFamily" : 0,
-          "fontSize" : 21,
+          "fontSize" : 24,
           "frame" : {
             "height" : 58,
             "width" : 170,
@@ -12328,7 +12328,7 @@
             "red" : 9
           },
           "fontFamily" : 0,
-          "fontSize" : 21,
+          "fontSize" : 24,
           "frame" : {
             "height" : 58,
             "width" : 100,
@@ -12381,7 +12381,7 @@
             "red" : 9
           },
           "fontFamily" : 0,
-          "fontSize" : 21,
+          "fontSize" : 24,
           "frame" : {
             "height" : 58,
             "width" : 125,
@@ -12434,7 +12434,7 @@
             "red" : 35
           },
           "fontFamily" : 0,
-          "fontSize" : 21,
+          "fontSize" : 24,
           "frame" : {
             "height" : 58,
             "width" : 170,

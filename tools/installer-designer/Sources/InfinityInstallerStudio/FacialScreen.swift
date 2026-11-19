@@ -85,9 +85,9 @@ extension InstallerStudioDocument {
         add("Scanning face sprite", "faceSprite", .image, .decoration, 600, 85, 340, 700, "", 19, "installer-assets/Face-Enrollment-Scan-v2.png")
         add("faceMesh", "faceMesh", .panel, .decoration, 600, 85, 340, 700, "", 20, "")
         add("faceStatus", "faceStatus", .text, .decoration, 85, 810, 420, 115, "", 15, "")
-        add("faceBack", "faceBack", .button, .backButton, 515, 835, 100, 58, "Back", 21, "")
-        add("faceSkip", "faceSkip", .button, .decoration, 625, 835, 125, 58, "Skip for now", 21, "")
-        add("facePrimary", "facePrimary", .button, .primaryButton, 760, 835, 170, 58, "", 21, "")
+        add("faceBack", "faceBack", .button, .backButton, 515, 835, 100, 58, "Back", 24, "")
+        add("faceSkip", "faceSkip", .button, .decoration, 625, 835, 125, 58, "Skip for now", 24, "")
+        add("facePrimary", "facePrimary", .button, .primaryButton, 760, 835, 170, 58, "", 24, "")
         add("Capture step heading", "faceStepTitle", .text, .decoration, 405, 342, 190, 48, "Face the camera", 32, "")
         return InstallerScreenTemplate(id: 9, title: "Facial Recognition", elements: elements)
     }
