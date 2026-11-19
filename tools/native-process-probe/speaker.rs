@@ -5,9 +5,12 @@ static HEAD:&[u8]=include_bytes!(concat!(env!("INFINITY_PROJECT_ROOT"),"/build/s
 static PCM:&[u8]=include_bytes!(env!("INFINITY_SPEAKER_PCM"));
 // ------------------------=
 // FUNC: run
-// DESC: Executes the packaged native worker, reads its binary embedding and verifies complete memory reclamation after scrubbing.
+// DESC: Executes the packaged native worker, reads its binary embedding and verifies complete memory reclamation after each of four successive runs in one VM.
 // ------------------=
 pub unsafe fn run(memory:&mut NativeMemory,controller:cpu::Controller)->!{
+ let baseline=memory.available_pages();
+ for cycle in 0..4 {
+ assert_eq!(baseline,memory.available_pages());
  let started=cpu::clock_ns().unwrap();
  let before=memory.available_pages();let owner=SecurityIdentity(*b"VOICEIDENTITY\0\0\0");
  let mut task=Task::start_camera_worker(IMAGE,owner,9,memory,controller,u64::MAX,32768).unwrap();
@@ -34,8 +37,11 @@ pub unsafe fn run(memory:&mut NativeMemory,controller:cpu::Controller)->!{
  let inferred=cpu::clock_ns().unwrap();
  assert!(received);let mut offset=0;while !task.scrub_private(&mut offset){}task.release(memory).unwrap();
  assert_eq!(before,memory.available_pages());
- emit(0x535045414b455231);emit(visits);emit(before as u64);emit(memory.available_pages() as u64);
+ if cycle==3 {emit(0x535045414b455231);emit(visits);emit(before as u64);emit(memory.available_pages() as u64);
  emit(started);emit(prepared);emit(inferred);emit(cpu::clock_ns().unwrap());
  for b in vector.chunks_exact(8){emit(u64::from_le_bytes(b.try_into().unwrap()));}
+ emit(4);}
+ }
+ assert_eq!(baseline,memory.available_pages());
  finish()
 }

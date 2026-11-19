@@ -5,6 +5,7 @@ use infinity_speaker_core::{self as speaker,policy};
 use super::ai::voice_pcm::Resampler;
 use zeroize::Zeroizing;
 #[path="face_schedule.rs"] mod schedule;
+#[path="voice_identity_capture.rs"] mod capture_session;
 #[cfg(target_arch="aarch64")]
 static WORKER:&[u8]=include_bytes!("../../build/speaker/aarch64/speaker-worker.elf");
 #[cfg(target_arch="x86_64")]
@@ -16,10 +17,10 @@ pub use crate::ui::voice_setup_layout::{Stage,Failure};
 struct Host{
  account:Option<StableId>,stage:Stage,enrollment:policy::Enrollment,pending:Option<super::voice_identity_login::Pending>,
  proof:Option<super::voice_identity_login::Proof>,template:[u8;policy::BYTES],pcm:[i16;speaker::SAMPLES],length:usize,
- cap:u64,resampler:Resampler,deadline:u64,captured:u64,renew:u64,level:u16,task:Option<Task>,terminal:Option<State>,scrubbed:usize,result:Option<[f32;speaker::DIM]>,login:bool,waiting_face:bool,face_started:bool,
+ cap:u64,capture_session:capture_session::Session,resampler:Resampler,deadline:u64,captured:u64,level:u16,task:Option<Task>,terminal:Option<State>,scrubbed:usize,result:Option<[f32;speaker::DIM]>,login:bool,waiting_face:bool,face_started:bool,
 }
 static mut HOST:Host=Host{account:None,stage:Stage::Idle,enrollment:policy::Enrollment::new(),pending:None,proof:None,
- template:[0;policy::BYTES],pcm:[0;speaker::SAMPLES],length:0,cap:0,resampler:Resampler::empty(),deadline:0,captured:0,renew:0,level:0,task:None,terminal:None,scrubbed:0,result:None,login:false,waiting_face:false,face_started:false};
+ template:[0;policy::BYTES],pcm:[0;speaker::SAMPLES],length:0,cap:0,capture_session:capture_session::Session::new(),resampler:Resampler::empty(),deadline:0,captured:0,level:0,task:None,terminal:None,scrubbed:0,result:None,login:false,waiting_face:false,face_started:false};
 // ------------------------=
 // FUNC: now
 // DESC: Reads the existing monotonic clock without changing audio scheduling.
@@ -44,12 +45,39 @@ pub fn caption()->Option<&'static[u8]>{unsafe{let h=&*core::ptr::addr_of!(HOST);
  Stage::Failed(_)=>b"Voice check unavailable - use your password",
  _=>return None,
 })}}
+struct Microphone<'a>(&'a mut u64);
+impl capture_session::Backend for Microphone<'_>{
+ // ------------------------=
+ // FUNC: open
+ // DESC: Grants one bounded login-workflow input lease without changing the shared audio adapter.
+ // ------------------=
+ fn open(&mut self,until:u64)->bool{
+  let cap=super::with_runtime(|r|r.capabilities.grant(super::capability::CapabilityType::AudioInput,0,1,0,OWNER,OWNER,Some(until/1_000_000_000),0).ok()).flatten();
+  let Some(cap)=cap else{return false;};*self.0=cap;
+  if crate::drivers::audio::capture(OWNER,cap){true}else{self.close();false}
+ }
+ // ------------------------=
+ // FUNC: renew
+ // DESC: Extends the same live device stream within its original capability lifetime.
+ // ------------------=
+ fn renew(&mut self)->bool{crate::drivers::audio::renew_capture(OWNER,*self.0)}
+ // ------------------------=
+ // FUNC: discard
+ // DESC: Excludes inter-sample microphone data without cycling the hardware stream.
+ // ------------------=
+ fn discard(&mut self)->bool{crate::drivers::audio::discard_capture_pending(OWNER)==Some(true)}
+ // ------------------------=
+ // FUNC: close
+ // DESC: Stops only this workflow's input and retires its capability.
+ // ------------------=
+ fn close(&mut self){if *self.0!=0{crate::drivers::audio::stop_capture(OWNER);super::with_runtime(|r|{let _=r.capabilities.retire_leaf(*self.0,OWNER);});*self.0=0;}}
+}
 // ------------------------=
 // FUNC: stop_capture
 // DESC: Revokes only this workflow's microphone lease and clears its private resampler history.
 // ------------------=
 fn stop_capture(h:&mut Host){
- if h.cap!=0{crate::drivers::audio::stop_capture(OWNER);super::with_runtime(|r|{let _=r.capabilities.retire_leaf(h.cap,OWNER);});h.cap=0;}
+ h.capture_session.close(&mut Microphone(&mut h.cap));
  h.resampler.clear();h.level=0;
 }
 // ------------------------=
@@ -58,8 +86,9 @@ fn stop_capture(h:&mut Host){
 // ------------------=
 fn fail(h:&mut Host,error:Failure){
  let stamp=super::ai::clock::SYSTEM.utc_nanoseconds(now()).map(|n|n/1_000_000_000);
- let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"enrollment-or-login",format_args!("failure={} samples={} captured_samples={}",error as u8,h.enrollment.count(),h.length));
- stop_capture(h);h.pcm.fill(0);h.length=0;h.pending=None;h.waiting_face=false;h.result=None;h.template.fill(0);h.stage=Stage::Failed(error);}
+ let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"enrollment-or-login",format_args!("failure={} samples={} captured_samples={} device={:?}",error as u8,h.enrollment.count(),h.length,crate::drivers::audio::capture_status()));
+ if h.login||!matches!(error,Failure::Mismatch|Failure::Quiet|Failure::Clipped|Failure::Timeout|Failure::AnalysisTimeout){stop_capture(h);}
+ h.pcm.fill(0);h.length=0;h.pending=None;h.waiting_face=false;h.result=None;h.template.fill(0);h.stage=Stage::Failed(error);}
 // ------------------------=
 // FUNC: cancel
 // DESC: Cancels account/page transitions; worker memory is scrubbed cooperatively by the next poll.
@@ -88,14 +117,12 @@ pub fn record()->bool{unsafe{let h=&mut *core::ptr::addr_of_mut!(HOST);
 // DESC: Opens a bounded login-only capture lease and starts with empty private sample history.
 // ------------------=
 fn capture(h:&mut Host)->bool{
- stop_capture(h);h.pcm.fill(0);h.length=0;h.captured=0;
+ h.pcm.fill(0);h.length=0;h.captured=0;h.level=0;h.resampler.clear();
  let clock=now();
- let cap=super::with_runtime(|r|r.capabilities.grant(super::capability::CapabilityType::AudioInput,0,1,0,OWNER,OWNER,Some(clock/1_000_000_000+20),0).ok()).flatten();
- let Some(cap)=cap else{fail(h,Failure::Unavailable);return false;};h.cap=cap;
- if !crate::drivers::audio::capture(OWNER,cap){fail(h,Failure::Unavailable);return false;}
+ if !h.capture_session.begin(clock,&mut Microphone(&mut h.cap)){fail(h,Failure::Unavailable);return false;}
  let rate=crate::drivers::audio::capture_status().map(|s|s.sample_rate).unwrap_or(0);
  if !h.resampler.configure(rate){fail(h,Failure::Unavailable);return false;}
- h.renew=clock+1_000_000_000;h.deadline=clock+20_000_000_000;h.stage=Stage::Capturing;true
+ h.deadline=clock+20_000_000_000;h.stage=Stage::Capturing;true
 }
 // ------------------------=
 // FUNC: start_login
@@ -149,7 +176,7 @@ fn save(h:&mut Host)->bool{
 // DESC: Starts only the packaged isolated Rust speaker worker with bounded private model memory.
 // ------------------=
 fn launch(h:&mut Host)->bool{unsafe{
- stop_capture(h);
+ if h.login{stop_capture(h);}
  let Some((_,controller))=super::native_compile_job::platform()else{fail(h,Failure::Worker);return false;};
  h.deadline=now()+60_000_000_000;h.result=None;h.scrubbed=0;h.terminal=None;
  match Task::start_camera_worker(WORKER,OWNER,9,super::native_memory::memory_mut(),controller,h.deadline,128*1024*1024/4096){
@@ -166,15 +193,15 @@ pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
  if !valid&&h.account.is_some(){cancel();}
  let h=&mut *core::ptr::addr_of_mut!(HOST);
  if h.waiting_face && (!h.pending.as_ref().is_some_and(|p|p.valid(h.account.unwrap(),clock/1_000_000))||!super::face_setup_host::login_busy()){fail(h,Failure::Mismatch);}
+ if !h.capture_session.service(clock,&mut Microphone(&mut h.cap)){fail(h,Failure::Unavailable);}
+ if h.cap!=0&&h.stage!=Stage::Capturing{let mut discard=[0i16;4096];crate::drivers::audio::read_capture(OWNER,&mut discard);discard.fill(0);}
  if h.stage==Stage::Capturing{
   if clock>=h.deadline{fail(h,Failure::Timeout);}
-  else if clock>=h.renew&&!crate::drivers::audio::renew_capture(OWNER,h.cap){fail(h,Failure::Unavailable);}
   else{
-   if clock>=h.renew{h.renew=clock+1_000_000_000;}
    let mut raw=[0i16;4096];let mut mono=[0i16;4096];
    let n=crate::drivers::audio::read_capture(OWNER,&mut raw);let(used,nout)=h.resampler.process(&raw[..n],&mut mono);
    if used!=n{fail(h,Failure::Unavailable);}else{
-    h.level=mono[..nout].iter().map(|s|s.unsigned_abs()).max().unwrap_or(0);
+    if nout>0{h.level=mono[..nout].iter().map(|s|s.unsigned_abs()).max().unwrap_or(0);}
     if h.captured==0&&nout>0&&mono[..nout].iter().map(|&s|(s as i64)*(s as i64)).sum::<i64>()/nout as i64>90_000{h.captured=clock/1_000_000;}
     if h.captured!=0{let take=nout.min(speaker::SAMPLES-h.length);h.pcm[h.length..h.length+take].copy_from_slice(&mono[..take]);h.length+=take;}
     if h.length==speaker::SAMPLES{launch(h);}
@@ -249,8 +276,8 @@ fn finish(h:&mut Host,state:State,alive:bool,clock:u64){
         }else{fail(h,Failure::Unauthorized);}}
        else{fail(h,Failure::Mismatch);}
        h.template.fill(0);
-      }else if h.enrollment.add(vector).is_err(){h.stage=Stage::Failed(Failure::Mismatch);}
-      else if h.enrollment.count()==policy::COUNT{if save(h){h.stage=Stage::Saved;h.enrollment.clear();}else{fail(h,Failure::Storage);}}
+      }else if h.enrollment.add(vector).is_err(){fail(h,Failure::Mismatch);}
+      else if h.enrollment.count()==policy::COUNT{if save(h){stop_capture(h);h.stage=Stage::Saved;h.enrollment.clear();}else{fail(h,Failure::Storage);}}
       else{h.stage=Stage::Ready;}
       for x in &mut vector{unsafe{core::ptr::write_volatile(x,0.0);}}
      }else{fail(h,Failure::Worker);}

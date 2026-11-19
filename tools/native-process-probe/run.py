@@ -19,7 +19,9 @@ PYTHON_SOURCE_LIMIT = 1024 * 1024
 # DESC: Validates binary native-worker output and memory recovery without interpreting diagnostic text as acceptance.
 # ------------------=
 def speaker_result(data,work,args):
-    assert len(data)>=1088
+    assert len(data)>=1096
+    cycles=struct.unpack_from('<Q',data,1088)[0]
+    assert cycles==4
     marker,visits,before,after=struct.unpack_from('<4Q',data)
     assert marker==0x535045414b455231 and visits>0 and before==after
     started,prepared,inferred,reclaimed=struct.unpack_from('<4Q',data,32)
@@ -33,8 +35,8 @@ def speaker_result(data,work,args):
     destination=ROOT/'builds/validation/speaker-identity'/args.arch
     destination.mkdir(parents=True,exist_ok=True)
     (destination/'native-embedding.bin').write_bytes(vector)
-    (destination/'worker.json').write_text(json.dumps(dict(hardware_user_mode=True,memory_reclaimed=True,visits=visits,accelerator=args.accelerator,timing=timing,installed_login_verified=False),indent=2)+'\n')
-    print({'speaker_worker':args.arch,'visits':visits,'memory_reclaimed':True,'timing':timing})
+    (destination/'worker.json').write_text(json.dumps(dict(hardware_user_mode=True,memory_reclaimed=True,cycles=cycles,visits=visits,accelerator=args.accelerator,timing=timing,installed_login_verified=False),indent=2)+'\n')
+    print({'speaker_worker':args.arch,'visits':visits,'memory_reclaimed':True,'cycles':cycles,'timing':timing})
 
 # ------------------------=
 # FUNC: snapshot_python_source

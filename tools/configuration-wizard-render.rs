@@ -1035,7 +1035,7 @@ pub(super) fn verify_voice(){
  let (w,h)=(1672,941);let mut pixels=vec![0u32;w*h];let mut d=display(&mut pixels,w,h);
  std::fs::create_dir_all("builds/validation/voice-enrollment").unwrap();
  let mut previous=Vec::new();
- for (name,stage,count,level) in [("idle",Stage::Idle,0,0),("recording",Stage::Capturing,1,2000),("comparing",Stage::Comparing,1,0),("retry",Stage::Failed(Failure::Mismatch),1,0),("saved",Stage::Saved,3,0)]{
+ for (name,stage,count,level) in [("idle",Stage::Idle,0,0),("recording",Stage::Capturing,1,2000),("third-recording",Stage::Capturing,2,2000),("third-comparing",Stage::Comparing,2,0),("comparing",Stage::Comparing,1,0),("retry",Stage::Failed(Failure::Mismatch),1,0),("saved",Stage::Saved,3,0)]{
   assert!(d.voice_template_frame(CONFIGURATION_TEMPLATE_BYTES,1,stage,count,level));
   assert_ne!(pixels,previous);previous=pixels.clone();
   write_ppm(&format!("builds/validation/voice-enrollment/{name}.ppm"),&pixels,w,h);

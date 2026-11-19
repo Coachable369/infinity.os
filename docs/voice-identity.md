@@ -75,3 +75,20 @@ all private memory reclaimed. This is a recorded-PCM worker measurement, not
 physical microphone or installed end-to-end latency. Camera restart regression,
 authentication policy and native render checks pass. User-reported physical
 capture/retry behavior remains an installed-runtime acceptance item.
+
+## Enrollment retry lifetime (2026-11-19)
+
+Enrollment reuses one microphone stream for up to four minutes, including
+analysis and manual retry intervals. Inter-sample audio is drained and discarded;
+each Record action discards queued DMA data and resets private PCM/resampler
+state before collecting its new sample. Completion, Skip, Back, account change,
+lease expiry and device failure close this workflow's stream. This changes only
+voice identity enrollment, not the desktop assistant.
+
+The user's frozen VirtualBox process was sampled before any VM changes. CPU0
+was blocked in the emulated device lock, CPU7 in an audio timer/mixer lock, and
+MixAIO-2 was spinning. The corresponding host capture restart events and sample
+are preserved under `builds/validation/voice-enrollment-retry/`. This matches the
+previously documented host-side zero-progress capture deadlock. Removing repeated
+guest reopen calls reduces that trigger but cannot repair a stuck host library.
+A rebuilt ISO is not proof that this host defect is fixed.

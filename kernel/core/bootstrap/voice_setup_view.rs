@@ -40,11 +40,12 @@ impl DisplayDevice{
    let r=scale_template_rect(e.frame,self.width,self.height);let id=e.code_identifier;
    match id{
     b"voiceGuidance"=>e.text=message,
+    b"voiceSubtitle"=>e.text=b"Verify your voice, then your face at sign-in.",
     b"voiceStepTitle"=>e.text=match stage{Stage::Capturing=>b"Listening to you",Stage::Comparing=>b"Verifying voice",Stage::Saved=>b"Identity saved",Stage::Failed(_)=>b"Please try again",_=>b"Read the phrase"},
     b"voiceRecordStatus"=>e.text=match stage{Stage::Capturing=>b"Recording",Stage::Comparing=>b"Comparing",Stage::Saved=>b"Saved",Stage::Failed(_)=>b"Ready to retry",_=>b"Ready to record"},
     b"voicePrimary"=>e.text=match stage{Stage::Capturing=>b"Recording...",Stage::Comparing=>b"Comparing...",Stage::Saved=>b"Continue",Stage::Failed(_)=>b"Retry sample",_=>b"Record sample"},
     b"voiceSampleStatus0"|b"voiceSampleStatus1"|b"voiceSampleStatus2"=>{
-     let slot=(id[id.len()-1]-b'0')as usize;e.text=if stage==Stage::Saved||slot<count{b"Accepted"}else if slot==count&&matches!(stage,Stage::Capturing|Stage::Comparing){b"Checking..."}else{b"Pending"};
+     let slot=(id[id.len()-1]-b'0')as usize;e.text=if stage==Stage::Saved||slot<count{b"Accepted"}else if slot==count&&stage==Stage::Capturing{b"Recording..."}else if slot==count&&stage==Stage::Comparing{b"Checking..."}else{b"Pending"};
     },
     b"voicePhotoCard0"|b"voicePhotoCard1"|b"voicePhotoCard2"=>{
      let slot=(id[id.len()-1]-b'0')as usize;
