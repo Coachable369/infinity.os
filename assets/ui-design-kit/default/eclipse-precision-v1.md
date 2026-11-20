@@ -96,8 +96,8 @@ The OS-owned frame and window substrate remain rectangular; their only permitted
 corner choices are Authored and Square. Panel/dialog, button and field shapes are
 independently configurable. Explicit rounded styles clip with 4×4 subpixel
 coverage while sampling the approved image-backed edge light along the curve.
-They do not synthesize a competing drawn border. Unedited authored components
-retain exactly their existing pixels.
+They do not synthesize a competing drawn border. Default fields and panels use continuous rounded image-backed rails; other
+unedited authored components retain their existing pixels.
 
 `uikit-styles.bin` uses magic `IUISTY01`, little-endian version 1 and count 6,
 followed by six 12-byte records: material, corners, radius, flags, fill ARGB,
@@ -113,11 +113,13 @@ installer, fresh-install configuration wizard and Settings surfaces.
 
 ### Default field corners and global button presets
 
-Default (authored) input fields use the shared eight-pixel rounded silhouette and
+Default (authored) input fields use the shared eight-pixel rounded silhouette;
+panels and cards use twelve pixels. Both use
 continuous image-backed rails in normal, focused, and pressed states. Explicit
 Studio square or rounded geometry remains authoritative. Native and Studio
 sampling use the same treatment; inactive fields must not revert to cropped,
-ragged corner artwork.
+ragged corner artwork. This includes configuration welcome cards and their
+containing panel. Explicit Studio corner overrides are preserved.
 
 Studio exposes **Global Buttons** in the main toolbar in every workspace. Its
 preview chooser offers Classic Sapphire Glass, Smoked Glass, Frosted Ice, Satin

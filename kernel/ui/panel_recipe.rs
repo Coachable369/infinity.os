@@ -364,10 +364,12 @@ fn rounded_shape(x:usize,y:usize,w:usize,h:usize,radius:usize)->(u8,usize) {
 // ------------------=
 pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mut m:Material,mut style:SurfaceStyle)->Rgba {
     if width==0 || height==0 || x>=width || y>=height { return (0,0,0,0); }
-    // Default fields use the kit's eight-pixel silhouette with continuous
+    // Default fields and panels use the kit's continuous rounded silhouette and
     // image-backed rails, not the reference crop's noisy corner pixels.
     // Explicit square/rounded Studio geometry remains authoritative.
-    if kind==Surface::Field && style.corners==0 { style.corners=2;style.radius=8; }
+    if matches!(kind,Surface::Field|Surface::Panel) && style.corners==0 {
+        style.corners=2;style.radius=if kind==Surface::Field {8}else{12};
+    }
     if matches!(kind,Surface::Frame|Surface::WindowFill) && style.corners==1 { style.corners=0; }
     if let Some(color)=style.fill {
         m.fill=((color>>16) as u8,(color>>8) as u8,color as u8);
