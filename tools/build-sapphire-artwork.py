@@ -54,6 +54,10 @@ def main():
         layers.append(precision.reference_layers(board, box, 8, 12))
     packed = b"".join(cell[layer].tobytes() for layer in range(2) for cell in layers)
     (kit / "eclipse-precision-v1.rgba").write_bytes(packed)
+    # UIKit rebuilds this atlas before applying user overrides. Preserve the
+    # approved frame family through that production generation path too.
+    import runpy
+    runpy.run_path(str(root / "tools/build-window-frame-artwork.py"), run_name="__main__")
 
 if __name__ == "__main__":
     main()
