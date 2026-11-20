@@ -44,6 +44,9 @@ try:
         assert menu_bar.winfo_height() == fixed_height
     button = menu_bar.winfo_children()[0]
     assert button.winfo_width() < 100, button.winfo_width()
+    capture_row = root.winfo_children()[1]
+    capture_field = next(child for child in capture_row.winfo_children() if child.winfo_class() == "TEntry")
+    assert capture_field.winfo_rootx() == browser.search.winfo_rootx()
     with patch.object(browser.menus["File"],"tk_popup") as post:
         button.event_generate("<ButtonPress-1>",x=8,y=8)
         root.update()

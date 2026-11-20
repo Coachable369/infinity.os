@@ -125,9 +125,10 @@ class Browser:
         field.bind("<FocusOut>", lambda event: self.finish_fact())
         tk.Label(capture, textvariable=self.fact_state, bg=PANEL, fg=COLORS["success"], width=12).pack(side="right")
         self.fact.trace_add("write", self.fact_changed)
-        controls = tk.Frame(root, bg=NAVY)
+        controls = tk.Frame(root, bg=NAVY, padx=13)
         controls.pack(fill="x", padx=18, pady=6)
-        ttk.Label(controls, text="Search", width=10, anchor="w").pack(side="left", padx=(12, 4))
+        tk.Label(controls, text="Search", width=10, anchor="w", bg=NAVY, fg=WHITE,
+                 font=("Inter",-body_px,"bold")).pack(side="left", padx=(0, 4))
         self.search = ttk.Entry(controls, textvariable=self.query, font=body_font)
         self.search.bind("<ButtonPress-1>", lambda event: self.search.focus_force(), add="+")
         self.search.bind("<Return>", lambda event: self.remember_search())

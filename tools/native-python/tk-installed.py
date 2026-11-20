@@ -454,6 +454,10 @@ def main():
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
     parser.add_argument("--iso", type=Path, required=True)
     parser.add_argument("--reuse-work", type=Path, help="Reuse an unchanged stopped disposable installed-test disk; does not claim a new installation")
+    parser.add_argument("--finish-configuration", action="store_true",
+                        help="Complete initial configuration on an existing unconfigured disposable installation")
+    parser.add_argument("--memory-mb", type=int, default=12288,
+                        help="Guest RAM; full model-bearing test media requires 20480")
     parser.add_argument("--control-selection", action="store_true",
                         help="Require real Control+A selection replacement; media must include normalized native shortcut delivery")
     parser.add_argument("--durable-data", action="store_true",
@@ -466,6 +470,8 @@ def main():
     parser.add_argument("--width",type=int,default=1024)
     parser.add_argument("--height",type=int,default=768)
     args = parser.parse_args()
+    if args.finish_configuration and not args.reuse_work:
+        parser.error("--finish-configuration requires --reuse-work")
     iso = args.iso.resolve()
     assert iso.is_relative_to(ROOT) and iso.is_file()
     pip = module("tk_installed_package_helpers", ROOT / "tools/native-python/pip-installed.py")
@@ -497,7 +503,7 @@ def main():
     helper.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["rustc", "--edition=2021", "-A", "warnings", "tools/native-python/package-disk.rs", "-o", str(helper)], check=True, cwd=ROOT)
     guest = native.NativeGuest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd",
-                               reuse=bool(args.reuse_work), width=args.width, height=args.height, memory_mb=12288)
+                               reuse=bool(args.reuse_work), width=args.width, height=args.height, memory_mb=args.memory_mb)
     active = subprocess.run(["lsof", "-t", str(guest.disk)], capture_output=True)
     assert active.returncode in (0, 1) and not active.stdout, "Disposable test disk is still open by another process"
     guest.arch = args.arch
@@ -517,6 +523,7 @@ def main():
         if not args.reuse_work:
             guest.install()
             guest.stop()
+        if not args.reuse_work or args.finish_configuration:
             proof["identity"] = guest.onboard()
             guest.stop()
         subprocess.run(["python3", str(ROOT / "tools/update-installed-clone.py"), str(guest.disk),
