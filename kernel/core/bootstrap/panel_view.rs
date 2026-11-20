@@ -89,8 +89,8 @@ impl DisplayDevice {
             self.mark_dirty_rect(clip.left,clip.top,clip.right-clip.left,clip.bottom-clip.top);
             return;
         }
-        let rim=if style.corners!=0 {width.max(height)}
-            else if kind==Surface::Frame {panel_recipe::rim_width(kind,material.scale)}
+        let rim=if kind==Surface::Frame {panel_recipe::rim_width(kind,material.scale)}
+            else if style.corners!=0 {width.max(height)}
             else if material.opacity==0 && matches!(kind,Surface::Panel|Surface::Field|Surface::Primary|Surface::Secondary) {panel_recipe::rim_width(kind,material.scale)}
             else {height.max(width)};
         for y in clip.top..clip.bottom {

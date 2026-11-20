@@ -439,6 +439,7 @@ struct ElementInspector: View {
                         Text("Glass").tag(UIKitSurfaceMaterial.glass)
                         Text("Matte").tag(UIKitSurfaceMaterial.matte)
                         Text("Flat").tag(UIKitSurfaceMaterial.flat)
+                        if element.surfaceMaterial.rawValue >= 4 { Text(element.surfaceMaterial.title).tag(element.surfaceMaterial) }
                     }
                     InfinityStudioChoice("Corners", selection: Binding(
                         get: { store.selectedElement?.surfaceCorners ?? element.surfaceCorners },

@@ -64,6 +64,61 @@ struct PrecisionAtlas {
         return data
     }()
 
+    private static let modernButtons = collectionData("modern-buttons-v1", count: 11 * 3 * 256 * 64 * 4)
+    private static let modernFrames = collectionData("modern-frames-v1", count: 10 * 3 * 64 * 64 * 4)
+
+    // ------------------------=
+    // FUNC: collectionData
+    // DESC: Loads the same bounded surface artwork embedded by both native architectures.
+    // ------------------=
+    private static func collectionData(_ name: String, count: Int) -> Data {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "rgba"),
+              let data = try? Data(contentsOf: url), data.count == count else { preconditionFailure("Missing modern UIKit artwork") }
+        return data
+    }
+
+    // ------------------------=
+    // FUNC: collectionPixel
+    // DESC: Mirrors the native collection sampler including coverage, edges and state interpolation.
+    // ------------------=
+    private func collectionPixel(width w: Int, height h: Int, x: Int, y: Int, material m: PrecisionMaterial) -> PrecisionPixel {
+        let s = m.style, frame = s.material.rawValue >= 15
+        let family = s.material.rawValue - (frame ? 15 : 4), sw = frame ? 64 : 256, sh = 64
+        let scale = max(1, m.scale)
+        let coord: (Int, Int) -> Int = { p, n in
+            let cap = min(8 * scale, n / 2)
+            return p < cap ? p / scale : p >= n - cap ? 63 - (n - 1 - p) / scale : 32
+        }
+        let sx = frame ? coord(x, w) : x * 255 / max(1, w - 1)
+        let sy = frame ? coord(y, h) : y * 63 / max(1, h - 1)
+        let data = frame ? Self.modernFrames : Self.modernButtons
+        let sample: (Int) -> PrecisionPixel = { state in
+            let at = ((family * 3 + state) * sw * sh + sy * sw + sx) * 4
+            return PrecisionPixel(red: Int(data[at]), green: Int(data[at+1]), blue: Int(data[at+2]), alpha: Int(data[at+3]))
+        }
+        var c = m.pressed && !frame ? sample(2) : Self.transition(sample(0), sample(1), amount: m.focus)
+        if let tint = frame ? s.border : s.fill {
+            let at = (family * 3 * sw * sh + (frame ? sw / 2 : (sh / 2) * sw + sw / 2)) * 4
+            let base = PrecisionPixel(red: Int(data[at]), green: Int(data[at+1]), blue: Int(data[at+2]), alpha: Int(data[at+3]))
+            c.red = min(255,max(0,c.red + Int((tint >> 16) & 255) - base.red))
+            c.green = min(255,max(0,c.green + Int((tint >> 8) & 255) - base.green))
+            c.blue = min(255,max(0,c.blue + Int(tint & 255) - base.blue))
+            c.alpha = c.alpha * Int(tint >> 24) / 255
+        }
+        if frame { c.alpha = c.alpha * Int(m.edgeOpacity) / 255; return c }
+        let radius = s.corners == .square ? 0 : s.radius * scale
+        let (coverage, shapeDepth) = Self.roundedShape(x: x, y: y, width: w, height: h, radius: radius)
+        if coverage == 0 { return .clear }
+        let edges = [(173,194,211,190),(86,128,181,110),(98,116,138,80),(0,0,0,0),(255,255,255,90),(76,82,95,100),(0,0,0,0),(118,151,185,220),(68,86,109,100),(101,125,153,130),(0,0,0,0)]
+        var e = edges[family]
+        if let tint = s.border { e = (Int((tint >> 16) & 255),Int((tint >> 8) & 255),Int(tint & 255),e.3 * Int(tint >> 24) / 255) }
+        e.3 = e.3 * Int(m.edgeOpacity) / 255
+        let depth = radius == 0 ? min(x,y,w-1-x,h-1-y)*256 : shapeDepth
+        if depth < scale * 256 { c = Self.over(c, edge: PrecisionPixel(red: e.0, green: e.1, blue: e.2, alpha: e.3)) }
+        c.alpha = c.alpha * coverage * Int(m.opacity) / 65025
+        return c
+    }
+
     // ------------------------=
     // FUNC: buttonCloud
     // DESC: Mirrors the native bilinear texture sampler without depending on the preview backdrop.
@@ -293,6 +348,10 @@ struct PrecisionAtlas {
     // ------------------=
     func pixel(_ originalKind: PrecisionSurfaceKind, width: Int, height: Int, x: Int, y: Int, material original: PrecisionMaterial) -> PrecisionPixel {
         guard width > 0, height > 0, x >= 0, y >= 0, x < width, y < height else { return .clear }
+        let id = original.style.material.rawValue
+        if ((4...14).contains(id) && (originalKind == .primary || originalKind == .secondary)) || ((15...24).contains(id) && originalKind == .frame) {
+            return collectionPixel(width: width, height: height, x: x, y: y, material: original)
+        }
         var kind = originalKind
         var style = original.style
         if (kind == .field || kind == .panel) && style.corners == .authored {

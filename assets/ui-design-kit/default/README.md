@@ -9,6 +9,13 @@ Explicit Studio material overrides retain their selected glass/matte/flat
 recipes. See the original [layout reference](teal-sapphire-desktop-reference.png)
 for the requested density and the Sapphire sheet for the corrected blue palette.
 
+## Selectable button and window families
+
+The [modern surface collection](style-collection/README.md) provides eleven
+button families and ten compositor frame families. Select global defaults in
+Studio’s Surface Styles controls; individual buttons retain explicit overrides.
+Studio and the installed OS share the same artwork, states and material IDs.
+
 ## Shared composition architecture: Eclipse Precision
 
 The original `eclipse-precision-v1-reference.png` documents the earlier surface

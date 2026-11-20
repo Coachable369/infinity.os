@@ -158,7 +158,7 @@ impl DisplayDevice {
         self.precision_surface(c.bounds,if primary{Surface::Primary}else{Surface::Secondary},Material{fill:if primary{(62,111,255)}else{(16,27,58)},edge:(134,199,255),opacity:if c.enabled{255}else{110},edge_opacity:if c.enabled{255}else{100},focus:if focused&&c.enabled{255}else{0},pressed:false,scale:s});
         let mut label_rect=inset(c.bounds,s);
         if matches!(c.target,Target::Trigger|Target::RestartPolicy){label_rect.width=label_rect.width.saturating_sub((24*s)as u32);self.app_disclosure(Rect{x:c.bounds.right()-(30*s)as i32,width:(24*s)as u32,..c.bounds},true,(174,197,221),s);}
-        self.app_label(label_rect,label,if c.enabled{(240,246,255)}else{(112,130,155)},true,s);
+        self.app_label(label_rect,label,crate::ui::panel_recipe::button_caption(crate::ui::panel_recipe::surface_style(if primary{Surface::Primary}else{Surface::Secondary}),if c.enabled{(240,246,255)}else{(112,130,155)}),true,s);
     }
     // ------------------------=
     // FUNC: task_automation_detail_line

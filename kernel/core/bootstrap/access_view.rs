@@ -104,7 +104,8 @@ impl DisplayDevice {
             palette::BORDER,255,focused);
         let padding = (height / 3).min(width / 4);
         self.access_label((left + padding, top, width.saturating_sub(padding * 2), height),
-            label, (height * 5 / 12).max(8), palette::TEXT, true, true);
+            label, (height * 5 / 12).max(8), crate::ui::panel_recipe::button_caption(
+                crate::ui::panel_recipe::surface_style(if primary {Surface::Primary}else{Surface::Secondary}),palette::TEXT), true, true);
     }
 
     // ------------------------=

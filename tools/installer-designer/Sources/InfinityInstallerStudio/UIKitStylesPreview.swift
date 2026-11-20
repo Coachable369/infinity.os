@@ -122,6 +122,7 @@ struct UIKitStylesPreview: View {
                     if kind == .primary || kind == .secondary {
                         Text(kind == .primary ? "Continue" : "Cancel")
                             .font(InfinityUIKit.EclipseAccess.font(size: 16, semibold: true, projectRoot: store.projectRoot))
+                            .foregroundStyle(material.style.material == .porcelain ? Color(red: 0.094, green: 0.133, blue: 0.196) : .white)
                     } else if kind == .field {
                         Text("Editable input").font(InfinityUIKit.EclipseAccess.font(size: 15, projectRoot: store.projectRoot))
                             .foregroundStyle(studioColor(store.document.colors[5]).color)
@@ -246,6 +247,7 @@ struct ElementButtonStylePicker: View {
                             selected: element.surfaceMaterial == .authored)
                     }.buttonStyle(.plain)
                     Divider()
+                    ScrollView { VStack(spacing: 8) {
                     ForEach(GlassButtonPreset.allCases) { preset in
                         Button {
                             store.updateSelected("Button style: \(preset.rawValue)") { preset.apply(to: &$0) }
@@ -254,6 +256,7 @@ struct ElementButtonStylePicker: View {
                             row(preset.rawValue, style: preset.style, selected: GlassButtonPreset.matching(element) == preset)
                         }.buttonStyle(.plain)
                     }
+                    } }.frame(maxHeight: 440)
                 }.padding(16).frame(width: 320)
                     .background(InfinityUIKit.Palette.nativePanel)
             }
@@ -269,7 +272,7 @@ struct ElementButtonStylePicker: View {
             if let image = UIKitStylePreviewImage.image(store: store.uiKit, kind: .primary,
                 width: 112, height: 32, material: PrecisionMaterial(style: style)) {
                 Image(decorative: image, scale: 1).overlay {
-                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(style.material == .porcelain ? Color.black : .white)
                 }.frame(width: 112, height: 32)
             }
             Text(name).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
@@ -298,6 +301,7 @@ struct GlobalButtonStylePicker: View {
                 Text("Global button style").font(.headline)
                 Text("Current: \(selected?.rawValue ?? "Custom / UIKit default")")
                     .font(.caption).foregroundStyle(.secondary)
+                ScrollView { VStack(spacing: 8) {
                 ForEach(GlassButtonPreset.allCases) { preset in
                     Button {
                         store.applyButtonPreset(preset)
@@ -306,7 +310,7 @@ struct GlobalButtonStylePicker: View {
                             if let image = UIKitStylePreviewImage.image(store: store, kind: .primary,
                                 width: 112, height: 32, material: PrecisionMaterial(style: preset.style)) {
                                 Image(decorative: image, scale: 1).overlay {
-                                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(preset.style.material == .porcelain ? Color.black : .white)
                                 }.frame(width: 112, height: 32)
                             }
                             VStack(alignment: .leading, spacing: 2) {
@@ -318,6 +322,7 @@ struct GlobalButtonStylePicker: View {
                         }.padding(6).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
+                } }.frame(maxHeight: 470)
                 Divider()
                 Text("Applies to primary and secondary buttons. Individual button overrides are preserved. Use Save All Sections or Save & Update ISO to publish.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -353,6 +358,19 @@ struct GlobalWindowFrameEditor: View {
                         preview("Inactive", focus: 0)
                     }
                     Divider()
+                    Text("Frame collection").font(.headline)
+                    ForEach(WindowFramePreset.allCases) { preset in
+                        Button { store.setSurfaceStyle(0, style: preset.style) } label: {
+                            HStack(spacing: 16) {
+                                if let image = UIKitStylePreviewImage.image(store: store, kind: .frame,
+                                    width: 112, height: 52, material: PrecisionMaterial(focus: 255, style: preset.style)) {
+                                    Image(decorative: image, scale: 1)
+                                }
+                                Text(preset.title).frame(maxWidth: .infinity, alignment: .leading)
+                                if store.document.styles[0].material == preset.style.material { Image(systemName: "checkmark.circle.fill") }
+                            }.padding(4).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
                     UIKitStyleInspector(store: store)
                     Divider()
                     Text("Save All Sections or Save & Update ISO to publish. Changes remain undoable in UIKit.")

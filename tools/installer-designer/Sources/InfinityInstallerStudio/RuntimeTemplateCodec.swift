@@ -256,7 +256,8 @@ enum RuntimeTemplateCodec {
         try palette.validate()
         var output = Data()
         output.append(magic)
-        output.appendLittleEndian(document.infinityMenu == nil ? version : UInt16(13))
+        let extended = document.screens.contains { $0.elements.contains { $0.surfaceMaterial.rawValue >= 4 } }
+        output.appendLittleEndian(extended ? (document.infinityMenu == nil ? UInt16(14) : UInt16(15)) : (document.infinityMenu == nil ? version : UInt16(13)))
         output.appendLittleEndian(UInt16(document.screens.count))
         for screen in document.screens {
             output.append(UInt8(screen.id))
@@ -272,10 +273,11 @@ enum RuntimeTemplateCodec {
                 var flags: UInt8 = 0
                 if element.locked { flags |= 1 }
                 if element.hidden { flags |= 2 }
-                flags |= UInt8(element.surfaceMaterial.rawValue) << 2
+                flags |= UInt8(element.surfaceMaterial.rawValue & 3) << 2
                 flags |= UInt8(element.surfaceCorners.rawValue) << 4
                 flags |= UInt8(element.imageFit.rawValue) << 6
                 output.append(flags)
+                if extended { output.append(UInt8(element.surfaceMaterial.rawValue)) }
                 output.appendLittleEndian(Int16(element.zIndex.clamped(to: -32_768...32_767)))
                 output.appendLittleEndian(UInt16(element.frame.x))
                 output.appendLittleEndian(UInt16(element.frame.y))
@@ -431,7 +433,7 @@ enum RuntimeTemplateCodec {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
         }
         let sourceVersion = try reader.readUInt16()
-        guard [6, 7, 8, 9, 10, 11, version, 13].contains(sourceVersion) else {
+        guard [6, 7, 8, 9, 10, 11, version, 13, 14, 15].contains(sourceVersion) else {
             throw TemplateValidationIssue.invalidDocument("Unsupported runtime-template version")
         }
         let screenCount = Int(try reader.readUInt16())
@@ -460,9 +462,10 @@ enum RuntimeTemplateCodec {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Scene backgrounds require a v10 image layer")
                 }
                 let flags = try reader.readUInt8()
+                let materialID = sourceVersion >= 14 ? Int(try reader.readUInt8()) : Int((flags >> 2) & 3)
                 guard (sourceVersion >= 11 || flags & 0xc0 == 0),
                       let imageFit = StudioImageFit(rawValue: Int(flags >> 6)),
-                      let surfaceMaterial = UIKitSurfaceMaterial(rawValue: Int((flags >> 2) & 3)),
+                      let surfaceMaterial = UIKitSurfaceMaterial(rawValue: materialID),
                       let surfaceCorners = UIKitCornerStyle(rawValue: Int((flags >> 4) & 3)),
                       sourceVersion != 6 || flags & 0xfc == 0 else {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Invalid surface style flags")
@@ -557,7 +560,7 @@ enum RuntimeTemplateCodec {
             assets[name] = bytes
         }
         var navigation: StudioMenu?
-        if sourceVersion == 13 {
+        if sourceVersion == 13 || sourceVersion == 15 {
             guard try reader.readData(count: 5) == Data([73, 78, 65, 86, 1]) else { throw TemplateValidationIssue.invalidDocument("Invalid menu signature") }
             var remaining = Int(try reader.readUInt16()); let count = Int(try reader.readUInt8())
             guard remaining <= StudioMenu.maximumItems, count <= remaining else { throw TemplateValidationIssue.invalidDocument("Menu exceeds native limits") }

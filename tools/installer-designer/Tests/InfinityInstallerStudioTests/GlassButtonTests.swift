@@ -105,12 +105,51 @@ final class GlassButtonTests: XCTestCase {
             let pixels = try XCTUnwrap(atlas.render(.primary, width: 250, height: 52, material: material))
             images.insert(pixels)
             let center = atlas.pixel(.primary, width: 250, height: 52, x: 125, y: 26, material: material)
-            XCTAssertGreaterThan(center.alpha, 0)
-            if preset.style.material == .glass { XCTAssertLessThan(center.alpha, 255) }
-            else { XCTAssertEqual(center.alpha, 255) }
+            if [.outline, .textAction].contains(preset) { XCTAssertEqual(center.alpha, 0) }
+            else if [.optical, .liquid, .frosted, .tinted].contains(preset) || preset.style.material == .glass {
+                XCTAssertGreaterThan(center.alpha, 0); XCTAssertLessThan(center.alpha, 255)
+            } else { XCTAssertEqual(center.alpha, 255) }
             XCTAssertEqual(atlas.pixel(.primary, width: 250, height: 52, x: 0, y: 0, material: material).alpha, 0)
         }
         XCTAssertGreaterThanOrEqual(images.count, 6)
         XCTAssertEqual(images.count, GlassButtonPreset.allCases.count)
     }
+    // ------------------------=
+    // FUNC: testModernTemplateAndFrameRoundTrip
+    // DESC: Exercises every collection selection through binary save and reload without losing actions or legacy compatibility.
+    // ------------------=
+    @MainActor func testModernTemplateAndFrameRoundTrip() throws {
+        var document = InstallerStudioDocument.factoryDefault()
+        let index = try XCTUnwrap(document.screens[0].elements.firstIndex { $0.kind == .button })
+        for preset in GlassButtonPreset.modern {
+            preset.apply(to: &document.screens[0].elements[index])
+            let encoded = try RuntimeTemplateCodec.encode(document)
+            let decoded = try RuntimeTemplateCodec.decode(encoded)
+            XCTAssertEqual(decoded, document)
+            try encoded.write(to: URL(fileURLWithPath: "/opt/codebase/infinity.os/builds/modern-button-\(preset.style.material.rawValue).iuit"))
+        }
+        var desktop = InstallerStudioDocument.factoryDesktop()
+        desktop.infinityMenu = StudioMenu(items: [StudioMenuItem(label: "Tools", action: .submenu, children: [StudioMenuItem(label: "Editor", action: .application, target: 1)])])
+        let button = StudioElement.make(name: "Test", kind: .button, frame: CanvasRect(x: 100, y: 200, width: 250, height: 52), text: "Continue")
+        desktop.screens[0].elements.append(button)
+        GlassButtonPreset.optical.apply(to: &desktop.screens[0].elements[desktop.screens[0].elements.count-1])
+        let menuBytes = try RuntimeTemplateCodec.encode(desktop, collection: .desktop)
+        XCTAssertEqual(try RuntimeTemplateCodec.decode(menuBytes, collection: .desktop), desktop)
+        try menuBytes.write(to: URL(fileURLWithPath: "/opt/codebase/infinity.os/builds/modern-menu.iuit"))
+        let store = UIKitStore(projectRoot: nil)
+        let atlas = try XCTUnwrap(PrecisionAtlas(data: Data(contentsOf: URL(fileURLWithPath: "/opt/codebase/infinity.os/assets/ui-design-kit/default/eclipse-precision-v1.rgba"))))
+        var frames = Set<Data>()
+        for preset in WindowFramePreset.allCases {
+            store.setSurfaceStyle(0, style: preset.style)
+            let saved = try JSONDecoder().decode(UIKitDocument.self, from: JSONEncoder().encode(store.document))
+            XCTAssertEqual(saved.styles[0], preset.style)
+            XCTAssertEqual(try saved.runtimeStyles()[12], UInt8(preset.rawValue))
+            let normal = try XCTUnwrap(atlas.render(.frame, width: 224, height: 112, material: PrecisionMaterial(style: preset.style)))
+            let active = try XCTUnwrap(atlas.render(.frame, width: 224, height: 112, material: PrecisionMaterial(focus: 255, style: preset.style)))
+            XCTAssertNotEqual(normal, active); frames.insert(active)
+            XCTAssertEqual(atlas.pixel(.frame, width: 224, height: 112, x: 100, y: 50, material: PrecisionMaterial(style: preset.style)).alpha, 0)
+        }
+        XCTAssertEqual(frames.count, 10)
+    }
+
 }

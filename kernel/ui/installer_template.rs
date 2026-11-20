@@ -386,7 +386,7 @@ impl<'a> InstallerTemplate<'a> {
             return Err(InstallerTemplateError::InvalidHeader);
         }
         let version = reader.u16()?;
-        if version != 13 && version != FORMAT_VERSION && version != 11 && version != 10 && version != 9 && version != 8 && version != 7 && version != 6 {
+        if version != 15 && version != 14 && version != 13 && version != FORMAT_VERSION && version != 11 && version != 10 && version != 9 && version != 8 && version != 7 && version != 6 {
             return Err(InstallerTemplateError::InvalidVersion);
         }
         let screen_count = reader.u16()?;
@@ -612,7 +612,7 @@ impl<'a> InstallerTemplate<'a> {
             }
         }
         let navigation_offset=reader.offset;
-        if version==13 {
+        if version==13 || version==15 {
             if !desktop || navigation::Menu::parse(&data[navigation_offset..],screen_count).is_none(){return Err(InstallerTemplateError::InvalidElement);}
             reader.offset=data.len();
         }
@@ -633,7 +633,7 @@ impl<'a> InstallerTemplate<'a> {
     // DESC: Returns only the validated optional desktop menu extension, preserving v6-v12 compatibility.
     // ------------------=
     pub fn navigation(&self)->Option<navigation::Menu<'a>> {
-        if self.version!=13{return None;}navigation::Menu::parse(&self.data[self.navigation_offset..],self.screen_count)
+        if self.version!=13 && self.version!=15{return None;}navigation::Menu::parse(&self.data[self.navigation_offset..],self.screen_count)
     }
 
     // ------------------------=
@@ -998,6 +998,8 @@ impl<'a> Reader<'a> {
         {
             return Err(InstallerTemplateError::InvalidElement);
         }
+        let surface_material = if self.version >= 14 { self.u8()? } else { (flags >> 2) & 3 };
+        if surface_material > 24 { return Err(InstallerTemplateError::InvalidElement); }
         let z_index = self.i16()?;
         let frame = InstallerTemplateRect {
             x: self.u16()?,
@@ -1072,7 +1074,7 @@ impl<'a> Reader<'a> {
             border,
             opacity,
             corner_radius,
-            surface_material: (flags >> 2) & 3,
+            surface_material,
             corner_style: (flags >> 4) & 3,
             font_size,
             name,

@@ -412,7 +412,8 @@ impl super::DisplayDevice {
                 ..r
             },
             label,
-            TEXT,
+            crate::ui::panel_recipe::button_caption(crate::ui::panel_recipe::surface_style(
+                if primary {crate::ui::panel_recipe::Surface::Primary}else{crate::ui::panel_recipe::Surface::Secondary}),TEXT),
             true,
             s,
         );

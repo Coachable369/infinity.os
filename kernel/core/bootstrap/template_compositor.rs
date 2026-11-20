@@ -721,9 +721,10 @@ impl DisplayDevice {
             let width=self.access_text_width(element.text,font,true);
             let previous=self.render_clip;
             self.intersect_render_clip(rect.left,rect.top,rect.width,rect.height);
+            let caption=crate::ui::panel_recipe::button_caption(style,(element.caption_color[0],element.caption_color[1],element.caption_color[2]));
             self.access_text(rect.left+rect.width.saturating_sub(width)/2,
                 rect.top+rect.height.saturating_sub(font*7/6)/2,
-                element.text,element.caption_color[0],element.caption_color[1],element.caption_color[2],text_opacity,font,true);
+                element.text,caption.0,caption.1,caption.2,text_opacity,font,true);
             self.render_clip=previous;
         }
     }
@@ -1169,14 +1170,13 @@ impl DisplayDevice {
                 } else {
                     0
                 };
+        let caption=crate::ui::panel_recipe::button_caption(style,(element.caption_color[0],element.caption_color[1],element.caption_color[2]));
         // The text renderer takes unsigned origins; crop the left/top glyph runs through its signed-origin adapter.
         self.template_text_signed(
             text_left as i32,
             text_top as i32,
             element.text,
-            element.caption_color[0],
-            element.caption_color[1],
-            element.caption_color[2],
+            caption.0, caption.1, caption.2,
             (u16::from(element.caption_color[3]) * opacity / 100) as u8,
             font_px,
             true,

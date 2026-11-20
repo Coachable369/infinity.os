@@ -21,7 +21,7 @@ def workspace_theme(root, style, scale=1):
         style.map(name,foreground=[("disabled",c["muted"]),("readonly",c["text"])],
                   fieldbackground=[("readonly",c["panel"])])
     for name in ("TButton","Accent.TButton","TMenubutton","Workspace.TMenubutton"):
-        style.configure(name,foreground=c["text"],padding=(round(12*scale),round(8*scale)),font=body)
+        style.configure(name,foreground=c.get("primaryButtonText" if name=="Accent.TButton" else "buttonText",c["text"]),padding=(round(12*scale),round(8*scale)),font=body)
         style.map(name,foreground=[("disabled",c["muted"])])
     root.option_add("*TCombobox*Listbox.background",c["panel"])
     root.option_add("*TCombobox*Listbox.foreground",c["text"])

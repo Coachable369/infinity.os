@@ -18,6 +18,8 @@ struct UIKitStyleInspector: View {
                 Text("Approved artwork").tag(UIKitSurfaceMaterial.authored)
                 Text("Glass").tag(UIKitSurfaceMaterial.glass)
                 Text("Matte").tag(UIKitSurfaceMaterial.matte)
+                Text("Flat").tag(UIKitSurfaceMaterial.flat)
+                if style.material.rawValue >= 4 { Text(style.material.title).tag(style.material) }
             }.disabled(store.selectedSurface == 0)
             InfinityStudioChoice("Corners", selection: binding(\.corners)) {
                 Text("Approved artwork").tag(UIKitCornerStyle.authored)
