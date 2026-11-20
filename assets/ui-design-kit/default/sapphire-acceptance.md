@@ -27,9 +27,13 @@ No all-application 95% result has been established.
 - Desktop launcher, tray, top bar and widget composition need separate review;
   shared sampler parity cannot establish their visual fidelity.
 - Installed ARM InfinityCode launch, maximize, keyboard response and clean close
-  passed after disk-only boot. The first ARM test ISO includes the initial
-  Sapphire work, but predates the latest palette, scrollbar and empty-tray fixes.
-  Updated ARM/x86 packaging and broader installed visual acceptance remain open.
+  passed after disk-only boot. Six native shell apps also passed maximize/restore,
+  minimize/tray restore and close. Production captures verified the corrected
+  Command title/menu spacing, Navigator typography, Task Manager alignment,
+  Python rails and empty-tray suppression. Final installed manifest:
+  `20261120T023232911114Z-83586.json`. This private QA disk has a newer kernel than
+  the published ARM ISO. Updated ARM/x86 packaging and broader per-state visual
+  acceptance remain open.
 
 Reference: `sapphire-controls-reference.png` and
 `teal-sapphire-desktop-reference.png` (layout only; Sapphire owns the palette).

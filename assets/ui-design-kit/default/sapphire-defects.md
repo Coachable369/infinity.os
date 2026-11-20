@@ -99,5 +99,19 @@ tray no longer covers the workspace and the updated Python scrollbar artwork is
 present. Lifecycle checks do not establish full visual acceptance. Additional
 findings were truncated native application titles, oversized Navigator columns
 and clipped status text, and a cramped Task toolbar and graph caption. These
-are being corrected with shared app typography, bounded labels and field-metric
-carets; the updated kernel requires a new installed screenshot review.
+were corrected with shared app typography, bounded labels and field-metric
+carets. The final installed rerun passed in manifest
+`20261120T023232911114Z-83586.json`; its structured results are in
+`builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json`.
+Reviewed production captures in `builds/validation/sapphire-coverage/` include
+`command-final.png`, `navigator-final.png` and `tasks-final.png`. Command Window
+now shows the complete title with separate menu hit regions; Navigator's location,
+columns and status use bounded shared typography; Task Manager's title, selector,
+table and graph caption fit their regions. These are installed private-kernel
+checks, not proof that the published release contains the corrections.
+
+All eleven Settings pages also rendered with their first detail row expanded in
+manifest `20261120T023204490543Z-83555.json`. The forced General preview exposes an
+old name-edit detail state, but normal field activation explicitly clears that
+state and edits inline. No speculative runtime change was made for that preview.
+Reference-size per-element fidelity and unexercised states remain open.

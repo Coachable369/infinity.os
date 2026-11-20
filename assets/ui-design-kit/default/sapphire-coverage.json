@@ -896,7 +896,13 @@
       ],
       "status": "partial",
       "evidence": [
-        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json",
+        {
+          "layer": "installed-arm",
+          "manifest": "builds/manifests/20261120T023232911114Z-83586.json",
+          "results": "builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json",
+          "scope": "Final private-kernel lifecycle rerun and normal/maximized/restored captures; per-element visual score remains open"
+        }
       ],
       "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
@@ -997,7 +1003,13 @@
       ],
       "status": "partial",
       "evidence": [
-        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json",
+        {
+          "layer": "installed-arm",
+          "manifest": "builds/manifests/20261120T023232911114Z-83586.json",
+          "results": "builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json",
+          "scope": "Final private-kernel lifecycle rerun and normal/maximized/restored captures; per-element visual score remains open"
+        }
       ],
       "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
@@ -1019,7 +1031,13 @@
       ],
       "status": "partial",
       "evidence": [
-        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json",
+        {
+          "layer": "installed-arm",
+          "manifest": "builds/manifests/20261120T023232911114Z-83586.json",
+          "results": "builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json",
+          "scope": "Final private-kernel lifecycle rerun and normal/maximized/restored captures; per-element visual score remains open"
+        }
       ],
       "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
@@ -1117,7 +1135,13 @@
       ],
       "status": "partial",
       "evidence": [
-        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json",
+        {
+          "layer": "installed-arm",
+          "manifest": "builds/manifests/20261120T023232911114Z-83586.json",
+          "results": "builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json",
+          "scope": "Final private-kernel lifecycle rerun and normal/maximized/restored captures; per-element visual score remains open"
+        }
       ],
       "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
@@ -1141,7 +1165,13 @@
       "evidence": [
         "builds/validation/sapphire-coverage/tasks-accounts.png",
         "builds/manifests/20261119T232341417327Z-43080.json",
-        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json",
+        {
+          "layer": "installed-arm",
+          "manifest": "builds/manifests/20261120T023232911114Z-83586.json",
+          "results": "builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json",
+          "scope": "Final private-kernel lifecycle rerun and normal/maximized/restored captures; per-element visual score remains open"
+        }
       ],
       "review_note": "Host production painter and state checks reviewed; installed and per-element 95% acceptance unverified",
       "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
@@ -1240,7 +1270,13 @@
       ],
       "status": "partial",
       "evidence": [
-        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json",
+        {
+          "layer": "installed-arm",
+          "manifest": "builds/manifests/20261120T023232911114Z-83586.json",
+          "results": "builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json",
+          "scope": "Final private-kernel lifecycle rerun and normal/maximized/restored captures; per-element visual score remains open"
+        }
       ],
       "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
@@ -1264,7 +1300,13 @@
       "evidence": [
         "builds/validation/sapphire-coverage/infinitycode-installed-normal.png",
         "builds/validation/sapphire-coverage/infinitycode-installed-maximized.png",
-        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json",
+        {
+          "layer": "installed-arm",
+          "manifest": "builds/manifests/20261120T023232911114Z-83586.json",
+          "results": "builds/validation/native-python/aarch64/tk-installed-1795142012884160000/installed.json",
+          "scope": "Final private-kernel lifecycle rerun and normal/maximized/restored captures; per-element visual score remains open"
+        }
       ],
       "acceptance_note": "Focused correction evidence only; per-state visual and installed acceptance remain open.",
       "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
