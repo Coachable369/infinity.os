@@ -299,7 +299,8 @@ struct PrecisionAtlas {
             style.corners = .rounded
             style.radius = kind == .field ? 8 : 12
         }
-        if (kind == .frame || kind == .windowFill) && style.corners == .square { style.corners = .authored }
+        if kind == .frame && style.corners == .authored { style.corners = .square }
+        if kind == .windowFill && style.corners == .square { style.corners = .authored }
         var m = original
         if let fill = style.fill {
             m.fill = studioColor(fill)
@@ -326,7 +327,7 @@ struct PrecisionAtlas {
         let rounded = style.corners == .rounded && style.radius != 0
         let square = style.corners == .square || (style.corners == .rounded && style.radius == 0)
         let pair: (Int, Int) = switch kind {
-        case .frame: rounded ? (2, 3) : (0, 1)
+        case .frame: (0, 1)
         case .windowFill, .panel: (2, 3)
         case .primary: m.pressed ? (6, 6) : (4, 5)
         case .secondary: m.pressed ? (13, 13) : (11, 12)

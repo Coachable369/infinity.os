@@ -8,7 +8,7 @@
 example. All OS panels use the shared image-backed renderer. Applications retain
 content/layout ownership, never ownership of their outer frame geometry.
 
-- Windows: straight rectangular edges; integrated bold L corners; bright active
+- Windows: straight rectangular edges; continuous Sapphire v2 bevel rails; bright active
   and subdued inactive frames. No rounded outer frame beneath square brackets.
 - Panels: midnight navy glass, restrained icy-silver edge, optically softened
   corners. Installer and setup outer panels reuse the app drawer's bounded
@@ -129,3 +129,5 @@ it introduces no new renderer or artwork. Each preview uses native UIKit pixels.
 Choosing a preset updates primary and secondary recipes together as one undoable
 operation. Explicit per-button overrides remain intact. Save All Sections or
 Save & Update ISO persists/publishes the shared recipe.
+
+Window-frame artwork and global editing are now specified in `sapphire-window-frame-v2.md`. The previous decorative L corners are superseded. Other component artwork remains unchanged.

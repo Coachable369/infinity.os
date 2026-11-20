@@ -17,6 +17,24 @@ fn main() {
 // ------------------=
 pub fn run(output: &str, check: bool) {
     assert_eq!(std::env::var("INFINITY_BUILD_KIT_ACTIVE").as_deref(), Ok("1"));
+    for scale in 1..=3 {
+        for focus in [0, 128, 255] {
+            for (width, height) in [(320*scale, 180*scale), (1024*scale, 768*scale)] {
+                let m=Material{fill:(14,28,54),edge:(54,87,116),opacity:0,edge_opacity:255,focus,pressed:false,scale};
+                for depth in 0..3*scale {
+                    for x in 5*scale..width-5*scale {
+                        assert_eq!(panel_recipe::pixel(Surface::Frame,width,height,x,depth,m).3,255);
+                        assert_eq!(panel_recipe::pixel(Surface::Frame,width,height,x,height-1-depth,m).3,255);
+                    }
+                    for y in 5*scale..height-5*scale {
+                        assert_eq!(panel_recipe::pixel(Surface::Frame,width,height,depth,y,m).3,255);
+                        assert_eq!(panel_recipe::pixel(Surface::Frame,width,height,width-1-depth,y,m).3,255);
+                    }
+                }
+                assert_eq!(panel_recipe::pixel(Surface::Frame,width,height,width/2,height/2,m).3,0);
+            }
+        }
+    }
     let mut image = vec![12u8; 840*480*3];
     let mut samples = 0;
     for (row, kind) in [Surface::Panel, Surface::Field, Surface::Frame].into_iter().enumerate() {

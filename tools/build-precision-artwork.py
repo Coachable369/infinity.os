@@ -172,6 +172,9 @@ def main():
         layers[11 + row] = generated_button_layers(glass, (794, top, 1486, bottom))
     packed = b"".join(cell[layer].tobytes() for layer in range(2) for cell in layers)
     (kit / "eclipse-precision-v1.rgba").write_bytes(packed)
+    # Keep the shared window family on the independently generated Sapphire kit.
+    import runpy
+    runpy.run_path(str(Path(__file__).with_name("build-window-frame-artwork.py")), run_name="__main__")
 
 if __name__ == "__main__":
     main()

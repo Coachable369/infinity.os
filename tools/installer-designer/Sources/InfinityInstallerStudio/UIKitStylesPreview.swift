@@ -159,7 +159,7 @@ struct UIKitStylesPreview: View {
             ?? NSImage(contentsOf: root.appending(path: wallpaperPath))
         guard let source = wallpaper?.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        let key = "\(data.hashValue)|\(store.document.overrides)|\(kind)|\(width)|\(height)|\(material)" as NSString
+        let key = "\(data.hashValue)|\(store.document.overrides)|\(store.document.styles)|\(kind)|\(width)|\(height)|\(material)" as NSString
         if let image = cache.object(forKey: key) { return image }
         var raw = Data(count: width * height * 4)
         let painted = raw.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) -> Bool in
@@ -182,6 +182,15 @@ struct UIKitStylesPreview: View {
                 material: material, atlas: atlas) else { return nil }
             raw = frost
         } else {
+            if kind == .frame {
+                let background = PrecisionMaterial(fill: studioColor(store.document.colors[1]), edgeOpacity: 0,
+                    style: .resolved(for: .windowFill, styles: store.document.styles))
+                guard let fill = atlas.render(.windowFill, width: width, height: height, material: background) else { return nil }
+                for p in stride(from: 0, to: raw.count, by: 4) {
+                    let alpha = Int(fill[p + 3])
+                    for c in 0..<3 { raw[p + c] = UInt8((Int(fill[p + c]) * alpha + Int(raw[p + c]) * (255 - alpha)) / 255) }
+                }
+            }
             guard let pixels = atlas.render(kind, width: width, height: height, material: material) else { return nil }
             for p in stride(from: 0, to: raw.count, by: 4) {
                 let alpha = Int(pixels[p + 3])
@@ -315,6 +324,60 @@ struct GlobalButtonStylePicker: View {
                 Button("Done") { expanded = false }
                     .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
             }.padding(16).frame(width: 380).background(InfinityUIKit.Palette.nativePanel)
+        }
+    }
+}
+
+/// One shared editor for compositor-owned window chrome across all applications.
+struct GlobalWindowFrameEditor: View {
+    @ObservedObject var store: UIKitStore
+    @State private var expanded = false
+
+    var body: some View {
+        Button {
+            store.selectedSurface = 0
+            expanded.toggle()
+        } label: {
+            Label("Global Window Frame", systemImage: "macwindow")
+        }
+        .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+        .accessibilityIdentifier("studio.global.window-frame")
+        .popover(isPresented: $expanded, arrowEdge: .bottom) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Global window frame").font(.title2.weight(.semibold))
+                    Text("Shared by every application. Edit Window Border or Window Background below.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    HStack(spacing: 16) {
+                        preview("Active", focus: 255)
+                        preview("Inactive", focus: 0)
+                    }
+                    Divider()
+                    UIKitStyleInspector(store: store)
+                    Divider()
+                    Text("Save All Sections or Save & Update ISO to publish. Changes remain undoable in UIKit.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Done") { expanded = false }
+                        .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
+                }.padding(20)
+            }.frame(width: 520, height: 660).background(InfinityUIKit.Palette.nativePanel)
+        }
+    }
+
+    // ------------------------=
+    // FUNC: preview
+    // DESC: Composes active and inactive frames from the same editable atlas and saved styles used by the native compositor.
+    // ------------------=
+    private func preview(_ title: String, focus: UInt8) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let image = UIKitStylePreviewImage.image(store: store, kind: .frame,
+                width: 224, height: 112, material: PrecisionMaterial(focus: focus,
+                    style: .resolved(for: .frame, styles: store.document.styles))) {
+                Image(decorative: image, scale: 1).overlay(alignment: .topLeading) {
+                    Text("InfinityOS").font(.system(size: 13, weight: .semibold)).padding(12)
+                }
+            }
+            Text(title).font(.caption).foregroundStyle(.secondary)
         }
     }
 }

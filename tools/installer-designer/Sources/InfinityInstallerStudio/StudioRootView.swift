@@ -98,6 +98,7 @@ private struct StudioToolbar: View {
                 .disabled(!store.canRedo)
             Divider().frame(height: 28)
             GlobalButtonStylePicker(store: kit)
+            GlobalWindowFrameEditor(store: kit)
             if !store.editingUIKit && !store.editingMenu && store.selectedCollection == .desktop {
                 Button(action: store.editInfinityMenu) {
                     Label("Infinity System Menu", systemImage: "list.bullet.indent")

@@ -370,7 +370,10 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
     if matches!(kind,Surface::Field|Surface::Panel) && style.corners==0 {
         style.corners=2;style.radius=if kind==Surface::Field {8}else{12};
     }
-    if matches!(kind,Surface::Frame|Surface::WindowFill) && style.corners==1 { style.corners=0; }
+    if kind==Surface::Frame {
+        if style.corners==0 {style.corners=1;}
+    }
+    if kind==Surface::WindowFill && style.corners==1 { style.corners=0; }
     if let Some(color)=style.fill {
         m.fill=((color>>16) as u8,(color>>8) as u8,color as u8);
         m.opacity=(u16::from(m.opacity)*((color>>24) as u16)/255) as u8;
@@ -392,7 +395,7 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
     let rounded=style.corners==2 && style.radius!=0;
     let square=style.corners==1 || (style.corners==2 && style.radius==0);
     let (normal,focused)=match kind {
-        Surface::Frame if rounded=>(2,3),Surface::Frame=>(0,1),
+        Surface::Frame=>(0,1),
         Surface::WindowFill|Surface::Panel=>(2,3),
         Surface::Primary=>if m.pressed {(6,6)}else{(4,5)},
         Surface::Secondary=>if m.pressed {(13,13)}else{(11,12)},
