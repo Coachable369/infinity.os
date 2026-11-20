@@ -269,3 +269,52 @@ struct ElementButtonStylePicker: View {
         }.padding(6).contentShape(Rectangle())
     }
 }
+
+/// Global recipe chooser reuses the element inspector's native previews and popover treatment.
+struct GlobalButtonStylePicker: View {
+    @ObservedObject var store: UIKitStore
+    @State private var expanded = false
+    private var selected: GlassButtonPreset? {
+        GlassButtonPreset.allCases.first { store.document.styles[3] == $0.style && store.document.styles[4] == $0.style }
+    }
+    var body: some View {
+        Button { expanded.toggle() } label: {
+            Label("Global Buttons", systemImage: "rectangle.roundedtop")
+        }
+        .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+        .help("Set the shared primary and secondary button style across the OS")
+        .accessibilityIdentifier("studio.global.button-style")
+        .popover(isPresented: $expanded, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Global button style").font(.headline)
+                Text("Current: \(selected?.rawValue ?? "Custom / UIKit default")")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(GlassButtonPreset.allCases) { preset in
+                    Button {
+                        store.applyButtonPreset(preset)
+                    } label: {
+                        HStack(spacing: 12) {
+                            if let image = UIKitStylePreviewImage.image(store: store, kind: .primary,
+                                width: 112, height: 32, material: PrecisionMaterial(style: preset.style)) {
+                                Image(decorative: image, scale: 1).overlay {
+                                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                }.frame(width: 112, height: 32)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(preset.rawValue).font(.callout)
+                                Text(preset.detail).font(.caption2).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: selected == preset ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selected == preset ? InfinityUIKit.Palette.nativeAccent : .secondary)
+                        }.padding(6).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+                Divider()
+                Text("Applies to primary and secondary buttons. Individual button overrides are preserved. Use Save All Sections or Save & Update ISO to publish.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Done") { expanded = false }
+                    .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
+            }.padding(16).frame(width: 380).background(InfinityUIKit.Palette.nativePanel)
+        }
+    }
+}

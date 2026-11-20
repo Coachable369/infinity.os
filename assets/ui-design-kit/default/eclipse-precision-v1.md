@@ -109,3 +109,21 @@ IUIT version 7 stores element material in flag bits 2–3 and corner style in bi
 colors take precedence over global color overrides, while unset material and
 corner choices inherit the shared UIKit recipe. This applies to the live
 installer, fresh-install configuration wizard and Settings surfaces.
+
+
+### Default field corners and global button presets
+
+Default (authored) input fields use the shared eight-pixel rounded silhouette and
+continuous image-backed rails in normal, focused, and pressed states. Explicit
+Studio square or rounded geometry remains authoritative. Native and Studio
+sampling use the same treatment; inactive fields must not revert to cropped,
+ragged corner artwork.
+
+Studio exposes **Global Buttons** in the main toolbar in every workspace. Its
+preview chooser offers Classic Sapphire Glass, Smoked Glass, Frosted Ice, Satin
+Blue, Minimal Blue, and Graphite Matte. Graphite Matte reuses the existing matte
+UIKit material with opaque `#293747`, a `#86C7FF` rim, and a ten-pixel radius;
+it introduces no new renderer or artwork. Each preview uses native UIKit pixels.
+Choosing a preset updates primary and secondary recipes together as one undoable
+operation. Explicit per-button overrides remain intact. Save All Sections or
+Save & Update ISO persists/publishes the shared recipe.

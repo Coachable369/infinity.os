@@ -295,6 +295,10 @@ struct PrecisionAtlas {
         guard width > 0, height > 0, x >= 0, y >= 0, x < width, y < height else { return .clear }
         var kind = originalKind
         var style = original.style
+        if kind == .field && style.corners == .authored {
+            style.corners = .rounded
+            style.radius = 8
+        }
         if (kind == .frame || kind == .windowFill) && style.corners == .square { style.corners = .authored }
         var m = original
         if let fill = style.fill {

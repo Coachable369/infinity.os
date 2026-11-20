@@ -110,6 +110,7 @@ final class GlassButtonTests: XCTestCase {
             else { XCTAssertEqual(center.alpha, 255) }
             XCTAssertEqual(atlas.pixel(.primary, width: 250, height: 52, x: 0, y: 0, material: material).alpha, 0)
         }
-        XCTAssertEqual(images.count, 5)
+        XCTAssertGreaterThanOrEqual(images.count, 6)
+        XCTAssertEqual(images.count, GlassButtonPreset.allCases.count)
     }
 }

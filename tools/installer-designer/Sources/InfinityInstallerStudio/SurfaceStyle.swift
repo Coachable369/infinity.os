@@ -4,6 +4,7 @@ import SwiftUI
 enum GlassButtonPreset: String, CaseIterable, Identifiable {
     case sapphire = "Classic Sapphire Glass", smoked = "Smoked Glass", ice = "Frosted Ice"
     case satin = "Satin Blue", minimal = "Minimal Blue"
+    case graphite = "Graphite Matte"
     var id: String { rawValue }
     var style: UIKitSurfaceStyle {
         let fill: UInt32 = switch self {
@@ -12,8 +13,9 @@ enum GlassButtonPreset: String, CaseIterable, Identifiable {
         case .ice: 0xC8447394
         case .satin: 0xFF3159A6
         case .minimal: 0xFF245CD8
+        case .graphite: 0xFF293747
         }
-        let material: UIKitSurfaceMaterial = self == .satin ? .matte : self == .minimal ? .flat : .glass
+        let material: UIKitSurfaceMaterial = (self == .satin || self == .graphite) ? .matte : self == .minimal ? .flat : .glass
         let radius = self == .satin ? 8 : self == .minimal ? 6 : 10
         return UIKitSurfaceStyle(material: material, corners: .rounded, radius: radius,
             fill: fill, border: 0xFF86C7FF)
@@ -25,6 +27,7 @@ enum GlassButtonPreset: String, CaseIterable, Identifiable {
         case .ice: "Light frosted glass"
         case .satin: "Opaque satin, subtle reflections"
         case .minimal: "Flat blue, compact rounded corners"
+        case .graphite: "Opaque graphite, softly reflected steel edges"
         }
     }
 
