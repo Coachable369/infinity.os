@@ -461,6 +461,8 @@ def main():
     parser.add_argument("--media-player-only", action="store_true", help="Verify automatic MP4 opening and playback")
     parser.add_argument("--infinitycode-only", action="store_true",
                         help="Exercise installed InfinityCode launch, drawing, input and clean close")
+    parser.add_argument("--shell-controls", action="store_true",
+                        help="Also capture and exercise native shell window controls on the same installation")
     parser.add_argument("--width",type=int,default=1024)
     parser.add_argument("--height",type=int,default=768)
     args = parser.parse_args()
@@ -545,6 +547,9 @@ def main():
             guest.key("ret")
             guest.wait(lambda state: state[4] == 5, "command window selected")
             proof["infinitycode"] = infinitycode(guest, native, python)
+            if args.shell_controls:
+                controls = module("tk_shell_controls", ROOT / "tools/window-controls-installed-test.py")
+                proof["shell_controls"] = controls.verify(guest)
             proof["installed_acceptance"] = True
             return
         pip.resume(guest)

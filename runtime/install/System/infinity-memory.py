@@ -100,7 +100,7 @@ class Browser:
                       ("Paste", lambda: self.edit_event("Paste"), ""), ("Delete selected memory…", self.remove, ""))),
             ("View", (("Find memories", lambda: self.search.focus_force(), "Ctrl+F"),
                       ("Clear search", lambda: self.query.set(""), ""), ("Refresh library", self.refresh, "")))):
-            button = ttk.Menubutton(menu_bar, text=title, style="Library.TMenubutton", takefocus=True)
+            button = ttk.Menubutton(menu_bar, text=title, width=0, style="Library.TMenubutton", takefocus=True)
             menu = tk.Menu(button, tearoff=False, bg=PANEL, fg=WHITE, activebackground=COLORS["accent"],
                            activeforeground=WHITE, font=body_font)
             self.menus[title] = menu

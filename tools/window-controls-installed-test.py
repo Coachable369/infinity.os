@@ -53,17 +53,19 @@ def verify(guest):
         before=wait(guest,lambda s:s[at]==1 and s[4]==app)
         if before[at+1]:button(guest,app,1);before=wait(guest,lambda s:s[at+1]==0)
         bounds=before[at+2:at+6]
+        guest.screenshot(f"window-controls-{app}-normal")
         button(guest,app,1)
         enlarged=wait(guest,lambda s:s[at+1]==1)
         assert enlarged[at+4]>=bounds[2]
+        guest.screenshot(f"window-controls-{app}-maximized")
         button(guest,app,1)
         restored=wait(guest,lambda s:s[at+1]==0)
         assert restored[at+2:at+6]==bounds
         button(guest,app,0)
         hidden=wait(guest,lambda s:s[at]==0 and s[3]&(1<<shelf)!=0)
         display=guest.state();width=display[11]
-        assert hidden[5]>width//2
         rail_width=min(max(width*6//100,72),width//4)
+        assert 0 <= hidden[5] <= width-rail_width
         row=(hidden[3]&((1<<shelf)-1)).bit_count()
         native.adaptive_click(guest,hidden[5]+rail_width//2,
                               hidden[6]+rail_width+row*hidden[7])

@@ -43,6 +43,7 @@ try:
         root.update()
         assert menu_bar.winfo_height() == fixed_height
     button = menu_bar.winfo_children()[0]
+    assert button.winfo_width() < 100, button.winfo_width()
     with patch.object(browser.menus["File"],"tk_popup") as post:
         button.event_generate("<ButtonPress-1>",x=8,y=8)
         root.update()
