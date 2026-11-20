@@ -20,9 +20,12 @@ impl DisplayDevice {
         // Reuse the kit's frosted surface recipe with the Eclipse blue/silver
         // tokens; do not introduce an independently rasterized glass layer.
         let edge = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        let radius = (w / 4).clamp(6, 22);
-        self.fill_rounded_rect_alpha(x,y,w,h,radius,16,27,58,208);
-        self.outline_rounded_rect(x,y,w,h,radius,edge.0,edge.1,edge.2);
+        self.precision_surface(r, crate::ui::panel_recipe::Surface::Panel,
+            crate::ui::panel_recipe::Material {
+                fill: self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
+                edge, opacity: 208, edge_opacity: 175, focus: 0,
+                pressed: false, scale: self.ui_scale(),
+            });
         let snap = state.drag.and_then(|(px, _, _, _)| {
             if px <= 35 {
                 Some(true)
@@ -94,33 +97,16 @@ impl DisplayDevice {
             let selected = state.menu == Some(id);
             let hovered = state.hover == Some(id);
             let level=if hovered {crate::ui::widget_keyframes::value(3) as usize}else{0};
-            self.fill_rounded_rect_alpha(
-                tx,
-                ty,
-                tw,
-                tw,
-                10,
-                13,
-                42,
-                65,
-                if selected {
-                    220
-                } else if hovered {
-                    (100 + 85*level/255) as u8
-                } else {
-                    100
-                },
-            );
-            self.outline_rounded_rect(
-                tx,
-                ty,
-                tw,
-                tw,
-                10,
-                if selected || hovered { 114 } else { 38 },
-                if selected || hovered { 215 } else { 88 },
-                if selected || hovered { 255 } else { 116 },
-            );
+            self.precision_surface(crate::ui::geometry::Rect {
+                x: tile.x, y: tile.y, width: tile.width, height: tile.width,
+            }, crate::ui::panel_recipe::Surface::Secondary,
+            crate::ui::panel_recipe::Material {
+                fill: self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
+                edge, opacity: if selected {220} else if hovered {(100+85*level/255)as u8}else{100},
+                edge_opacity: if selected || hovered {175}else{70},
+                focus: if selected {180}else{level as u8}, pressed: false,
+                scale: self.ui_scale(),
+            });
             self.launcher_icon(tx + tw / 2, ty + tw / 2 - 2*level/255, shelf::icon(id), tw * (80+9*level/255) / 100);
             self.fill_rounded_rect_alpha(tx + tw - 8, ty + tw - 8, 5, 5, 2, 63, 221, 174, 255);
             if id < shelf::NAVIGATORS {
