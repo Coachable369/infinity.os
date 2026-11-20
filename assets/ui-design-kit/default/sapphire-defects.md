@@ -115,3 +115,15 @@ manifest `20261120T023204490543Z-83555.json`. The forced General preview exposes
 old name-edit detail state, but normal field activation explicitly clears that
 state and edits inline. No speculative runtime change was made for that preview.
 Reference-size per-element fidelity and unexercised states remain open.
+
+## Memory installed follow-up
+
+Manifest `20261120T023640172080Z-83721.json` passed native add/edit/search,
+LLM recall, model switching, deletion and two disk-only cold boots. Results:
+`builds/validation/sapphire-coverage/memory-installed-result.json`. Launch to
+visible was 2126 ms on this isolated ARM fixture. Its screenshots exposed excess
+button padding and unsupported separator glyphs; these were corrected without
+changing memory retrieval. The padding/background and menu/clipboard/history
+interaction checks passed in `20261120T024541876571Z-84200.json`; its capture is
+`memory-host-uikit.png`. The final padding correction still needs an updated
+installed screenshot. This evidence does not establish all-element 95% parity.

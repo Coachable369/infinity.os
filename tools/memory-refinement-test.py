@@ -47,6 +47,10 @@ try:
     capture_row = root.winfo_children()[1]
     capture_field = next(child for child in capture_row.winfo_children() if child.winfo_class() == "TEntry")
     assert capture_field.winfo_rootx() == browser.search.winfo_rootx()
+    for action in (browser.prev, browser.next, browser.delete, browser.commit):
+        assert action.cget("background") == action.master.cget("background")
+        assert action.cget("activebackground") == action.master.cget("background")
+        assert int(action.cget("padx")) == int(action.cget("pady")) == 0
     with patch.object(browser.menus["File"],"tk_popup") as post:
         button.event_generate("<ButtonPress-1>",x=8,y=8)
         root.update()

@@ -81,7 +81,7 @@ class Browser:
         self.category = tk.StringVar(value="Semantic")
         self.status = tk.StringVar(value="Loading memories...")
         self.heading = tk.StringVar(value="Memory details")
-        self.metadata = [tk.StringVar(value="—") for _ in range(4)]
+        self.metadata = [tk.StringVar(value="Not available") for _ in range(4)]
         self.page_label = tk.StringVar()
         self.empty_hint = tk.StringVar()
         menu_bar = tk.Frame(root, bg=PANEL, height=round(MENU_HEIGHT*body_px/16))
@@ -97,7 +97,7 @@ class Browser:
             ("File", (("New memory", self.new, "Ctrl+N"), ("Save memory", self.save, "Ctrl+S"), ("Close", self.close, ""))),
             ("Edit", (("Undo typing", lambda: self.history(False), ""), ("Redo typing", lambda: self.history(True), ""),
                       ("Copy fact", self.copy_fact, ""), ("Duplicate as draft", self.duplicate, ""), ("Cut", lambda: self.edit_event("Cut"), ""), ("Copy", lambda: self.edit_event("Copy"), ""),
-                      ("Paste", lambda: self.edit_event("Paste"), ""), ("Delete selected memory…", self.remove, ""))),
+                      ("Paste", lambda: self.edit_event("Paste"), ""), ("Delete selected memory...", self.remove, ""))),
             ("View", (("Find memories", lambda: self.search.focus_force(), "Ctrl+F"),
                       ("Clear search", lambda: self.query.set(""), ""), ("Refresh library", self.refresh, "")))):
             button = ttk.Menubutton(menu_bar, text=title, width=0, style="Library.TMenubutton", takefocus=True)
@@ -361,7 +361,8 @@ class Browser:
             # A missing optional skin must never prevent the database browser opening.
             return ttk.Button(parent, text=label, command=action)
         button = tk.Button(parent, text=label, command=action, image=normal, compound="center",
-                           fg=WHITE, activeforeground=WHITE, bg=NAVY, activebackground=NAVY,
+                           fg=WHITE, activeforeground=WHITE, bg=parent.cget("background"),
+                           activebackground=parent.cget("background"), padx=0, pady=0,
                            font=self.button_font, borderwidth=0, relief="flat", highlightthickness=0)
         for event, state in (("<Enter>", 1), ("<Leave>", 0), ("<ButtonPress-1>", 2),
                              ("<ButtonRelease-1>", 1), ("<FocusIn>", 1), ("<FocusOut>", 0)):
@@ -390,7 +391,7 @@ class Browser:
             rows = raw.splitlines()
             _, count, total, embedded, size = rows.pop().split("\t")
             self.total = int(count)
-            self.list_title.set(f"Library   ·   {count}")
+            self.list_title.set(f"Library   |   {count}")
             self.page_label.set(f"{self.page+1} / {(self.total+5)//6}" if self.total>6 else "")
             if self.page and self.page * 6 >= self.total:
                 self.page = max(0, (self.total - 1) // 6)
@@ -495,7 +496,7 @@ class Browser:
         self.editor.insert("1.0", content)
         self.editor.edit_reset()
         self.heading.set(f"{self.original_category} memory")
-        for field, value in zip(self.metadata,(source, f"#{identity}  ·  {model or 'Keyword'}" +
+        for field, value in zip(self.metadata,(source, f"#{identity}  |  {model or 'Keyword'}" +
                                                   (f" / {dimensions}d" if dimensions else ""),
                                                   stamp(created), stamp(updated))):
             field.set(value)
@@ -535,7 +536,7 @@ class Browser:
         self.editor.edit_reset()
         self.heading.set("New memory")
         for field in self.metadata:
-            field.set("—")
+            field.set("Not available")
         self.delete.configure(state="disabled")
 
     # ------------------------=
