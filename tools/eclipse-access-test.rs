@@ -199,8 +199,8 @@ fn neutral_access_and_matching_desktop_palette() {
         (skin::ColorRole::TextSecondary,access_style::SECONDARY)] {
         assert_eq!(tokens.color(role).channels(),expected);
     }
-    assert_eq!(access_style::TEXT,(255,255,255));
-    assert_eq!(access_style::SECONDARY,(190,190,190));
+    assert_eq!(access_style::TEXT,(242,246,252));
+    assert_eq!(access_style::SECONDARY,(174,195,218));
     let mut registry=skin::SkinRegistry::new();
     registry.set_accent(0x3e6fff,skin::AppearanceScope::User).unwrap();
     assert_eq!(registry.color(skin::ColorRole::Focus).channels(),(255,255,255));

@@ -49,3 +49,13 @@ compiled from the current pending Studio document. Manifest:
 These corrections do not establish a 95% score for complete screens. Legacy
 Studio-authored sidebar color, app-specific composition and installed runtime
 states still require comparison. Narrow hero copy can elide at small widths.
+
+## Access-control palette correction
+
+The clean release exposed pre-session default colors still independent of UIKit.
+Access controls now use the same packaged semantic palette as desktop controls;
+explicit authored colors remain independent. All 17 access pixel/geometry/state
+checks pass in manifest `20261120T010552422342Z-73002.json`. Normal and focused
+production surfaces were inspected in
+`builds/validation/sapphire-coverage/access-focus-corrected.png`.
+The first ARM test image predates this correction; final images must be rebuilt.

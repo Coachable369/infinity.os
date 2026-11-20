@@ -1,15 +1,23 @@
 //! Shared pre-session visual tokens and antialiased surface coverage.
 pub type Rgb = (u8, u8, u8);
-pub const BACKGROUND: Rgb = (9, 15, 38);
-pub const SURFACE: Rgb = (16, 27, 58);
-pub const ELEVATED: Rgb = (26, 46, 99);
-pub const PRIMARY: Rgb = (62, 111, 255);
-pub const BORDER: Rgb = (134, 199, 255);
-pub const MUTED_BORDER: Rgb = (67, 88, 140);
-pub const FOCUS: Rgb = (255, 255, 255);
-pub const TEXT: Rgb = (255, 255, 255);
-pub const SECONDARY: Rgb = (190, 190, 190);
-pub const ERROR: Rgb = (255, 118, 145);
+// ------------------------=
+// FUNC: default_color
+// DESC: Resolves pre-session defaults from the same packaged UIKit palette as desktop controls.
+// ------------------=
+const fn default_color(index: usize) -> Rgb {
+    let color = crate::ui::skin::kit_tokens::colors()[index];
+    ((color >> 16) as u8, (color >> 8) as u8, color as u8)
+}
+pub const BACKGROUND: Rgb = default_color(0);
+pub const SURFACE: Rgb = default_color(1);
+pub const ELEVATED: Rgb = default_color(2);
+pub const PRIMARY: Rgb = default_color(6);
+pub const BORDER: Rgb = default_color(3);
+pub const MUTED_BORDER: Rgb = (BORDER.0 / 2, BORDER.1 / 2, BORDER.2 / 2);
+pub const FOCUS: Rgb = default_color(8);
+pub const TEXT: Rgb = default_color(4);
+pub const SECONDARY: Rgb = default_color(5);
+pub const ERROR: Rgb = default_color(11);
 
 // ------------------------=
 // FUNC: semantic_color
