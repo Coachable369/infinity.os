@@ -433,12 +433,18 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
     let edge=if kind==Surface::WindowFill || m.edge_opacity==0 {(0,0,0,0)}else {
         let raw=if rounded {
             if depth>=cut*scale*256 {(0,0,0,0)}else {
-                let sample=(depth/scale).min(cut*256);
-                if x.min(width-1-x)<y.min(height-1-y) {
-                    state(1,if x<width/2 {sample}else{255*256-sample},128*256)
-                }else{
-                    state(1,128*256,if y<height/2 {sample}else{255*256-sample})
-                }
+                // Atlas texels describe pixel centers. Shape depth is measured
+                // from the silhouette, so remove half a logical pixel before
+                // sampling: otherwise the first opaque rim texel is skipped.
+                let sample=(depth/scale).saturating_sub(128).min(cut*256);
+                let vertical=state(1,if x<width/2 {sample}else{255*256-sample},128*256);
+                let horizontal=state(1,128*256,if y<height/2 {sample}else{255*256-sample});
+                let radius=cap.min(width/2).min(height/2)*256;
+                let nx=radius.saturating_sub(x.min(width-1-x)*256+128);
+                let ny=radius.saturating_sub(y.min(height-1-y)*256+128);
+                let weight=if nx+ny==0 {if x.min(width-1-x)<y.min(height-1-y){0}else{255}}
+                    else{ny*255/(nx+ny)};
+                transition(vertical,horizontal,weight as u8)
             }
         }else if square {
             let horizontal=if y.min(height-1-y)<cut*scale {state(1,128*256,fy)}else{(0,0,0,0)};

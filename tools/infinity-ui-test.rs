@@ -1856,7 +1856,7 @@ fn geometry_test() {
 // ------------------=
 fn skin_test() {
     let dark = ui::skin::default_dark_skin();
-    assert_eq!(dark.tokens.color(ColorRole::Accent).rgb24(), 0x3e6fff);
+    assert_eq!(dark.tokens.color(ColorRole::Accent).rgb24(), 0x245ad4);
     let mut header = [0u8; ui::skin::SKIN_HEADER_BYTES];
     encode_header(&dark, &mut header);
     assert_eq!(

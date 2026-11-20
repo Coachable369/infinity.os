@@ -47,6 +47,11 @@ and packs the native RGBA atlas. `kernel/ui/panel_recipe.rs` owns sampling,
 nine-slice geometry, theme tint, alpha and states. The atlas has fourteen state
 cells in two layers: independently translucent fill and authored edge/glow.
 Corners are packed at native resolution rather than downsampling a whole window.
+Explicit rounded overrides sample the rim at texel centers: subtract half a
+logical pixel from inward silhouette depth before sampling the edge atlas.
+Blend the adjacent edge lightmaps by the corner normal instead of switching
+abruptly at 45 degrees. This preserves rim weight at every display density and
+avoids diagonal shading seams. Studio and native rendering use this same rule.
 Focus interpolates those premultiplied state pixels; the bounded inward light
 remains visible at zero background opacity. Default tokens preserve the board's
 full contrast, and custom themes apply their color delta without flattening it.

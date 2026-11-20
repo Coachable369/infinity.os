@@ -1,6 +1,7 @@
 //! Behavioral pixels from the production panel sampler, composition adapter and glyph filter.
 #![allow(dead_code)]
 use std::io::Write;
+#[path = "rounded-corner-test.rs"] mod rounded_corners;
 #[path = "../kernel/ui/geometry.rs"] pub mod geometry;
 #[path = "../kernel/ui/panel_recipe.rs"] pub mod panel_recipe;
 #[path = "../kernel/ui/surface_cache.rs"] pub mod surface_cache;
@@ -421,6 +422,7 @@ fn main() {
     let glyph_samples = glyph_contract();
     let directory = std::path::Path::new("builds/validation/eclipse-precision");
     std::fs::create_dir_all(directory).unwrap();
+    rounded_corners::run(directory.join("rounded-corners.ppm").to_str().unwrap(), true);
     render_overview(&directory.join("production-overview.ppm"));
     let evidence = format!("{{\"surface_pixels\":{surface_pixels},\"adapter_pixels\":{adapter_pixels},\"glyph_samples\":{glyph_samples},\"scales\":[1,2,3,4],\"signed_clipping\":true,\"independent_outline_alpha\":true,\"installed_verified\":false}}\n");
     std::fs::write(directory.join("pixel-evidence.json"), &evidence).unwrap();

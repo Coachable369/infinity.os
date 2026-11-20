@@ -376,12 +376,16 @@ struct PrecisionAtlas {
             var raw = PrecisionPixel.clear
             if rounded {
                 if depth < cut * scale * 256 {
-                    let sample = min(depth / scale, cut * 256)
-                    if min(x, width - 1 - x) < min(y, height - 1 - y) {
-                        raw = state(1, x < width / 2 ? sample : 255 * 256 - sample, 128 * 256)
-                    } else {
-                        raw = state(1, 128 * 256, y < height / 2 ? sample : 255 * 256 - sample)
-                    }
+                    let sample = min(max(0, depth / scale - 128), cut * 256)
+                    let vertical = state(1, x < width / 2 ? sample : 255 * 256 - sample, 128 * 256)
+                    let horizontal = state(1, 128 * 256, y < height / 2 ? sample : 255 * 256 - sample)
+                    let radius = min(cap, width / 2, height / 2) * 256
+                    let nx = max(0, radius - min(x, width - 1 - x) * 256 - 128)
+                    let ny = max(0, radius - min(y, height - 1 - y) * 256 - 128)
+                    let weight = nx + ny == 0
+                        ? (min(x, width - 1 - x) < min(y, height - 1 - y) ? 0 : 255)
+                        : ny * 255 / (nx + ny)
+                    raw = Self.transition(vertical, horizontal, amount: UInt8(weight))
                 }
             } else if square {
                 let horizontal = min(y, height - 1 - y) < cut * scale ? state(1, 128 * 256, fy) : .clear
