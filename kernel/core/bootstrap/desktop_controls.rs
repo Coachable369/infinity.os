@@ -3,6 +3,21 @@ use super::DisplayDevice;
 use super::primitives::{infinity_point,UI_FONT_CELL_HEIGHT};
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: app_field_caret
+    // DESC: Aligns the insertion caret with shared application text metrics and clips it to the field.
+    // ------------------=
+    pub(super) fn app_field_caret(&mut self, bounds: crate::ui::geometry::Rect,
+        input: &[u8], kind: usize, scale: usize) {
+        let Some((true,index))=crate::ui::text_input::caret(kind) else {return;};
+        let clip=self.render_clip;
+        self.intersect_render_clip(bounds.x.max(0) as usize,bounds.y.max(0) as usize,
+            bounds.width as usize,bounds.height as usize);
+        let x=bounds.x.max(0) as usize+self.app_text_width(&input[..index.min(input.len())],false,scale);
+        let y=bounds.y.max(0) as usize+(bounds.height as usize).saturating_sub(20*scale)/2;
+        self.fill_rect(x,y,scale.max(1),20*scale,112,221,255);
+        self.render_clip=clip;
+    }
+    // ------------------------=
     // FUNC: small_infinity_mark
     // DESC: Draws the native top-bar Infinity pill without baking UI into artwork.
     // ------------------=

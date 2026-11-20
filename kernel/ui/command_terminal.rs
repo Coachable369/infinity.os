@@ -311,7 +311,7 @@ impl Layout {
     pub fn header_menus(toolbar:Rect, scale:usize)->[Rect;3] {
         let s=scale.max(1) as u32;
         let end=toolbar.width.saturating_sub(112*s);
-        let start=end.saturating_sub(244*s).clamp(54*s,168*s).min(end);
+        let start=end.saturating_sub(244*s).clamp(54*s,218*s).min(end);
         let available=end-start;
         let mut left=toolbar.x+start as i32;
         [48u32,98,98].map(|nominal| {

@@ -60,8 +60,10 @@ impl DisplayDevice {
             let left=toolbar.x.max(0)as usize;let top=toolbar.y.max(0)as usize;
             self.fill_rounded_rect_alpha(left+10*scale,top+6*scale,94*scale,toolbar.height as usize-12*scale,7*scale,
                 if task_menu_open{29}else{8},if task_menu_open{91}else{31},if task_menu_open{132}else{48},240);
-            self.ui_text_strong(left+24*scale,top+15*scale,b"Task",225,240,249,1);
-            self.ui_text(left+79*scale,top+15*scale,if task_menu_open{b"^"}else{b"v"},103,211,252,1);
+            self.app_label(Rect{x:(left+24*scale)as i32,y:(top+6*scale)as i32,width:(52*scale)as u32,
+                height:toolbar.height.saturating_sub((12*scale)as u32)},b"Task",(225,240,249),true,scale);
+            self.app_label(Rect{x:(left+79*scale)as i32,y:(top+6*scale)as i32,width:(20*scale)as u32,
+                height:toolbar.height.saturating_sub((12*scale)as u32)},if task_menu_open{b"^"}else{b"v"},(103,211,252),false,scale);
         }
         let layout=model::layout(content,toolbar,view,scale);
         for control in &layout.controls[..layout.count] {if control.target==Target::New {self.task_automation_button(*control,b"New",true,view.state.focus==Target::New,scale);}

@@ -46,7 +46,7 @@ def button(guest,app,index):
 # ------------------=
 def verify(guest):
     results=[]
-    for query,app,shelf,mode in [("file navigator",0,0,5),("terminal",1,6,5),("text",2,7,5),
+    for query,app,shelf,mode in [("file navigator",0,0,5),("command",1,6,5),("text",2,7,5),
                                 ("task manager",3,8,5),("settings",4,9,8),("browser",5,10,5)]:
         guest.launch(query,mode)
         at=8+app*12

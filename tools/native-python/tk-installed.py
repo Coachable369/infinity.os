@@ -454,6 +454,8 @@ def main():
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), required=True)
     parser.add_argument("--iso", type=Path, required=True)
     parser.add_argument("--reuse-work", type=Path, help="Reuse an unchanged stopped disposable installed-test disk; does not claim a new installation")
+    parser.add_argument("--kernel", type=Path,
+                        help="Apply a corrected kernel to the stopped private test disk; records a non-release test override")
     parser.add_argument("--finish-configuration", action="store_true",
                         help="Complete initial configuration on an existing unconfigured disposable installation")
     parser.add_argument("--memory-mb", type=int, default=12288,
@@ -472,6 +474,8 @@ def main():
     args = parser.parse_args()
     if args.finish_configuration and not args.reuse_work:
         parser.error("--finish-configuration requires --reuse-work")
+    if args.kernel and not args.reuse_work:
+        parser.error("--kernel requires --reuse-work")
     iso = args.iso.resolve()
     assert iso.is_relative_to(ROOT) and iso.is_file()
     pip = module("tk_installed_package_helpers", ROOT / "tools/native-python/pip-installed.py")
@@ -506,6 +510,13 @@ def main():
                                reuse=bool(args.reuse_work), width=args.width, height=args.height, memory_mb=args.memory_mb)
     active = subprocess.run(["lsof", "-t", str(guest.disk)], capture_output=True)
     assert active.returncode in (0, 1) and not active.stdout, "Disposable test disk is still open by another process"
+    if args.kernel:
+        kernel = args.kernel.resolve()
+        assert kernel.is_relative_to(ROOT / "build") and kernel.is_file()
+        subprocess.run(["python3", str(ROOT / "tools/update-installed-clone.py"),
+                        str(guest.disk), str(kernel), "--apply"], check=True)
+        (artifacts / "installed-kernel.elf").unlink()
+        native.desktop.copy_artifact(kernel, artifacts / "installed-kernel.elf")
     guest.arch = args.arch
     guest.acceleration = "hvf" if args.arch == "aarch64" else "tcg"
     guest.patched = True
@@ -519,6 +530,7 @@ def main():
     destination.mkdir(parents=True)
     proof = dict(installed_acceptance=False, architecture=args.arch, media=str(iso), media_layout=layout,
                  work=str(work), fresh_installation=not bool(args.reuse_work), host_gui_backend=False, stages=[])
+    proof["updated_private_kernel"] = str(args.kernel.resolve()) if args.kernel else None
     try:
         if not args.reuse_work:
             guest.install()

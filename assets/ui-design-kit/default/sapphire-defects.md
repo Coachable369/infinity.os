@@ -1,6 +1,6 @@
 # Sapphire QA defects
 
-All findings below are production-painter host captures, not installed VM proof.
+Findings identify host and installed evidence separately below.
 No measured 95% acceptance is asserted. Preserve explicit Studio overrides when
 correcting default presentation.
 
@@ -84,3 +84,20 @@ The first ARM test image predates this correction; final images must be rebuilt.
   `infinitycode-installed-normal.png`, `infinitycode-installed-maximized.png`.
   These show the pre-correction rails and empty shelf; they are failure evidence
   for those elements, not final visual acceptance.
+
+## Installed ARM follow-up
+
+The model-bearing private QA image passed fresh installation, initial setup and
+disk-only login. The installed lifecycle run passed InfinityCode and all six
+native shell applications: File Navigator, Command Window, Text Editor, Task
+Manager, Settings and Browser. Evidence:
+`builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json`
+(build-kit manifest `20261120T020541885544Z-81167.json`).
+
+Reviewed normal/maximized/restored production captures establish that the empty
+tray no longer covers the workspace and the updated Python scrollbar artwork is
+present. Lifecycle checks do not establish full visual acceptance. Additional
+findings were truncated native application titles, oversized Navigator columns
+and clipped status text, and a cramped Task toolbar and graph caption. These
+are being corrected with shared app typography, bounded labels and field-metric
+carets; the updated kernel requires a new installed screenshot review.

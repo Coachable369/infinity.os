@@ -46,6 +46,7 @@ fn main(){
         for width in [340,500,900] {
             let bar=Rect{x:12,y:100*scale,width:width*scale as u32,height:42*scale as u32};
             let headers=ui::command_terminal::Layout::header_menus(bar,scale as usize);
+            if width>=600 {assert!(headers[0].x-bar.x>=218*scale);}
             assert!(headers[0].right()<=headers[1].x && headers[1].right()<=headers[2].x);
             assert!(headers[2].right()<=bar.right()-112*scale);
             let content=Rect{x:bar.x+16*scale,y:bar.bottom()+12*scale,width:bar.width-32*scale as u32,height:220*scale as u32};

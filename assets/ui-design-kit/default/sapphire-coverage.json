@@ -894,8 +894,11 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+      ],
+      "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
     {
       "id": "launcher:Documents",
@@ -992,8 +995,11 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+      ],
+      "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
     {
       "id": "launcher:Text Editor",
@@ -1011,8 +1017,11 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+      ],
+      "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
     {
       "id": "launcher:AI & Voice",
@@ -1106,8 +1115,11 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+      ],
+      "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
     {
       "id": "launcher:Task Manager",
@@ -1125,12 +1137,14 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
+      "status": "partial",
       "evidence": [
         "builds/validation/sapphire-coverage/tasks-accounts.png",
-        "builds/manifests/20261119T232341417327Z-43080.json"
+        "builds/manifests/20261119T232341417327Z-43080.json",
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
       ],
-      "review_note": "Host production painter and state checks reviewed; installed and per-element 95% acceptance unverified"
+      "review_note": "Host production painter and state checks reviewed; installed and per-element 95% acceptance unverified",
+      "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
     {
       "id": "launcher:Network",
@@ -1224,8 +1238,11 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
+      ],
+      "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
     {
       "id": "launcher:InfinityCode",
@@ -1246,9 +1263,11 @@
       "status": "partial",
       "evidence": [
         "builds/validation/sapphire-coverage/infinitycode-installed-normal.png",
-        "builds/validation/sapphire-coverage/infinitycode-installed-maximized.png"
+        "builds/validation/sapphire-coverage/infinitycode-installed-maximized.png",
+        "builds/validation/native-python/aarch64/tk-installed-1795140356516157000/installed.json"
       ],
-      "acceptance_note": "Focused correction evidence only; per-state visual and installed acceptance remain open."
+      "acceptance_note": "Focused correction evidence only; per-state visual and installed acceptance remain open.",
+      "installed_arm_window_lifecycle": "passed: maximize/restore, minimize/tray restore, close; visual threshold remains open"
     },
     {
       "id": "launcher:Media Files",

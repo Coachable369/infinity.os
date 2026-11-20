@@ -2,6 +2,37 @@
 use super::*;
 #[test]
 // ------------------------=
+// FUNC: application_caret_uses_field_metrics_and_clip
+// DESC: Verifies insertion pixels follow app-font advances, field bounds and blink visibility at both scales.
+// ------------------=
+fn application_caret_uses_field_metrics_and_clip() {
+    use crate::ui::{geometry::Rect,text_input};
+    let (width,height)=(400,100);
+    let mut pixels=vec![0x201005u32;width*height];
+    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    for scale in [1,2] {
+        let r=Rect{x:10,y:10,width:180,height:(26*scale) as u32};
+        for index in [0,1,4] {
+            pixels.fill(0x201005);
+            text_input::set_presentation(true,true,index,2,true);
+            d.app_field_caret(r,b"Name",2,scale);
+            let x=10+d.app_text_width(&b"Name"[..index],false,scale);
+            let changed:Vec<usize>=pixels.iter().enumerate().filter_map(|(i,p)|(*p!=0x201005).then_some(i)).collect();
+            assert_eq!(changed.len(),20*scale*scale);
+            assert!(changed.iter().all(|i| i%width>=x && i%width<x+scale && i/width>=10 && i/width<10+26*scale));
+        }
+        for (visible,kind,narrow) in [(false,2,false),(true,1,false),(true,2,true)] {
+            pixels.fill(0x201005);
+            text_input::set_presentation(true,visible,4,kind,true);
+            d.app_field_caret(Rect{width:if narrow {1}else{180},..r},b"Name",2,scale);
+            assert!(pixels.iter().all(|p|*p==0x201005));
+        }
+    }
+    text_input::set_presentation(false,false,0,0,false);
+}
+#[test]
+// ------------------------=
 // FUNC: personalization_panels_and_pointer_pixels
 // DESC: Renders native panels for visual review and verifies every cursor is contained by its restoration bounds.
 // ------------------=

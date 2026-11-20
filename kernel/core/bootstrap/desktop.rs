@@ -2142,15 +2142,12 @@ impl super::DisplayDevice {
             } else {
                 b"Command Window"
             };
-            self.ui_text_elided_strong(
-                left + 54 * scale,
-                top + 16 * scale,
-                if authored_window { width.saturating_sub(210 * scale) } else if terminal_header { (menus[0].x as usize).saturating_sub(left+58*scale).min(108*scale) } else { 108 * scale },
-                window_title,
-                231,
-                243,
-                250,
-            );
+            self.app_label(crate::ui::geometry::Rect {
+                x:(left+54*scale) as i32,y:(top+12*scale) as i32,
+                width:(if authored_window {width.saturating_sub(210*scale)} else if terminal_header {
+                    (menus[0].x as usize).saturating_sub(left+58*scale)
+                } else {108*scale}) as u32,height:(24*scale) as u32,
+            },window_title,(231,243,250),true,scale);
             if terminal_header {
                 let prefs_open=crate::ui::command_terminal::inspect(|s|s.menu!=crate::ui::command_terminal::Menu::None);
                 for (index,(rect,label)) in menus.into_iter().zip([b"File".as_slice(),b"Preferences",b"Performance"]).enumerate() {
@@ -2160,23 +2157,17 @@ impl super::DisplayDevice {
                     let inset=6*scale as u32;
                     self.app_menu_label(crate::ui::geometry::Rect{x:rect.x+inset as i32,width:rect.width.saturating_sub(inset),..rect},label,(221,233,241),scale);
                 }
-            } else if !authored_window { self.ui_text(
+            } else if !authored_window { self.app_text(
                 left + 174 * scale,
-                top + 16 * scale,
+                top + 12 * scale,
                 b"File",
-                221,
-                233,
-                241,
-                1,
+                (221,233,241),false,scale,
             );
-            self.ui_text(
+            self.app_text(
                 left + 225 * scale,
-                top + 16 * scale,
+                top + 12 * scale,
                 b"Performance",
-                221,
-                233,
-                241,
-                1,
+                (221,233,241),false,scale,
             ); }
             for (index, control) in [geometry.minimize, geometry.maximize, geometry.close]
                 .iter()
@@ -2661,51 +2652,36 @@ impl super::DisplayDevice {
             30,
             238,
         );
-        self.ui_text_strong(
+        self.app_text(
             left + 28 * scale,
             table_top + 13 * scale,
             b"TASK",
-            129,
-            197,
-            229,
-            1,
-        );
-        self.ui_text_strong(
+                (129,197,229),true,scale,
+            );
+        self.app_text(
             left + width * 43 / 100,
             table_top + 13 * scale,
             b"STATUS",
-            129,
-            197,
-            229,
-            1,
-        );
-        self.ui_text_strong(
+                (129,197,229),true,scale,
+            );
+        self.app_text(
             left + width * 57 / 100,
             table_top + 13 * scale,
             b"CPU",
-            129,
-            197,
-            229,
-            1,
-        );
-        self.ui_text_strong(
+                (129,197,229),true,scale,
+            );
+        self.app_text(
             left + width * 69 / 100,
             table_top + 13 * scale,
             b"MEMORY",
-            129,
-            197,
-            229,
-            1,
-        );
-        self.ui_text_strong(
+                (129,197,229),true,scale,
+            );
+        self.app_text(
             left + width * 84 / 100,
             table_top + 13 * scale,
             b"DISK",
-            129,
-            197,
-            229,
-            1,
-        );
+                (129,197,229),true,scale,
+            );
 
         let first = selected.saturating_sub(3);
         let row_height = 38 * scale;
@@ -2734,61 +2710,44 @@ impl super::DisplayDevice {
             );
             let mut name=[0u8;96];
             let len=crate::runtime::with_runtime(|r|{let src=crate::console::task_name(r,&task);let n=src.len().min(name.len());name[..n].copy_from_slice(&src[..n]);n}).unwrap_or(0);let app=&name[..len];
-            self.ui_text_strong(
-                left + 30 * scale,
-                row_top + 11 * scale,
-                app,
-                224,
-                238,
-                247,
-                1,
-            );
-            self.ui_text(
+            self.app_label(crate::ui::geometry::Rect {
+                x:(left+30*scale) as i32,y:(row_top+7*scale) as i32,
+                width:(width*43/100).saturating_sub(42*scale) as u32,height:(24*scale) as u32,
+            },app,(224,238,247),true,scale);
+            self.app_text(
                 left + width * 43 / 100,
-                row_top + 11 * scale,
+                row_top + 7 * scale,
                 if task.usage.unresponsive{b"Hung"}else{Self::task_manager_state_text(task.state)},
-                163,
-                211,
-                230,
-                1,
+                (163,211,230),false,scale,
             );
             let (cpu, cpu_len) = Self::task_manager_percent_text(task.cpu_share_percent as usize);
             let (memory, memory_len) = Self::task_manager_bytes_text(task.usage.memory_bytes);
             let (disk, disk_len) = Self::task_manager_bytes_text(task.installed_bytes);
-            self.ui_text(
+            self.app_text(
                 left + width * 57 / 100,
-                row_top + 11 * scale,
+                row_top + 7 * scale,
                 &cpu[..cpu_len],
-                104,
-                220,
-                251,
-                1,
+                (104,220,251),false,scale,
             );
-            self.ui_text(
+            self.app_text(
                 left + width * 69 / 100,
-                row_top + 11 * scale,
+                row_top + 7 * scale,
                 &memory[..memory_len],
-                204,
-                224,
-                236,
-                1,
+                (204,224,236),false,scale,
             );
-            self.ui_text(
+            self.app_text(
                 left + width * 84 / 100,
-                row_top + 11 * scale,
+                row_top + 7 * scale,
                 &disk[..disk_len],
-                204,
-                224,
-                236,
-                1,
+                (204,224,236),false,scale,
             );
         }
         // Keep the process hit-test geometry stable; history uses spare space below it.
         if height>=456*scale {
             let gx=left+24*scale;let gy=top+358*scale;
             let gw=width.saturating_sub(48*scale);let gh=height.saturating_sub(406*scale).min(100*scale);
-            self.ui_text(gx,gy,b"CPU / RAM    last 30 seconds",134,199,255,1);
-            let gy=gy+20*scale;
+            self.app_text(gx,gy,b"CPU / RAM    last 30 seconds",(134,199,255),false,scale);
+            let gy=gy+28*scale;
             for row in 0..=4 {self.fill_rect_alpha(gx,gy+gh*row/4,gw,1,48,68,102,180);}
             for col in 0..=6 {self.fill_rect_alpha(gx+gw*col/6,gy,1,gh,48,68,102,180);}
             if let Some((samples,n))=crate::runtime::with_runtime(|r|(r.task_manager.history,r.task_manager.history_count)) {
@@ -2804,14 +2763,13 @@ impl super::DisplayDevice {
         }
         let mut footer=crate::runtime::console_execution::Bytes::<96>::new();
         {use core::fmt::Write;let _=write!(footer,"{} tasks  /  {} online cores  /  Task menu: actions",count,metrics.cores);}
-        self.ui_text(
+        self.app_text(
             left + 20 * scale,
             top + height.saturating_sub(24 * scale),
             footer.bytes(),
-            117,
-            175,
-            205,
-            1,
+            (117,175,205),
+            false,
+            scale,
         );
         if menu_open {
             self.render_task_manager_menu(geometry, scale);
@@ -5243,30 +5201,12 @@ impl super::DisplayDevice {
         let location_left = browser_left + 100 * scale;
         let mode_controls_width = 96 * scale;
         let location_width = browser_width.saturating_sub(154 * scale + mode_controls_width);
-        self.fill_rounded_rect_alpha(
-            location_left,
-            tool_top + 5 * scale,
-            location_width,
-            28 * scale,
-            8 * scale,
-            4,
-            15,
-            27,
-            238,
-        );
-        let location_editing = navigator_state
-            .map(|state| state.location_editing)
-            .unwrap_or(false);
-        self.outline_rounded_rect(
-            location_left,
-            tool_top + 5 * scale,
-            location_width,
-            28 * scale,
-            8 * scale,
-            if location_editing { 74 } else { 38 },
-            if location_editing { 190 } else { 62 },
-            if location_editing { 235 } else { 81 },
-        );
+        let location_editing = navigator_state.map(|state|state.location_editing).unwrap_or(false);
+        let location_rect=crate::ui::geometry::Rect{x:location_left as i32,y:(tool_top+5*scale) as i32,
+            width:location_width as u32,height:(28*scale) as u32};
+        self.app_input_surface(location_rect,location_editing,scale);
+        let location_text=crate::ui::geometry::Rect{x:location_rect.x+14*scale as i32,
+            width:location_rect.width.saturating_sub(28*scale as u32),..location_rect};
         let location_names: [&[u8]; 9] = [
             b"/home/default",
             b"/home/default",
@@ -5281,9 +5221,7 @@ impl super::DisplayDevice {
         if location_editing && navigator_state.is_some_and(|state|state.editor_selected) {
             self.fill_rect_alpha(location_left+12*scale,tool_top+7*scale,location_width.saturating_sub(24*scale),24*scale,20,90,140,220);
         }
-        self.ui_text(
-            location_left + 14 * scale,
-            tool_top + 9 * scale,
+        self.app_label(location_text,
             navigator_state
                 .as_ref()
                 .map(|state| {
@@ -5294,24 +5232,14 @@ impl super::DisplayDevice {
                     }
                 })
                 .unwrap_or(location_names[home_location.min(8)]),
-            193,
-            211,
-            224,
-            1,
+            (193,211,224),false,scale,
         );
         if location_editing {
             let editing_text = navigator_state
                 .as_ref()
                 .map(|state| state.editor_text.as_bytes())
                 .unwrap_or(b"");
-            self.text_field_caret(
-                location_left + 14 * scale,
-                tool_top + 5 * scale,
-                28 * scale,
-                editing_text,
-                true,
-                2,
-            );
+            self.app_field_caret(location_text,editing_text,2,scale);
         }
         for (index, label) in [b"List".as_slice(), b"Grid"].iter().enumerate() {
             let control_left =
@@ -5319,27 +5247,8 @@ impl super::DisplayDevice {
             let control_width = 42 * scale;
             let selected =
                 (index == 0 && navigator_list_view) || (index == 1 && !navigator_list_view);
-            self.fill_rounded_rect_alpha(
-                control_left,
-                tool_top + 6 * scale,
-                control_width,
-                26 * scale,
-                7 * scale,
-                if selected { selection_r } else { 9 },
-                if selected { selection_g } else { 29 },
-                if selected { selection_b } else { 45 },
-                230,
-            );
-            self.ui_text_centered(
-                control_left,
-                control_width,
-                tool_top + 10 * scale,
-                label,
-                213,
-                231,
-                241,
-                1,
-            );
+            self.app_button(crate::ui::geometry::Rect{x:control_left as i32,y:(tool_top+6*scale) as i32,
+                width:control_width as u32,height:(26*scale) as u32},label,selected,scale);
         }
         let sidebar_w = browser_width * 27 / 100;
         self.fill_rect_alpha(
@@ -5437,32 +5346,23 @@ impl super::DisplayDevice {
             .map(|state| state.scroll_offset)
             .unwrap_or(0);
         if navigator_list_view {
-            self.ui_text_strong(
+            self.app_text(
                 grid_x,
                 grid_y.saturating_sub(22 * scale),
                 b"NAME",
-                132,
-                180,
-                207,
-                1,
+                (132,180,207), true, scale,
             );
-            self.ui_text_strong(
+            self.app_text(
                 grid_x + gap * 2,
                 grid_y.saturating_sub(22 * scale),
                 b"KIND",
-                132,
-                180,
-                207,
-                1,
+                (132,180,207), true, scale,
             );
-            self.ui_text_strong(
+            self.app_text(
                 grid_x + gap * 3,
                 grid_y.saturating_sub(22 * scale),
                 b"SIZE",
-                132,
-                180,
-                207,
-                1,
+                (132,180,207), true, scale,
             );
         }
         let viewport = browser_height.saturating_sub(150 * scale);
@@ -5561,16 +5461,15 @@ impl super::DisplayDevice {
                     );
                 }
                 let _ = self.themed_icon(grid_x, row_y + 7 * scale, icon_role, 22 * scale);
-                self.ui_text(grid_x + 22 * scale, row_y, name, 215, 229, 238, 1);
+                self.app_label(crate::ui::geometry::Rect {
+                    x: (grid_x + 22 * scale) as i32, y: row_y.saturating_sub(4 * scale) as i32,
+                    width: (gap * 2).saturating_sub(34 * scale) as u32, height: (26 * scale) as u32,
+                }, name, (215,229,238), false, scale);
                 if is_renaming {
-                    self.text_field_caret(
-                        grid_x + 22 * scale,
-                        row_y.saturating_sub(7 * scale),
-                        30 * scale,
-                        name,
-                        true,
-                        2,
-                    );
+                    self.app_field_caret(crate::ui::geometry::Rect {
+                        x:(grid_x+22*scale) as i32,y:row_y.saturating_sub(4*scale) as i32,
+                        width:(gap*2).saturating_sub(34*scale) as u32,height:(26*scale) as u32,
+                    },name,2,scale);
                 }
                 let kind_name = match kind {
                     Some(crate::storage::object::ObjectType::NamespaceNode) => b"Folder".as_slice(),
@@ -5581,7 +5480,10 @@ impl super::DisplayDevice {
                     }
                     _ => b"Object".as_slice(),
                 };
-                self.ui_text(grid_x + gap * 2, row_y, kind_name, 164, 190, 205, 1);
+                self.app_label(crate::ui::geometry::Rect {
+                    x: (grid_x + gap * 2) as i32, y: row_y.saturating_sub(4 * scale) as i32,
+                    width: gap.saturating_sub(12 * scale) as u32, height: (26 * scale) as u32,
+                }, kind_name, (164,190,205), false, scale);
                 let mut size_text = [0u8; 16];
                 let size_len = navigator_decimal(
                     &mut size_text,
@@ -5589,15 +5491,10 @@ impl super::DisplayDevice {
                         .map(|value| value.logical_size as usize)
                         .unwrap_or(0),
                 );
-                self.ui_text(
-                    grid_x + gap * 3,
-                    row_y,
-                    &size_text[..size_len],
-                    164,
-                    190,
-                    205,
-                    1,
-                );
+                self.app_label(crate::ui::geometry::Rect {
+                    x: (grid_x + gap * 3) as i32, y: row_y.saturating_sub(4 * scale) as i32,
+                    width: gap.saturating_sub(12 * scale) as u32, height: (26 * scale) as u32,
+                }, &size_text[..size_len], (164,190,205), false, scale);
             } else {
                 let center_x = grid_x + column * gap;
                 let center_y = grid_y + row * tile_step;
@@ -5668,33 +5565,19 @@ impl super::DisplayDevice {
                 12=>b"Unable to move this item to your Trash.",
                 _=>b"File operation could not be completed",
             };
-            let limit=browser_width.saturating_sub(sidebar_w+28*scale)/(8*scale);
-            self.ui_text(browser_left+sidebar_w+14*scale,status_top+5*scale,&text[..text.len().min(limit)],142,185,210,1);
+            self.app_label(crate::ui::geometry::Rect {
+                x:(browser_left+sidebar_w+14*scale) as i32,y:status_top as i32,
+                width:browser_width.saturating_sub(sidebar_w+28*scale) as u32,height:(24*scale) as u32,
+            },text,(142,185,210),false,scale);
         } else {
-        let mut count_text = [0u8; 24];
+        let mut count_text = [0u8; 32];
         let count_len = navigator_decimal(&mut count_text, object_count);
-        self.ui_text(
-            browser_left + sidebar_w + 14 * scale,
-            status_top + 5 * scale,
-            &count_text[..count_len],
-            142,
-            185,
-            210,
-            1,
-        );
-        self.ui_text(
-            browser_left + sidebar_w + (14 + count_len * 8) * scale,
-            status_top + 5 * scale,
-            if object_count == 1 {
-                b" item"
-            } else {
-                b" items"
-            },
-            142,
-            185,
-            210,
-            1,
-        );
+        let suffix:&[u8]=if object_count==1 {b" item"}else{b" items"};
+        count_text[count_len..count_len+suffix.len()].copy_from_slice(suffix);
+        self.app_label(crate::ui::geometry::Rect {
+            x:(browser_left+sidebar_w+14*scale) as i32,y:status_top as i32,
+            width:browser_width.saturating_sub(sidebar_w+28*scale) as u32,height:(24*scale) as u32,
+        },&count_text[..count_len+suffix.len()],(142,185,210),false,scale);
         }
         if dragging_item == Some(6) {
             self.ui_text(
