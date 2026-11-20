@@ -26,8 +26,10 @@ No all-application 95% result has been established.
   require reference-size screenshots for every affected application.
 - Desktop launcher, tray, top bar and widget composition need separate review;
   shared sampler parity cannot establish their visual fidelity.
-- Installed ARM and x86 runtime captures, fresh-install asset parity and release
-  packaging remain open. Existing published ISOs do not contain this work.
+- Installed ARM InfinityCode launch, maximize, keyboard response and clean close
+  passed after disk-only boot. The first ARM test ISO includes the initial
+  Sapphire work, but predates the latest palette, scrollbar and empty-tray fixes.
+  Updated ARM/x86 packaging and broader installed visual acceptance remain open.
 
 Reference: `sapphire-controls-reference.png` and
 `teal-sapphire-desktop-reference.png` (layout only; Sapphire owns the palette).

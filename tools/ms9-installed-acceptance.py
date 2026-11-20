@@ -480,7 +480,15 @@ class Guest:
             self.key("tab")
             state = self.wait(lambda value: value[8] != previous_focus, "camera skip focus")
         self.key("ret")
-        self.wait(lambda state: state[7] == 8, "camera enrollment skipped")
+        state = self.wait(lambda state: state[7] in (8, 9), "camera enrollment skipped")
+        if state[7] == 9:
+            # This fixture has no biometric input; use the real optional Skip control.
+            while state[8] != 2:
+                previous_focus = state[8]
+                self.key("tab")
+                state = self.wait(lambda value: value[8] != previous_focus, "voice skip focus")
+            self.key("ret")
+            self.wait(lambda value: value[7] == 8, "voice enrollment skipped")
         self.key("ret")
         before = self.wait(lambda state: state[4] == 5 and state[9] & 3 == 3, "authenticated desktop")
         assert any(before[16:20]), "Node identity must exist on the installed system"

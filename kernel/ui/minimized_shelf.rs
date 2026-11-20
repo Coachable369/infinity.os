@@ -106,6 +106,13 @@ impl State {
         self.offset = self.offset.min(self.count().saturating_sub(1));
     }
     // ------------------------=
+    // FUNC: visible
+    // DESC: Empty shelves neither cover application content nor intercept input.
+    // ------------------=
+    pub fn visible(self) -> bool {
+        self.mask != 0
+    }
+    // ------------------------=
     // FUNC: count
     // DESC: Counts live minimized window identities.
     // ------------------=

@@ -10,6 +10,7 @@ impl DisplayDevice {
     // ------------------=
     pub(super) fn minimized_app_shelf(&mut self) {
         let state = shelf::current();
+        if !state.visible() { return; }
         let g = Geometry::new(self.width, self.height, state);
         let r = g.rail;
         let x = r.x.max(0) as usize;
@@ -81,9 +82,6 @@ impl DisplayDevice {
             let thumb=(track*g.capacity/count).max(4).min(track);
             let offset=(track-thumb)*state.offset.min(count-g.capacity)/(count-g.capacity);
             self.fill_rounded_rect_alpha(x+w-5,y+32+offset,3,thumb,1,106,197,235,200);
-        }
-        if state.count() == 0 {
-            self.ui_text_centered(x, w, y + h / 2 + w / 3, b"None", 143, 174, 195, 1);
         }
         for index in 0..g.capacity {
             let Some(id) = state.item(state.offset + index) else {

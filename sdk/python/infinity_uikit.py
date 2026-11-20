@@ -102,6 +102,7 @@ def workspace_controls(root, style, scale=1):
     style.layout("TCombobox",[(f"UIKit{key}.Field",{"sticky":"nsew","children":[
         ("Combobox.downarrow",{"side":"right","sticky":"ns"}),
         ("Combobox.padding",{"sticky":"nsew","children":[("Combobox.textarea",{"sticky":"nsew"})]})]})])
+    workspace_scrollbars(root,style,scale)
     return cache[key]
 
 # ------------------------=
@@ -149,3 +150,43 @@ def _tab_images(root, scale):
             rows.append(b"".join(pixels[(sy*WIDTH+min(WIDTH-1,x*WIDTH//width))*3:(sy*WIDTH+min(WIDTH-1,x*WIDTH//width))*3+3] for x in range(width)))
         images.append(tk.PhotoImage(master=root,data=f"P6\n{width} {height}\n255\n".encode()+b"".join(rows),format="PPM"))
     return images
+
+# ------------------------=
+# FUNC: workspace_scrollbars
+# DESC: Apply shared rounded UIKit thumb states with native proportional dragging and track paging.
+# ------------------=
+def workspace_scrollbars(root,style,scale=1):
+    import base64
+    import zlib
+    import tkinter as tk
+    from infinity_uikit_artwork import COLORS, SCROLLBARS
+    key=round(scale*100)
+    cache=getattr(root,"_infinity_scrollbar_images",{})
+    if key not in cache:
+        raw=zlib.decompress(base64.b64decode(SCROLLBARS))
+        images=[]
+        for axis,(w,h) in enumerate(((14,32),(32,14))):
+            width,height=round(w*scale),round(h*scale)
+            for state in range(4):
+                pixels=raw[(axis*4+state)*w*h*3:(axis*4+state+1)*w*h*3]
+                rows=[]
+                for y in range(height):
+                    sy=min(h-1,int(y/scale))
+                    rows.append(b"".join(pixels[(sy*w+min(w-1,int(x/scale)))*3:(sy*w+min(w-1,int(x/scale)))*3+3] for x in range(width)))
+                images.append(tk.PhotoImage(master=root,data=f"P6\n{width} {height}\n255\n".encode()+b"".join(rows),format="PPM"))
+            offset=axis*4
+            style.element_create(f"UIKit{key}.{'Horizontal' if axis else 'Vertical'}.thumb","image",images[offset],
+                ("disabled",images[offset+3]),("pressed",images[offset+2]),("active",images[offset+1]),
+                border=round(6*scale),sticky="nsew")
+        trough=tk.PhotoImage(master=root,width=1,height=1)
+        trough.put(COLORS["canvas"],to=(0,0,1,1))
+        images.append(trough)
+        style.element_create(f"UIKit{key}.trough","image",trough,border=0,sticky="nsew")
+        cache[key]=images
+        root._infinity_scrollbar_images=cache
+    for axis in ("Vertical","Horizontal"):
+        style.layout(f"{axis}.TScrollbar",[(f"UIKit{key}.trough",{"sticky":"nswe","children":[
+            (f"UIKit{key}.{axis}.thumb",{"sticky":"nswe"})]})])
+        style.configure(f"{axis}.TScrollbar",troughcolor=COLORS["canvas"],background=COLORS["muted"],
+                        bordercolor=COLORS["canvas"],borderwidth=0,arrowsize=0,width=round(14*scale))
+    return cache[key]

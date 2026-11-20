@@ -15,6 +15,42 @@ from infinitycode_model import Project, KINDS, WIDTH, validate, export_source, c
 
 class ProjectTests(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_uikit_scrollbar_drag
+    # DESC: Exercises the themed proportional thumb through real Tk pointer events and verifies content scrolling.
+    # ------------------=
+    @unittest.skipUnless(os.environ.get("INFINITYCODE_GUI_TEST") == "1", "explicit GUI session required")
+    def test_uikit_scrollbar_drag(self):
+        import tkinter as tk
+        from tkinter import ttk
+        from infinity_uikit import workspace_controls
+        root=tk.Tk()
+        try:
+            root.geometry("400x300")
+            images=workspace_controls(root,ttk.Style(root))
+            text=tk.Text(root)
+            bar=ttk.Scrollbar(root,orient="vertical",command=text.yview)
+            text.configure(yscrollcommand=bar.set)
+            bar.pack(side="right",fill="y")
+            text.pack(fill="both",expand=True)
+            text.insert("1.0","\n".join(str(i) for i in range(300)))
+            root.update()
+            self.assertLessEqual(bar.winfo_width(),16)
+            x=bar.winfo_width()//2
+            ys=[y for y in range(bar.winfo_height()) if bar.identify(x,y).endswith("thumb")]
+            self.assertTrue(ys)
+            start=sum(ys)//len(ys)
+            bar.event_generate("<ButtonPress-1>",x=x,y=start)
+            bar.event_generate("<B1-Motion>",x=x,y=180)
+            bar.event_generate("<ButtonRelease-1>",x=x,y=180)
+            root.update()
+            self.assertGreater(text.yview()[0],0.1)
+            text.yview_moveto(0)
+            root.update()
+            self.assertEqual(text.yview()[0],0)
+        finally:
+            root.destroy()
+
+    # ------------------------=
     # FUNC: test_widget_example_in_tk
     # DESC: Runs the packaged counter in Tk, dispatches its real buttons and restores the released drag on a second launch.
     # ------------------=

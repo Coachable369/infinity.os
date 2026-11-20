@@ -3,7 +3,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from _infinity_app import memory_request
-from infinity_uikit import workspace_controls
+from infinity_uikit import MENU_HEIGHT, workspace_controls, workspace_menu
 from infinity_uikit_artwork import COLORS
 
 CATEGORIES = ("All memories", "Episodic", "Semantic", "Procedural")
@@ -47,16 +47,16 @@ class Browser:
         style = ttk.Style(root)
         style.theme_use("clam")
         style.configure("TLabel", background=NAVY, foreground=WHITE, font=body_font)
-        style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=8, font=body_font, bordercolor="#50779A", lightcolor=PANEL, darkcolor=PANEL, insertcolor=WHITE)
+        style.configure("TEntry", fieldbackground=PANEL, foreground=WHITE, padding=8, font=body_font, bordercolor=COLORS["border"], lightcolor=PANEL, darkcolor=PANEL, insertcolor=WHITE)
         style.configure("TCombobox", fieldbackground=PANEL, background=PANEL, foreground=WHITE, padding=6, font=body_font)
         style.configure("Library.Treeview", background=PANEL, fieldbackground=PANEL,
                         foreground=WHITE, font=body_font, rowheight=body_px+17, borderwidth=0,
-                        lightcolor=PANEL, darkcolor=PANEL)
-        style.map("Library.Treeview", background=[("selected", "#244F96")],
+                        lightcolor=PANEL, darkcolor=PANEL, bordercolor=COLORS["border"])
+        style.map("Library.Treeview", background=[("selected", COLORS["accent"])],
                   foreground=[("selected", WHITE)])
-        style.configure("TCombobox", arrowcolor="#A8D5FF", bordercolor="#416084",
+        style.configure("TCombobox", arrowcolor=COLORS["muted"], bordercolor=COLORS["border"],
                         lightcolor=PANEL, darkcolor=PANEL)
-        style.map("TEntry", bordercolor=[("focus", "#86C7FF")])
+        style.map("TEntry", bordercolor=[("focus", COLORS["focus"])])
         style.map("TCombobox", fieldbackground=[("readonly", PANEL)], foreground=[("readonly", WHITE)])
         root.option_add("*TCombobox*Listbox.background", PANEL)
         root.option_add("*TCombobox*Listbox.foreground", WHITE)
@@ -84,13 +84,14 @@ class Browser:
         self.metadata = [tk.StringVar(value="—") for _ in range(4)]
         self.page_label = tk.StringVar()
         self.empty_hint = tk.StringVar()
-        menu_bar = tk.Frame(root, bg=PANEL)
+        menu_bar = tk.Frame(root, bg=PANEL, height=round(MENU_HEIGHT*body_px/16))
+        menu_bar.pack_propagate(False)
         menu_bar.pack(fill="x", pady=(0, 6))
         style.layout("Library.TMenubutton", [("Menubutton.padding", {"sticky": "nswe", "children":
             [("Menubutton.label", {"sticky": "w"})]})])
         style.configure("Library.TMenubutton", font=body_font, background=PANEL, foreground=WHITE,
                         padding=(14, 6), relief="flat")
-        style.map("Library.TMenubutton", background=[("active", "#244F96"), ("focus", "#244F96")])
+        style.map("Library.TMenubutton", background=[("active", COLORS["accent"]), ("focus", COLORS["accent"])])
         self.menus = {}
         for title, entries in (
             ("File", (("New memory", self.new, "Ctrl+N"), ("Save memory", self.save, "Ctrl+S"), ("Close", self.close, ""))),
@@ -100,21 +101,21 @@ class Browser:
             ("View", (("Find memories", lambda: self.search.focus_force(), "Ctrl+F"),
                       ("Clear search", lambda: self.query.set(""), ""), ("Refresh library", self.refresh, "")))):
             button = ttk.Menubutton(menu_bar, text=title, style="Library.TMenubutton", takefocus=True)
-            menu = tk.Menu(button, tearoff=False, bg=PANEL, fg=WHITE, activebackground="#244F96",
+            menu = tk.Menu(button, tearoff=False, bg=PANEL, fg=WHITE, activebackground=COLORS["accent"],
                            activeforeground=WHITE, font=body_font)
             self.menus[title] = menu
             for label, action, shortcut in entries:
                 menu.add_command(label=label, command=action, accelerator=shortcut)
-            button.configure(menu=menu)
-            button.pack(side="left")
-        self.recent_menu = tk.Menu(self.menus["View"], tearoff=False, bg=PANEL, fg=WHITE, activebackground="#244F96")
+            workspace_menu(button,menu)
+            button.pack(side="left",fill="y")
+        self.recent_menu = tk.Menu(self.menus["View"], tearoff=False, bg=PANEL, fg=WHITE, activebackground=COLORS["accent"])
         self.menus["View"].add_cascade(label="Recent searches", menu=self.recent_menu, state="disabled")
         self.fact_id = 0
         self.fact_job = None
         self.fact_last = ""
         self.fact = tk.StringVar()
         self.fact_state = tk.StringVar(value="Autosave on")
-        capture = tk.Frame(root, bg=PANEL, padx=12, pady=8, highlightthickness=1, highlightbackground="#324D70")
+        capture = tk.Frame(root, bg=PANEL, padx=12, pady=8, highlightthickness=1, highlightbackground=COLORS["border"], highlightcolor=COLORS["border"])
         capture.pack(fill="x", padx=18, pady=4)
         tk.Label(capture, text="Add a fact", width=10, anchor="w", bg=PANEL, fg=WHITE, font=("Inter",-body_px,"bold")).pack(side="left", padx=(0,4))
         field = ttk.Entry(capture, textvariable=self.fact, font=body_font)
@@ -122,7 +123,7 @@ class Browser:
         field.bind("<ButtonPress-1>", lambda event: field.focus_force(), add="+")
         field.bind("<Return>", lambda event: self.finish_fact())
         field.bind("<FocusOut>", lambda event: self.finish_fact())
-        tk.Label(capture, textvariable=self.fact_state, bg=PANEL, fg="#8BDDB9", width=12).pack(side="right")
+        tk.Label(capture, textvariable=self.fact_state, bg=PANEL, fg=COLORS["success"], width=12).pack(side="right")
         self.fact.trace_add("write", self.fact_changed)
         controls = tk.Frame(root, bg=NAVY)
         controls.pack(fill="x", padx=18, pady=6)
@@ -140,11 +141,11 @@ class Browser:
         self.query.trace_add("write", self.changed)
         body = tk.PanedWindow(root, orient="horizontal", bg=NAVY, sashwidth=7, bd=0)
         body.pack(expand=True, fill="both", padx=18, pady=10)
-        left, right = (tk.Frame(body, bg=PANEL, highlightthickness=1, highlightbackground="#365777") for _ in range(2))
+        left, right = (tk.Frame(body, bg=PANEL, highlightthickness=1, highlightbackground=COLORS["border"], highlightcolor=COLORS["border"]) for _ in range(2))
         body.add(left, minsize=200, width=int(width*.35), stretch="always")
         body.add(right, minsize=290, width=int(width*.65), stretch="always")
         tk.Label(left,textvariable=self.list_title,bg=PANEL,fg=WHITE,font=("Inter",-body_px-2,"bold")).pack(anchor="w", padx=14, pady=(10,8))
-        tk.Frame(left, height=1, bg="#31476A").pack(fill="x", padx=12)
+        tk.Frame(left, height=1, bg=COLORS["border"]).pack(fill="x", padx=12)
         list_area = tk.Frame(left, bg=PANEL)
         list_area.pack(expand=True, fill="both", padx=8, pady=6)
         self.listbox = ttk.Treeview(list_area, show="tree", selectmode="browse", height=4, style="Library.Treeview")
@@ -165,14 +166,14 @@ class Browser:
         tk.Label(right, text="Fact", bg=PANEL, fg=MUTED, font=("Inter",-14,"bold")).pack(anchor="w", padx=14, pady=(0,4))
         self.editor = tk.Text(right, undo=True, maxundo=80, height=3, wrap="word", bg=NAVY, fg=WHITE, insertbackground=WHITE,
                               font=body_font, padx=12, pady=10, relief="flat", bd=0, highlightthickness=1,
-                              highlightbackground="#405D80", highlightcolor="#86C7FF")
+                              highlightbackground=COLORS["border"], highlightcolor=COLORS["focus"])
         self.editor.bind("<ButtonPress-1>", lambda event: self.editor.focus_force(), add="+")
 
         row = tk.Frame(right, bg=PANEL)
         row.pack(fill="x", padx=14, pady=8)
         tk.Label(row, text="Category", bg=PANEL, fg=MUTED).pack(side="left")
         ttk.Combobox(row, values=CATEGORIES[1:], textvariable=self.category, state="readonly", width=14).pack(side="left", padx=8)
-        tk.Frame(right, height=1, bg="#31476A").pack(fill="x", padx=14, pady=(0,5))
+        tk.Frame(right, height=1, bg=COLORS["border"]).pack(fill="x", padx=14, pady=(0,5))
         meta = tk.Frame(right, bg=PANEL)
         meta.pack(fill="x", padx=14, pady=(2,5))
         for i,label in enumerate(("Source", "Record", "Created", "Updated")):
@@ -195,7 +196,7 @@ class Browser:
         buttons.pack(side="bottom", fill="x", padx=14, pady=(4, 9))
         self.editor.pack(fill="both", expand=True, padx=14, before=row)
         root.bind("<Escape>", lambda event: self.cancel_confirmation())
-        tk.Label(root, textvariable=self.status, bg="#101E38", fg=MUTED, anchor="w", padx=18, pady=5, font=("Inter",-14)).pack(fill="x")
+        tk.Label(root, textvariable=self.status, bg=PANEL, fg=MUTED, anchor="w", padx=18, pady=5, font=("Inter",-14)).pack(fill="x")
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.bind("<Control-n>", lambda event: self.new())
         root.bind("<Control-s>", lambda event: self.save())

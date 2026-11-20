@@ -59,3 +59,28 @@ checks pass in manifest `20261120T010552422342Z-73002.json`. Normal and focused
 production surfaces were inspected in
 `builds/validation/sapphire-coverage/access-focus-corrected.png`.
 The first ARM test image predates this correction; final images must be rebuilt.
+
+## Installed workspace corrections
+
+- InfinityCode's installed ARM screenshots exposed an empty task tray covering
+  its toolbox. Empty trays now paint no pixels and intercept no pointer, wheel
+  or keyboard input. Nine native shelf/overlay fixtures pass, including exact
+  partial/full-frame equivalence: `20261120T012706414648Z-74539.json`.
+- Python workspace scrollbars now share rounded UIKit thumb artwork, semantic
+  states and compact rails. The inherited host trough padding is removed.
+  Eleven real Tk interaction/geometry tests pass, including drag scrolling:
+  `20261120T013013146402Z-74863.json`. Native installed verification of this
+  latest adapter remains pending; artwork inspection is not that proof.
+- Infinity Memory uses semantic palette values and the shared release-to-open
+  menu dispatcher. Its menu height remains fixed during resize. Host interaction
+  and captures use isolated memory records and production UIKit button fixtures;
+  `memory-host-uikit.png` is not an installed screenshot or an exact native
+  service-button geometry comparison.
+- Media Player now consumes the packaged semantic palette rather than legacy
+  hardcoded colors. Playback/open/replace/close behavior remains unchanged and
+  passes `20261120T013049558539Z-74907.json`.
+- Installed ARM InfinityCode launch/maximize/keyboard/close proof:
+  `20261120T011933810951Z-73829.json`; screenshots:
+  `infinitycode-installed-normal.png`, `infinitycode-installed-maximized.png`.
+  These show the pre-correction rails and empty shelf; they are failure evidence
+  for those elements, not final visual acceptance.

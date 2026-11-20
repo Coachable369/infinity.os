@@ -27,4 +27,24 @@ fn main() {
             }}
         }
     }
+    for horizontal in [false,true] {
+        let (width,height)=if horizontal {(32,14)}else{(14,32)};
+        for state in 0..4 { for y in 0..height { for x in 0..width {
+            let m=Material{fill:channels(colors[if state==2 {6}else{5}]),edge:channels(colors[3]),
+                opacity:if state==3 {80}else{255},edge_opacity:0,
+                focus:if state==1 {255}else{0},pressed:state==2,scale:1};
+            let (r,g,b,a)=if (!horizontal && (x<3 || x>=width-3)) || (horizontal && (y<3 || y>=height-3)) {
+                (0,0,0,0)
+            } else {
+                panel_recipe::pixel_styled(Surface::Secondary,
+                    if horizontal {width}else{width-6},if horizontal {height-6}else{height},
+                    if horizontal {x}else{x-3},if horizontal {y-3}else{y},m,
+                    panel_recipe::SurfaceStyle{material:2,corners:2,radius:4,fill:None,border:None})
+            };
+            let bg=channels(colors[0]);
+            let bytes=std::array::from_fn::<u8,3,_>(|i|(([r,g,b][i] as u32*a as u32+[bg.0,bg.1,bg.2][i] as u32*(255-a as u32)+127)/255)as u8);
+            out.write_all(&bytes).unwrap();
+        }}}
+    }
+
 }

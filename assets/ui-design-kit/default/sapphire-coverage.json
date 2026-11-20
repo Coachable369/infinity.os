@@ -951,8 +951,11 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/manifests/20261120T013049558539Z-74907.json"
+      ],
+      "acceptance_note": "Focused correction evidence only; per-state visual and installed acceptance remain open."
     },
     {
       "id": "launcher:Recycle Bin",
@@ -1240,8 +1243,12 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/validation/sapphire-coverage/infinitycode-installed-normal.png",
+        "builds/validation/sapphire-coverage/infinitycode-installed-maximized.png"
+      ],
+      "acceptance_note": "Focused correction evidence only; per-state visual and installed acceptance remain open."
     },
     {
       "id": "launcher:Media Files",
@@ -1278,8 +1285,11 @@
         "error",
         "unsaved-close"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/validation/sapphire-coverage/memory-host-uikit.png"
+      ],
+      "acceptance_note": "Focused correction evidence only; per-state visual and installed acceptance remain open."
     },
     {
       "id": "supplement:Weather widget",
@@ -1380,8 +1390,11 @@
         "error",
         "resize"
       ],
-      "status": "unverified",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "builds/manifests/20261120T012706414648Z-74539.json"
+      ],
+      "acceptance_note": "Focused correction evidence only; per-state visual and installed acceptance remain open."
     },
     {
       "id": "supplement:Dock pinning and reorder",

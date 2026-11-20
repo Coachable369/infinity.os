@@ -66,7 +66,7 @@ def wait(guest, python, read, predicate, timeout=30):
             return value
         execution = python.snapshot(guest)
         assert not execution or execution[3] < 2 or execution[4] == 0, execution
-        assert time.monotonic() < deadline, value
+        assert time.monotonic() < deadline, ({k:v for k,v in value.items() if k not in ("pixels", "data")} if isinstance(value,dict) else value)
         time.sleep(.15)
 
 
@@ -331,7 +331,7 @@ def infinitycode(guest, native, python):
                  and value["windows"][0]["width"] >= 600, timeout=150)
     window = state["windows"][0]
     capture = wait(guest, python, lambda: screenshot(guest, "infinitycode-open"),
-                   lambda image: sum(pixel(image, x, y) == (9, 15, 38)
+                   lambda image: sum(pixel(image, x, y) == (9, 21, 34)
                        for y in range(max(0, window["y"]), min(image["height"], window["y"] + window["height"]), 4)
                        for x in range(max(0, window["x"]), min(image["width"], window["x"] + window["width"]), 4)) > 1000,
                    timeout=150)

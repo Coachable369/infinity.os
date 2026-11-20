@@ -4,7 +4,9 @@ import time
 import tkinter as tk
 import _infinity_media as codec
 
-NAVY, PANEL, BLUE, LIGHT, MUTED = "#090F26", "#101B3A", "#3E6FFF", "#FFFFFF", "#A7BDDC"
+from infinity_uikit_artwork import COLORS
+
+NAVY, PANEL, BLUE, LIGHT, MUTED = (COLORS[key] for key in ("canvas","panel","accent","text","muted"))
 
 # ------------------------=
 # FUNC: timestamp

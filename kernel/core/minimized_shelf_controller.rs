@@ -71,7 +71,8 @@ impl ConsoleRuntime {
     // DESC: Keeps modal documents, spatial overlays, and ongoing drag capture above the shelf.
     // ------------------=
     fn shelf_available(&self) -> bool {
-        matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
+        shelf::current().visible()
+            && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
             && self.editor_dialog == EditorDialog::None
             && !self.spatial.open
             && !self.home_window_dragging

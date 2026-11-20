@@ -83,3 +83,12 @@ The compact tab source assets are `workspace-tabs/{normal,selected,hover,focus}.
 `tools/native-python/uikit-tabs.py` compiles these into the packaged native UIKit
 module. The native widget must consume these pixels, retain 32 logical pixel
 height, and stretch only the center. Do not add duplicate vertical label padding.
+
+## Python workspace scrollbars
+
+Use the shared compact 14-pixel rail with an eight-pixel thumb, three-pixel side
+insets and a 32-pixel minimum proportional length. The thumb reuses the native
+matte surface sampler and its antialiased four-pixel rounding, with semantic muted, focused, pressed and disabled colors. The trough
+uses the canvas color with no inherited theme padding or arrow buttons. Native
+Tk owns thumb dragging, track paging and keyboard/wheel content updates. Both
+axes and explicit content zoom use the same component in `workspace_controls`.

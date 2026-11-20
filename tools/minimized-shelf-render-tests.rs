@@ -277,7 +277,7 @@ impl DisplayDevice {
 #[test]
 // ------------------------=
 // FUNC: empty_shelf_has_no_icon
-// DESC: Verifies that the empty shelf icon area contains only the underlying glass pixels.
+// DESC: Verifies empty shelves preserve the complete application framebuffer and are unavailable to input.
 // ------------------=
 fn empty_shelf_has_no_icon() {
     let (width, height) = (1440, 900);
@@ -290,18 +290,15 @@ fn empty_shelf_has_no_icon() {
     let state = State::new();
     let rail = Geometry::new(width, height, state).rail;
     let (x, y, w, h) = (rail.x as usize, rail.y as usize, rail.width as usize, rail.height as usize);
-    // Empty means no icon ink over the shelf's actual Eclipse glass recipe,
-    // not a different strong/default-palette panel used by older chrome.
-    display.fill_rounded_rect_alpha(x,y,w,h,(w/4).clamp(6,22),16,27,58,208);
     let glass = pixels.clone();
-    pixels.fill(0x102336u32);
+    assert!(!state.visible());
     shelf::publish(state);
     display.minimized_app_shelf();
+    assert_eq!(pixels, glass, "An empty shelf must leave every underlying application pixel intact");
+    let mut populated = state;
+    populated.set(shelf::COMMAND, true);
+    assert!(populated.visible());
     let size = w * 3 / 5;
-    for row in y + h / 2 - 20 - size / 2..y + h / 2 - 20 + size / 2 {
-        let start = row * width + x + w / 2 - size / 2;
-        assert_eq!(&pixels[start..start + size], &glass[start..start + size]);
-    }
     // Positive control: the same exact comparison must detect real icon ink.
     display.launcher_icon(x + w / 2, y + h / 2 - 20, 26, size);
     assert!((y + h / 2 - 20 - size / 2..y + h / 2 - 20 + size / 2).any(|row| {
