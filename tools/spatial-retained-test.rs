@@ -301,3 +301,31 @@ fn application_frame_survives_cached_focus_clip_and_peek() {
     assert_eq!(pixels,active);
     desktop_effects::reset();
 }
+
+#[test]
+// ------------------------=
+// FUNC: rounded_window_restores_backdrop_and_preserves_client_pixels
+// DESC: Exercises the production corner compositor over opaque app content with clipped and offscreen window origins.
+// ------------------=
+fn rounded_window_restores_backdrop_and_preserves_client_pixels() {
+    let _lock=CACHE_TEST_LOCK.lock().unwrap();
+    for origin in [(12,10),(-3,-2)] {
+        let mut pixels=vec![0x123456u32;80*60];
+        let mut d=DisplayDevice{buffer:pixels.as_mut_ptr(),width:80,height:60,stride:80,
+            recording_surface:false,fast_motion_frame:true,render_clip:None};
+        let bounds=(origin.0,origin.1,48,36);let radius=12;
+        d.window_corner_backdrop(bounds,radius,false);
+        for y in 0..36 {for x in 0..48 {
+            let sx=origin.0+x;let sy=origin.1+y;
+            if sx>=0 && sy>=0 {pixels[sy as usize*80+sx as usize]=0xffffff;}
+        }}
+        d.window_corner_backdrop(bounds,radius,true);
+        for y in 0..36 {for x in 0..48 {
+            let sx=origin.0+x as i32;let sy=origin.1+y as i32;
+            if sx<0 || sy<0 {continue;}
+            let a=u32::from(panel_recipe::rounded_shape(x,y,48,36,radius).0);
+            let channel=|v:u32| (255*a+v*(255-a)+127)/255;
+            assert_eq!(pixels[sy as usize*80+sx as usize],channel(0x12)<<16|channel(0x34)<<8|channel(0x56));
+        }}
+    }
+}

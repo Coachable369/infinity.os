@@ -184,8 +184,11 @@ struct UIKitStylesPreview: View {
             raw = frost
         } else {
             if kind == .frame {
+                var fillStyle = UIKitSurfaceStyle.resolved(for: .windowFill, styles: store.document.styles)
+                fillStyle.corners = material.style.corners
+                fillStyle.radius = material.style.radius
                 let background = PrecisionMaterial(fill: studioColor(store.document.colors[1]), edgeOpacity: 0,
-                    style: .resolved(for: .windowFill, styles: store.document.styles))
+                    style: fillStyle)
                 guard let fill = atlas.render(.windowFill, width: width, height: height, material: background) else { return nil }
                 for p in stride(from: 0, to: raw.count, by: 4) {
                     let alpha = Int(fill[p + 3])
@@ -358,12 +361,21 @@ struct GlobalWindowFrameEditor: View {
                         preview("Inactive", focus: 0)
                     }
                     Divider()
+                    Picker("Corners", selection: Binding(get: { store.document.styles[0].corners == .rounded }, set: { rounded in
+                        var style = store.document.styles[0]
+                        style.corners = rounded ? .rounded : .square
+                        if rounded && style.radius == 0 { style.radius = 12 }
+                        store.setSurfaceStyle(0, style: style)
+                    })) {
+                        Text("Square").tag(false)
+                        Text("Rounded").tag(true)
+                    }.pickerStyle(.segmented)
                     Text("Frame collection").font(.headline)
                     ForEach(WindowFramePreset.allCases) { preset in
-                        Button { store.setSurfaceStyle(0, style: preset.style) } label: {
+                        Button { store.setSurfaceStyle(0, style: frameStyle(preset)) } label: {
                             HStack(spacing: 16) {
                                 if let image = UIKitStylePreviewImage.image(store: store, kind: .frame,
-                                    width: 112, height: 52, material: PrecisionMaterial(focus: 255, style: preset.style)) {
+                                    width: 112, height: 52, material: PrecisionMaterial(focus: 255, style: frameStyle(preset))) {
                                     Image(decorative: image, scale: 1)
                                 }
                                 Text(preset.title).frame(maxWidth: .infinity, alignment: .leading)
@@ -380,6 +392,17 @@ struct GlobalWindowFrameEditor: View {
                 }.padding(20)
             }.frame(width: 520, height: 660).background(InfinityUIKit.Palette.nativePanel)
         }
+    }
+
+    // ------------------------=
+    // FUNC: frameStyle
+    // DESC: Changes the material without resetting the user's global corner choice.
+    // ------------------=
+    private func frameStyle(_ preset: WindowFramePreset) -> UIKitSurfaceStyle {
+        var style = preset.style
+        style.corners = store.document.styles[0].corners
+        style.radius = store.document.styles[0].radius
+        return style
     }
 
     // ------------------------=

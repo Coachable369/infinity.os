@@ -6,6 +6,31 @@ import UniformTypeIdentifiers
 
 final class UIKitStoreTests: XCTestCase {
     // ------------------------=
+    // FUNC: testRoundedWindowFramePersistsAndUndo
+    // DESC: Verifies global frame corner selection survives save, reload and undo without changing other recipes.
+    // ------------------=
+    @MainActor func testRoundedWindowFramePersistsAndUndo() throws {
+        let root = try fixtureRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UIKitStore(projectRoot: root)
+        let original = store.document.styles
+        var frame = original[0]
+        frame.corners = .rounded
+        frame.radius = 12
+        store.setSurfaceStyle(0, style: frame)
+        XCTAssertEqual(store.document.styles[0], frame)
+        XCTAssertEqual(Array(store.document.styles.dropFirst()), Array(original.dropFirst()))
+        store.undo()
+        XCTAssertEqual(store.document.styles, original)
+        store.redo()
+        try store.save()
+        let loaded = UIKitStore(projectRoot: root)
+        XCTAssertEqual(loaded.document.styles[0], frame)
+        let bytes = try loaded.document.runtimeStyles()
+        XCTAssertEqual(Array(bytes[12..<15]), [UInt8(frame.material.rawValue), 2, 12])
+    }
+
+    // ------------------------=
     // FUNC: testIndependentSurfaceStylesPersistAndUndo
     // DESC: Exercises independent button/panel materials, corner geometry and native binary serialization through save and reload.
     // ------------------=

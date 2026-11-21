@@ -59,8 +59,7 @@ pub const fn decode_styles(bytes: &[u8]) -> Option<[SurfaceStyle; STYLE_COUNT]> 
     i = 0;
     while i < STYLE_COUNT {
         let at = 12 + i * 12;
-        if bytes[at] > 24 || bytes[at+1] > 2 || bytes[at+2] > 40 || bytes[at+3] & !3 != 0
-            || (i < 2 && bytes[at+1] == 2) { return None; }
+        if bytes[at] > 24 || bytes[at+1] > 2 || bytes[at+2] > 40 || bytes[at+3] & !3 != 0 { return None; }
         let fill = u32::from_le_bytes([bytes[at+4], bytes[at+5], bytes[at+6], bytes[at+7]]);
         let border = u32::from_le_bytes([bytes[at+8], bytes[at+9], bytes[at+10], bytes[at+11]]);
         result[i] = SurfaceStyle { material: bytes[at], corners: bytes[at+1], radius: bytes[at+2],
@@ -341,7 +340,7 @@ fn integer_sqrt(value: u64) -> u64 {
 // FUNC: rounded_shape
 // DESC: Returns four-by-four subpixel silhouette coverage and fixed-point inward edge depth for image-backed rounded styles.
 // ------------------=
-fn rounded_shape(x:usize,y:usize,w:usize,h:usize,radius:usize)->(u8,usize) {
+pub fn rounded_shape(x:usize,y:usize,w:usize,h:usize,radius:usize)->(u8,usize) {
     let r=radius.min(w/2).min(h/2);
     let ix=(x*2+1).min((w-x)*2-1)*128;
     let iy=(y*2+1).min((h-y)*2-1)*128;
@@ -483,9 +482,26 @@ fn collection_pixel(w:usize,h:usize,x:usize,y:usize,m:Material,s:SurfaceStyle)->
     let (sw,sh)=(if frame {64}else{256},64usize);
     let scale=m.scale.max(1);
     let coord=|p:usize,n:usize| {let cap=(8*scale).min(n/2);if p<cap {p/scale}else if p>=n-cap {63-(n-1-p)/scale}else{32}};
-    let (sx,sy)=if frame {(coord(x,w),coord(y,h))}else{(x*255/w.saturating_sub(1).max(1),y*63/h.saturating_sub(1).max(1))};
+    let (mut sx,mut sy)=if frame {(coord(x,w),coord(y,h))}else{(x*255/w.saturating_sub(1).max(1),y*63/h.saturating_sub(1).max(1))};
+    let (coverage,depth)=if frame && s.corners==2 {rounded_shape(x,y,w,h,usize::from(s.radius)*scale)}else{(255,0)};
+    if frame && s.corners==2 {
+        if coverage==0 {return (0,0,0,0);}
+        let d=(depth/scale).saturating_sub(128)/256;
+        if d>=8 {return (0,0,0,0);}
+        // Sample each edge at its original thickness; curve only its silhouette.
+        if y.min(h-1-y)<=x.min(w-1-x) {sx=32;sy=if y<h/2 {d}else{63-d};}
+        else {sx=if x<w/2 {d}else{63-d};sy=32;}
+    }
     let data:&[u8]=if frame {MODERN_FRAMES}else{MODERN_BUTTONS};
-    let sample=|state:usize| {let at=((family*3+state)*sw*sh+sy*sw+sx)*4;(data[at],data[at+1],data[at+2],data[at+3])};
+    let sample=|state:usize| {
+        let read=|px:usize,py:usize| {let at=((family*3+state)*sw*sh+py*sw+px)*4;(data[at],data[at+1],data[at+2],data[at+3])};
+        let first=read(sx,sy);
+        if frame && s.corners==2 {
+            let fraction=((depth/scale).saturating_sub(128)%256)as u8;
+            let next=if sx==32 {read(sx,if sy<32 {sy+1}else{sy-1})}else{read(if sx<32 {sx+1}else{sx-1},sy)};
+            transition(first,next,fraction)
+        }else{first}
+    };
     let mut c=if m.pressed && !frame {sample(2)}else{transition(sample(0),sample(1),m.focus)};
     if let Some(tint)=if frame {s.border}else{s.fill} {
         let target=((tint>>16)as u8,(tint>>8)as u8,tint as u8);
@@ -494,7 +510,7 @@ fn collection_pixel(w:usize,h:usize,x:usize,y:usize,m:Material,s:SurfaceStyle)->
         let channel=|v:u8,t:u8,b:u8| (i16::from(v)+i16::from(t)-i16::from(b)).clamp(0,255)as u8;
         c=(channel(c.0,target.0,base.0),channel(c.1,target.1,base.1),channel(c.2,target.2,base.2),(u16::from(c.3)*((tint>>24)as u16)/255)as u8);
     }
-    if frame {c.3=(u16::from(c.3)*u16::from(m.edge_opacity)/255)as u8;return c;}
+    if frame {c.3=(u32::from(c.3)*u32::from(m.edge_opacity)*u32::from(coverage)/65025)as u8;return c;}
     let radius=if s.corners==1 {0}else{usize::from(s.radius)*scale};
     let (coverage,depth)=rounded_shape(x,y,w,h,radius);
     if coverage==0{return (0,0,0,0);}

@@ -89,12 +89,30 @@ struct PrecisionAtlas {
             let cap = min(8 * scale, n / 2)
             return p < cap ? p / scale : p >= n - cap ? 63 - (n - 1 - p) / scale : 32
         }
-        let sx = frame ? coord(x, w) : x * 255 / max(1, w - 1)
-        let sy = frame ? coord(y, h) : y * 63 / max(1, h - 1)
+        var sx = frame ? coord(x, w) : x * 255 / max(1, w - 1)
+        var sy = frame ? coord(y, h) : y * 63 / max(1, h - 1)
+        let (frameCoverage, frameDepth) = frame && s.corners == .rounded
+            ? Self.roundedShape(x: x, y: y, width: w, height: h, radius: s.radius * scale) : (255, 0)
+        if frame && s.corners == .rounded {
+            if frameCoverage == 0 { return .clear }
+            let d = max(0, frameDepth / scale - 128) / 256
+            if d >= 8 { return .clear }
+            if min(y,h-1-y) <= min(x,w-1-x) { sx = 32; sy = y < h/2 ? d : 63-d }
+            else { sx = x < w/2 ? d : 63-d; sy = 32 }
+        }
         let data = frame ? Self.modernFrames : Self.modernButtons
         let sample: (Int) -> PrecisionPixel = { state in
-            let at = ((family * 3 + state) * sw * sh + sy * sw + sx) * 4
-            return PrecisionPixel(red: Int(data[at]), green: Int(data[at+1]), blue: Int(data[at+2]), alpha: Int(data[at+3]))
+            let read: (Int, Int) -> PrecisionPixel = { px, py in
+                let at = ((family * 3 + state) * sw * sh + py * sw + px) * 4
+                return PrecisionPixel(red: Int(data[at]), green: Int(data[at+1]), blue: Int(data[at+2]), alpha: Int(data[at+3]))
+            }
+            let first = read(sx,sy)
+            if frame && s.corners == .rounded {
+                let fraction = UInt8(max(0, frameDepth / scale - 128) % 256)
+                let next = sx == 32 ? read(sx, sy < 32 ? sy+1 : sy-1) : read(sx < 32 ? sx+1 : sx-1, sy)
+                return Self.transition(first,next,amount: fraction)
+            }
+            return first
         }
         var c = m.pressed && !frame ? sample(2) : Self.transition(sample(0), sample(1), amount: m.focus)
         if let tint = frame ? s.border : s.fill {
@@ -105,7 +123,7 @@ struct PrecisionAtlas {
             c.blue = min(255,max(0,c.blue + Int(tint & 255) - base.blue))
             c.alpha = c.alpha * Int(tint >> 24) / 255
         }
-        if frame { c.alpha = c.alpha * Int(m.edgeOpacity) / 255; return c }
+        if frame { c.alpha = c.alpha * Int(m.edgeOpacity) * frameCoverage / 65025; return c }
         let radius = s.corners == .square ? 0 : s.radius * scale
         let (coverage, shapeDepth) = Self.roundedShape(x: x, y: y, width: w, height: h, radius: radius)
         if coverage == 0 { return .clear }

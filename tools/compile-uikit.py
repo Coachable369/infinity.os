@@ -86,8 +86,6 @@ def style_bytes(document):
         material, corners, radius = (style.get(key, 0) for key in ("material", "corners", "radius"))
         if any(type(value) is not int for value in (material, corners, radius)) or not 0 <= material <= 24 or not 0 <= corners <= 2 or not 0 <= radius <= 40:
             raise ValueError("UIKit material, corners or radius is outside its native range")
-        if index < 2 and corners == 2:
-            raise ValueError("OS-owned window frames and substrates use authored or square geometry")
         flags = 0
         colors = []
         for bit, key in ((1, "fill"), (2, "border")):

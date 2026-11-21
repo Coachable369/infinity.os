@@ -24,10 +24,10 @@ struct UIKitStyleInspector: View {
             InfinityStudioChoice("Corners", selection: binding(\.corners)) {
                 Text("Approved artwork").tag(UIKitCornerStyle.authored)
                 Text("Square").tag(UIKitCornerStyle.square)
-                if store.selectedSurface >= 2 { Text("Rounded").tag(UIKitCornerStyle.rounded) }
+                Text("Rounded").tag(UIKitCornerStyle.rounded)
             }
             if store.selectedSurface < 2 {
-                Text("Outer application frames remain rectangular and OS-owned. Dialogs, panels and controls support rounded corners independently.")
+                Text("The compositor applies the window corner shape to the complete application surface. Window Background inherits the frame geometry.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if style.corners == .rounded {

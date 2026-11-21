@@ -76,9 +76,6 @@ struct UIKitDocument: Codable, Equatable {
         guard styles.count == 6, styles.allSatisfy({ (0...40).contains($0.radius) }) else {
             throw UIKitIssue.invalid("UIKit requires six surface styles with corner radii between 0 and 40")
         }
-        guard styles[0].corners != .rounded, styles[1].corners != .rounded else {
-            throw UIKitIssue.invalid("Outer application windows use the shared rectangular OS frame; rounded corners are available for dialogs, panels, buttons and fields")
-        }
         guard Set(overrides.map(\.id)).count == overrides.count else {
             throw UIKitIssue.invalid("A UIKit element has multiple replacement images")
         }

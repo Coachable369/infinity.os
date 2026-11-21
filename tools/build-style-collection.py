@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 KIT = ROOT / 'assets/ui-design-kit/default'
 RES = ROOT / 'tools/installer-designer/Sources/InfinityInstallerStudio/Resources'
 BUTTONS = ['Optical Glass','Liquid Pill','Frosted Slate','Solid Sapphire','Porcelain','Carbon','Aurora Silk','Clear Outline','Floating Surface','Tinted Glass','Text Action']
-FRAMES = ['Sapphire Seam','Floating Shadow','Frosted Silver','Obsidian Bevel','Pearl Ceramic','Brushed Alloy','Aurora Edge','Double Rail','Inset Slate','Cobalt Ribbon']
+FRAMES = ['Sapphire Hairline','Soft Shadow','Frosted Rim','Graphite Edge','Porcelain Edge','Satin Silver','Aurora Trace','Horizon Light','Inset Shadow','Cobalt Accent']
 
 # ------------------------=
 # FUNC: clamp
@@ -45,20 +45,17 @@ def button(family, state):
 # ------------------=
 def frame(family,state):
     im=Image.new('RGBA',(64,64)); pixels=[]
-    widths=[2,7,4,5,4,5,2,4,3,5]
-    bases=[(67,121,188),(24,32,45),(141,162,181),(37,45,58),(222,226,232),(108,126,148),(70,100,210),(63,110,173),(54,70,92),(30,83,185)]
+    bases=[(76,157,224),(101,126,151),(157,190,218),(106,124,141),(224,234,245),(169,185,202),(94,142,223),(125,176,218),(49,72,94),(34,139,230)]
+    # Edge alpha profiles, in physical pixels at 1x. No stacked rails or bevels.
+    profiles=[(225,36,0),(125,38,15),(185,50,12),(150,22,0),(225,25,0),(190,32,0),(205,28,0),(185,40,10),(105,40,10),(230,34,0)]
     for y in range(64):
         for x in range(64):
-            d=min(x,y,63-x,63-y); a=255; c=bases[family]
-            if d>=widths[family]: a=0
-            light=12 if y<3 else -8 if y>60 else 0
-            if family==1: a=clamp((7-d)*14) if d<7 else 0
-            if family==3: light+=28 if d==1 else -20 if d==4 else 0
-            if family==5: light+=8 if d%2 else -8
-            if family==6: c=(70+x,100-x//2,210)
-            if family==7 and d not in (0,3): a=0
-            if family==8: light+=-22 if d==2 else 4
-            if state==0: light-=18; a=a*3//4
+            d=min(x,y,63-x,63-y); c=bases[family]
+            a=profiles[family][d] if d<3 else 0
+            light=8 if y<3 else -10 if y>60 else 0
+            if family==6: c=(94+x//2,142-x//3,223)
+            if family==7 and y>3: a=a*2//5
+            if state==0: light-=12; a=a*3//5
             pixels.append(tuple(clamp(v+light) for v in c)+(a,))
     im.putdata(pixels);return im
 

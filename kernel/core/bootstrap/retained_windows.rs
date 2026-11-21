@@ -6,6 +6,11 @@ const SCRATCH_PIXELS: usize = 3840 * 2160;
 // Six ordinary shell slots plus one persistent surface per navigator instance.
 const SLOTS: usize = 13;
 static mut DIRECT_PAINT: bool = false;
+// ui_scale is bounded to 1 or 2, and saved radii to 40 logical pixels.
+// Only corner tiles are retained; no full-screen allocation on each repaint.
+static mut CORNER_BACKDROP: [u32; 4*80*80] = [0; 4*80*80];
+static mut CORNER_MASK_BUSY: bool = false;
+
 static BUSY_NS:[core::sync::atomic::AtomicU64;SLOTS]=[const {core::sync::atomic::AtomicU64::new(0)};SLOTS];
 // ------------------------=
 // FUNC: surface_busy_ns
@@ -163,6 +168,11 @@ impl DisplayDevice {
     ) {
         #[cfg(target_os="none")]
         let before=crate::ui::performance::monotonic_ns();
+        let style=crate::ui::panel_recipe::surface_style(crate::ui::panel_recipe::Surface::Frame);
+        let radius=if style.corners==2 && !self.recording_surface && !unsafe {CORNER_MASK_BUSY} {
+            (usize::from(style.radius)*self.ui_scale()).min(80).min(bounds.2/2).min(bounds.3/2)
+        }else{0};
+        if radius>0 { unsafe {CORNER_MASK_BUSY=true;} self.window_corner_backdrop(bounds,radius,false); }
         self.retained_window_at(slot, bounds, |target| {
             let previous=target.render_clip;
             // A retained surface is painted at a recoverable nonnegative source
@@ -176,6 +186,7 @@ impl DisplayDevice {
             paint(target);
             target.render_clip=previous;
         });
+        if radius>0 { self.window_corner_backdrop(bounds,radius,true); unsafe {CORNER_MASK_BUSY=false;} }
         self.precision_window_frame_opacity(
             crate::ui::geometry::Rect { x: bounds.0, y: bounds.1,
                 width: bounds.2 as u32, height: bounds.3 as u32 },
@@ -184,6 +195,31 @@ impl DisplayDevice {
         if let (Some(start),Some(end),Some(counter))=(before,crate::ui::performance::monotonic_ns(),BUSY_NS.get(slot)){
             counter.fetch_add(end.saturating_sub(start),core::sync::atomic::Ordering::Relaxed);
         }
+    }
+
+    // ------------------------=
+    // FUNC: window_corner_backdrop
+    // DESC: Clips the entire composited application against its original backdrop, including cached, blurred and direct fallback content.
+    // ------------------=
+    pub(super) fn window_corner_backdrop(&mut self,bounds:(i32,i32,usize,usize),r:usize,restore:bool) {
+        for corner in 0..4 {for cy in 0..r {for cx in 0..r {
+            let x=if corner&1==0 {cx}else{bounds.2-r+cx};
+            let y=if corner&2==0 {cy}else{bounds.3-r+cy};
+            let sx=i64::from(bounds.0)+x as i64;let sy=i64::from(bounds.1)+y as i64;
+            if sx<0 || sy<0 || sx>=self.width as i64 || sy>=self.height as i64 {continue;}
+            let sx=sx as usize;let sy=sy as usize;
+            if self.clipped_render_region(sx,sy,1,1).is_none(){continue;}
+            let at=corner*r*r+cy*r+cx;
+            unsafe {
+                let pixel=self.buffer.add(sy*self.stride+sx);
+                if !restore {(*(&raw mut CORNER_BACKDROP))[at]=core::ptr::read_volatile(pixel);continue;}
+                let coverage=u32::from(crate::ui::panel_recipe::rounded_shape(x,y,bounds.2,bounds.3,r).0);
+                if coverage==255 {continue;}
+                let before=(*(&raw const CORNER_BACKDROP))[at];let now=core::ptr::read_volatile(pixel);
+                let c=|shift:u32| ((((now>>shift)&255)*coverage+((before>>shift)&255)*(255-coverage)+127)/255)<<shift;
+                core::ptr::write_volatile(pixel,c(0)|c(8)|c(16));
+            }
+        }}}
     }
 
     // ------------------------=

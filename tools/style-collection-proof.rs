@@ -38,5 +38,26 @@ fn main() {
         for index in 0..6 {record.extend_from_slice(&[if index==if frame{0}else{3}{id}else{0},0,0,0]);record.extend_from_slice(&[0;8]);}
         assert_eq!(panel_recipe::decode_styles(&record).unwrap()[if frame{0}else{3}].material,id);
     }
+    for id in 15u8..=24 {for radius in [0u8,12] {for focus in [0u8,255] {
+        let w=240;let h=140;
+        let style=SurfaceStyle{material:id,corners:if radius==0 {1}else{2},radius,fill:None,border:None};
+        let m=Material{fill:(16,29,48),edge:(255,255,255),opacity:255,edge_opacity:255,focus,pressed:false,scale:1};
+        let mut rgba=Vec::new();
+        for y in 0..h {for x in 0..w {
+            let coverage=u32::from(panel_recipe::rounded_shape(x,y,w,h,usize::from(radius)).0);
+            let p=panel_recipe::pixel_styled(Surface::Frame,w,h,x,y,m,style);
+            let base=if y<30 {(22u32,39u32,59u32)}else{(12,25,42)};
+            for (b,c,bg) in [(base.0,p.0,9u32),(base.1,p.1,21),(base.2,p.2,34)] {
+                let fill=(b*coverage+bg*(255-coverage))/255;
+                rgba.push(((u32::from(c)*u32::from(p.3)+fill*(255-u32::from(p.3)))/255)as u8);
+            }
+            rgba.push(255);
+        }}
+        std::fs::write(folder.join(format!("edge-{id}-{radius}-{focus}.rgba")),rgba).unwrap();
+        let mut binary=Vec::from(&b"IUISTY01\x01\x00\x06\x00"[..]);
+        binary.extend_from_slice(&[id,style.corners,radius,0]);binary.extend_from_slice(&[0;8]);
+        binary.extend_from_slice(&[0;60]);
+        assert_eq!(panel_recipe::decode_styles(&binary).unwrap()[0],style);
+    }}}
     println!("21 native families, state pixels and Studio binary persistence verified");
 }

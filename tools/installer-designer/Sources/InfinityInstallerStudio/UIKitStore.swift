@@ -103,7 +103,6 @@ final class UIKitStore: ObservableObject {
     // ------------------=
     func setSurfaceStyle(_ index: Int, style: UIKitSurfaceStyle) {
         guard document.styles.indices.contains(index), (0...40).contains(style.radius),
-              index >= 2 || style.corners != .rounded,
               document.styles[index] != style else { return }
         recordUndo(); document.styles[index] = style
         status = "Updated surface style; save to apply it to the OS"
