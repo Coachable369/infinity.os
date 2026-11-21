@@ -283,8 +283,9 @@ if [ "$target" != all ]; then
     python3 tools/browser-artwork-parity.py --arch "$target"
     python3 tools/design-kit-parity.py --arch "$target" --kernel "build/$target/installed-kernel.elf"
     python3 tools/native-compiler-parity-test.py --arch "$target"
-    python3 tools/sdk-parity.py "build/$target/kernel.elf" "build/$target/installed-kernel.elf"
-    python3 tools/native-python/parity.py --arch "$target"
+    # build-hermes validates SDK bytes against the exact streamed live kernel
+    # before publication. kernel.elf is the earlier bootstrap image, not the ISO.
+    python3 tools/native-python/parity.py --arch "$target" --iso "$output_dir/InfinityOS-$target.iso"
     echo "InfinityOS $target full-bundle ISO is ready in $output_dir"
     exit 0
 fi
