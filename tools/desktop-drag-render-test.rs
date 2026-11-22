@@ -5,6 +5,7 @@ use super::*;
 // DESC: Checks bounded reconstruction equals full rendering across a moving drag and emits its actual pixels.
 // ------------------=
 pub fn verify() {
+    verify_compass();
     verify_launcher_and_trash();
     let (width,height)=(1280,720);
     let background=0x3a1b10;
@@ -50,6 +51,22 @@ pub fn verify() {
         for x in damage.x.max(0)..damage.right().min(width as i32) {pixels[y as usize*width+x as usize]=background;}
     }
     assert!(pixels.iter().all(|p|*p==background));
+}
+
+// ------------------------=
+// FUNC: verify_compass
+// DESC: Captures the actual guest compass painter and checks its bounded overlay and dismissal.
+// ------------------=
+fn verify_compass(){
+ let (width,height)=(1280,800);let mut pixels=vec![0;width*height];
+ let mut display=DisplayDevice{buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false,template_typography:[0;3]};
+ display.paint_bitmap_cover_rect(include_bytes!("../assets/desktop/infinity-shell-wallpaper-v3.bmp"),0,0,width,height);
+ let before=pixels.clone();let mut state=ui::drop_compass::Compass::new();let p=ui::geometry::Point{x:640,y:400};state.arm(p,0,false);state.advance(p,true,550,width,height);ui::drop_compass::publish(state);display.drop_compass_overlay();
+ assert!(pixels.iter().zip(&before).filter(|(a,b)|a!=b).count()>30000);
+ assert_eq!(&pixels[..width*100],&before[..width*100]);
+ let mut ppm=format!("P6\n{width} {height}\n255\n").into_bytes();for &p in &pixels{ppm.extend_from_slice(&[p as u8,(p>>8)as u8,(p>>16)as u8]);}
+ std::fs::create_dir_all("builds/validation/drop-compass").unwrap();std::fs::write("builds/validation/drop-compass/native.ppm",ppm).unwrap();
+ state.dismiss();ui::drop_compass::publish(state);pixels.copy_from_slice(&before);display.drop_compass_overlay();assert_eq!(pixels,before);
 }
 
 // ------------------------=

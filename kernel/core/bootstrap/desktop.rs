@@ -7508,7 +7508,7 @@ pub fn system_ui_present(
                 let weather_damage=crate::ui::widget_keyframes::take(4).then(||widgets.rect(2,console.display.width,console.display.height,layout.scale(),false));
                 let shelf_damage=crate::ui::widget_keyframes::take(8).then(||{use crate::ui::app_launcher::minimized_shelf as shelf;shelf::Geometry::new(console.display.width,console.display.height,shelf::current()).rail});
                 for damage in [metric_damage,weather_damage,shelf_damage,dock_damage,crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
-                    crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
+                    crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),crate::ui::drop_compass::take_damage(),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {
                         console.display.set_render_clip(damage.x.max(0) as usize, damage.y.max(0) as usize, damage.width as usize, damage.height as usize);
@@ -7534,6 +7534,7 @@ pub fn system_ui_present(
             }
             if matches!(screen,2|4|7|8|9|10|11) {
                 console.display.desktop_drag_overlay();
+                console.display.drop_compass_overlay();
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;

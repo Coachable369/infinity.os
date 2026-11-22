@@ -6,6 +6,42 @@ use crate::ui::{
 };
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: cancel_compass
+    // DESC: Releases drag capture on cancellation without moving or deleting any file.
+    // ------------------=
+    pub(super) fn cancel_compass(&mut self){
+        if crate::ui::drop_compass::current().file {
+            self.home_dragging_item=None;self.home_drag_moved=false;self.home_drag_from_desktop=false;self.desktop_file_drag=false;self.trash_drag_source=None;
+            crate::ui::desktop_drag::finish(false,0,true);
+        }
+        crate::ui::drop_compass::publish(crate::ui::drop_compass::Compass::new());
+    }
+    // ------------------------=
+    // FUNC: compass_destination
+    // DESC: Opens a native destination or moves an owned personal file without overwriting another object.
+    // ------------------=
+    pub(super) fn compass_destination(&mut self,index:usize,file:bool){
+        let location=[7,2,3,8][index.min(3)];
+        if file {
+            if let Some(source)=self.trash_drag_source.take(){
+                let path=&source.path[..source.length];
+                if index==3 {self.move_drag_to_trash(path);}else{
+                    let home=crate::storage::provision_user_home(self.current_user.0).ok();
+                    let allowed=self.workplace_authorized(true) && home.is_some_and(|h|path.strip_prefix(h.as_bytes()).is_some_and(|p|p.starts_with(b"/")))
+                        && crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|m.owner.0==self.current_user.0);
+                    let target=home.and_then(|h|h.child([b"projects".as_slice(),b"documents",b"downloads"][index]))
+                        .and_then(|h|h.child(crate::runtime::object_navigation::namespace_basename(path)));
+                    let moved=allowed && target.is_some_and(|t|crate::storage::namespace_resolve(t.as_bytes()).is_err() && crate::storage::namespace_move(path,t.as_bytes()).is_ok());
+                    if !moved {self.output.write_line(b"Drop could not be completed. The destination may already contain this name.");self.activate_launcher_action(LauncherAction::Home(location));self.set_file_navigator_association_notice(12);}
+                    self.refresh_desktop_items();
+                }
+            }
+            self.home_dragging_item=None;self.home_drag_moved=false;self.home_drag_from_desktop=false;self.desktop_file_drag=false;
+            crate::ui::desktop_drag::finish(false,0,true);
+            let _=self.checkpoint_desktop_layout();
+        }else{self.activate_launcher_action(LauncherAction::Home(location));}
+    }
+    // ------------------------=
     // FUNC: surface_desktop
     // DESC: Minimizes existing application surfaces without closing tasks or discarding documents.
     // ------------------=
@@ -268,6 +304,9 @@ impl ConsoleRuntime {
         }
         if clicked {
             self.surface_desktop();
+            let mut compass=crate::ui::drop_compass::Compass::new();
+            compass.arm(point,crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,false);
+            crate::ui::drop_compass::publish(compass);
         }
         false
     }

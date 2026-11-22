@@ -22,6 +22,7 @@ pub mod crash_layout;
 pub mod cursor;
 pub mod desktop_effects;
 pub mod desktop_drag;
+pub mod drop_compass;
 pub mod desktop_polish;
 pub mod desktop_stack;
 pub mod desktop_widgets;

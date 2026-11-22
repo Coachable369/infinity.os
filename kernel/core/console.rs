@@ -1541,6 +1541,19 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        if crate::ui::drop_compass::current().center.is_some() {
+            let mut compass=crate::ui::drop_compass::current();
+            match key {
+                ConsoleKey::Escape=>self.cancel_compass(),
+                ConsoleKey::Up=>{compass.selected=Some(0);crate::ui::drop_compass::publish(compass);},
+                ConsoleKey::Right=>{compass.selected=Some(1);crate::ui::drop_compass::publish(compass);},
+                ConsoleKey::Down=>{compass.selected=Some(2);crate::ui::drop_compass::publish(compass);},
+                ConsoleKey::Left=>{compass.selected=Some(3);crate::ui::drop_compass::publish(compass);},
+                ConsoleKey::Enter=>{if let Some(i)=compass.selected{crate::ui::drop_compass::publish(crate::ui::drop_compass::Compass::new());self.compass_destination(i,compass.file);}},
+                _=>{},
+            }
+            self.redraw();return;
+        }
         self.publish_command_terminal();
         let _terminal_capture=crate::ui::command_terminal::Capture::new(self.command_terminal_visible());
         if matches!(key, ConsoleKey::Escape) && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings) {
@@ -8783,6 +8796,21 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        {
+            let mut compass=crate::ui::drop_compass::current();
+            if compass.center.is_some() {
+                let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+                let changed=compass.advance(point,left_button,crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,self.system.framebuffer_width,self.system.framebuffer_height);
+                let file=compass.file;
+                let action=if clicked||released {compass.selected}else{None};
+                if (right_clicked || clicked || released && file) && action.is_none(){self.cancel_compass();compass.dismiss();}
+                if right_clicked || clicked || action.is_some() {compass.dismiss();}
+                crate::ui::drop_compass::publish(compass);
+                if let Some(index)=action {self.compass_destination(index,file);}
+                if changed||clicked||released||right_clicked {self.redraw();}else{crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}
+                return;
+            }
+        }
         if let Some((gx,gy,ox,oy,moved))=self.trash_grab {
             let (w,h)=(self.system.framebuffer_width,self.system.framebuffer_height);
             let moved=moved || crate::ui::desktop_drag::crossed_threshold([ox,oy],[self.pointer_x,self.pointer_y],w,h);
@@ -9549,6 +9577,10 @@ impl ConsoleRuntime {
                     crate::ui::desktop_drag::motion(item, position,
                         self.home_drag_from_desktop.then(|| self.desktop_item_positions[item]),
                         now, self.spatial.state.reduced_motion);
+                    if left_button && self.trash_drag_source.is_some() {
+                        let mut compass=crate::ui::drop_compass::current();
+                        if compass.pending.is_none(){compass.arm(crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000},now,true);crate::ui::drop_compass::publish(compass);}
+                    }
                 }
                 if released {
                     let target = self.desktop_target(layout);
@@ -15237,6 +15269,12 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
         }
         let drag_changed = crate::ui::desktop_drag::advance(
             crate::ui::performance::monotonic_ns().unwrap_or(0) / 1_000_000);
+        let mut compass=crate::ui::drop_compass::current();
+        if runtime.mode!=ConsoleMode::Desktop {compass.dismiss();}
+        let compass_changed=compass.pending.is_some() && compass.advance(crate::ui::geometry::Point{x:runtime.pointer_x*runtime.system.framebuffer_width as i32/1000,y:runtime.pointer_y*runtime.system.framebuffer_height as i32/1000},runtime.pointer_pressed,
+            crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,runtime.system.framebuffer_width,runtime.system.framebuffer_height);
+        crate::ui::drop_compass::publish(compass);
+        if compass_changed {runtime.redraw();}
         let pin_changed=crate::ui::desktop_polish::advance_pin(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000);
         let effects_changed=runtime.advance_desktop_effects() || drag_changed || pin_changed;
         let mut widget_changed=false;
