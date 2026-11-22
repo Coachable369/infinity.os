@@ -11,7 +11,7 @@ use panel_recipe::{Material,Surface,SurfaceStyle};
 fn main() {
     let root=std::path::Path::new(env!("PWD"));
     let folder=root.join("builds/validation/style-collection");std::fs::create_dir_all(&folder).unwrap();
-    for id in 4u8..=14 {
+    for id in (4u8..=14).chain(25..=28) {
         let data=std::fs::read(root.join(format!("builds/modern-button-{id}.iuit"))).unwrap();
         let template=installer_template::InstallerTemplate::parse(&data).unwrap();
         assert!((0..32).filter_map(|i|template.elements(i)).flatten().any(|e|e.surface_material==id));
@@ -19,10 +19,10 @@ fn main() {
     let data=std::fs::read(root.join("builds/modern-menu.iuit")).unwrap();
     let menu=installer_template::InstallerTemplate::parse_desktop(&data).unwrap();
     assert!(menu.navigation().is_some());
-    let radii=[10,32,12,8,10,5,14,8,12,8,8];
-    for id in 4u8..=24 {
-        let frame=id>=15;let kind=if frame{Surface::Frame}else{Surface::Primary};
-        let style=SurfaceStyle{material:id,corners:if frame{1}else{2},radius:if frame{0}else{radii[(id-4)as usize]},fill:None,border:None};
+    let radii=[10,32,12,8,10,5,14,8,12,8,8,10,32,24,10];
+    for id in 4u8..=28 {
+        let frame=(15..=24).contains(&id);let kind=if frame{Surface::Frame}else{Surface::Primary};
+        let style=SurfaceStyle{material:id,corners:if frame{1}else{2},radius:if frame{0}else{radii[(if id>=25 {id-14}else{id-4})as usize]},fill:None,border:None};
         let (w,h)=if frame{(280,130)}else{(250,52)};
         let mut images=Vec::new();
         for state in 0..3 {
@@ -59,5 +59,5 @@ fn main() {
         binary.extend_from_slice(&[0;60]);
         assert_eq!(panel_recipe::decode_styles(&binary).unwrap()[0],style);
     }}}
-    println!("21 native families, state pixels and Studio binary persistence verified");
+    println!("25 native families, state pixels and Studio binary persistence verified");
 }

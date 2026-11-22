@@ -59,7 +59,7 @@ pub const fn decode_styles(bytes: &[u8]) -> Option<[SurfaceStyle; STYLE_COUNT]> 
     i = 0;
     while i < STYLE_COUNT {
         let at = 12 + i * 12;
-        if bytes[at] > 24 || bytes[at+1] > 2 || bytes[at+2] > 40 || bytes[at+3] & !3 != 0 { return None; }
+        if bytes[at] > 28 || bytes[at+1] > 2 || bytes[at+2] > 40 || bytes[at+3] & !3 != 0 { return None; }
         let fill = u32::from_le_bytes([bytes[at+4], bytes[at+5], bytes[at+6], bytes[at+7]]);
         let border = u32::from_le_bytes([bytes[at+8], bytes[at+9], bytes[at+10], bytes[at+11]]);
         result[i] = SurfaceStyle { material: bytes[at], corners: bytes[at+1], radius: bytes[at+2],
@@ -363,7 +363,7 @@ pub fn rounded_shape(x:usize,y:usize,w:usize,h:usize,radius:usize)->(u8,usize) {
 // ------------------=
 pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mut m:Material,mut style:SurfaceStyle)->Rgba {
     if width==0 || height==0 || x>=width || y>=height { return (0,0,0,0); }
-    if (4..=14).contains(&style.material) && matches!(kind,Surface::Primary|Surface::Secondary)
+    if ((4..=14).contains(&style.material) || (25..=28).contains(&style.material)) && matches!(kind,Surface::Primary|Surface::Secondary)
         || (15..=24).contains(&style.material) && kind==Surface::Frame {
         return collection_pixel(width,height,x,y,m,style);
     }
@@ -469,7 +469,7 @@ pub fn pixel_styled(mut kind:Surface,width:usize,height:usize,x:usize,y:usize,mu
     (result.0,result.1,result.2,(u16::from(result.3)*u16::from(coverage)/255)as u8)
 }
 
-const MODERN_BUTTONS: &[u8;11*3*256*64*4] = include_bytes!("../../assets/ui-design-kit/default/modern-buttons-v1.rgba");
+const MODERN_BUTTONS: &[u8;15*3*256*64*4] = include_bytes!("../../assets/ui-design-kit/default/modern-buttons-v1.rgba");
 const MODERN_FRAMES: &[u8;10*3*64*64*4] = include_bytes!("../../assets/ui-design-kit/default/modern-frames-v1.rgba");
 
 // ------------------------=
@@ -477,8 +477,8 @@ const MODERN_FRAMES: &[u8;10*3*64*64*4] = include_bytes!("../../assets/ui-design
 // DESC: Samples shared modern artwork with stable geometry, antialiased coverage and interpolated hover states.
 // ------------------=
 fn collection_pixel(w:usize,h:usize,x:usize,y:usize,m:Material,s:SurfaceStyle)->Rgba {
-    let frame=s.material>=15;
-    let family=usize::from(s.material-if frame {15}else{4});
+    let frame=(15..=24).contains(&s.material);
+    let family=usize::from(if s.material>=25 {s.material-14}else{s.material-if frame {15}else{4}});
     let (sw,sh)=(if frame {64}else{256},64usize);
     let scale=m.scale.max(1);
     let coord=|p:usize,n:usize| {let cap=(8*scale).min(n/2);if p<cap {p/scale}else if p>=n-cap {63-(n-1-p)/scale}else{32}};
@@ -512,13 +512,29 @@ fn collection_pixel(w:usize,h:usize,x:usize,y:usize,m:Material,s:SurfaceStyle)->
     }
     if frame {c.3=(u32::from(c.3)*u32::from(m.edge_opacity)*u32::from(coverage)/65025)as u8;return c;}
     let radius=if s.corners==1 {0}else{usize::from(s.radius)*scale};
-    let (coverage,depth)=rounded_shape(x,y,w,h,radius);
+    let (coverage,depth)=if family==13 && radius>0 {
+        let cut=radius.min(w/2).min(h/2) as i64;
+        let diagonal=((x.min(w-1-x)+y.min(h-1-y))as i64-cut)*181+128;
+        let depth=diagonal.min((x.min(y).min(w-1-x).min(h-1-y)*256+128)as i64);
+        ((depth+128).clamp(0,255)as u8,depth.max(0)as usize)
+    }else{rounded_shape(x,y,w,h,radius)};
     if coverage==0{return (0,0,0,0);}
     let mut edge=match family {0=>(173,194,211,190),1=>(86,128,181,110),2=>(98,116,138,80),4=>(255,255,255,90),5=>(76,82,95,100),7=>(118,151,185,220),8=>(68,86,109,100),9=>(101,125,153,130),_=>(0,0,0,0)};
+    if family>=11 {
+        // Optical rim lighting stays in physical pixels while the interior stretches.
+        let u=x*255/w.saturating_sub(1).max(1);
+        let v=y*255/h.saturating_sub(1).max(1);
+        let glint=255usize.saturating_sub(u.abs_diff(20)*4+v*3)
+            .max(255usize.saturating_sub(u.abs_diff(232)*4+(255-v)*3));
+        let strength=if m.pressed {80}else{120+usize::from(m.focus)/2};
+        let a=if depth<scale*384 {if m.pressed {130+glint*100/255}else{150+glint*105/255+usize::from(m.focus)/5}}else if depth<scale*1024 {strength*(scale*1024-depth)/(scale*640)}else{0};
+        edge=((100+glint*155/255)as u8,(180+glint*75/255)as u8,255,a.min(255)as u8);
+        if family==14 {edge.0=(100+u*100/255)as u8;edge.1=(180-u*80/255)as u8;}
+    }
     if let Some(tint)=s.border {edge=((tint>>16)as u8,(tint>>8)as u8,tint as u8,(u16::from(edge.3)*((tint>>24)as u16)/255)as u8);}
     edge.3=(u16::from(edge.3)*u16::from(m.edge_opacity)/255)as u8;
     let depth=if radius==0 {x.min(y).min(w-1-x).min(h-1-y)*256}else{depth};
-    if depth<scale*256 {c=over(c,edge);}
+    if depth<scale*256 || family>=11 {c=over(c,edge);}
     c.3=(u32::from(c.3)*u32::from(coverage)*u32::from(m.opacity)/65025)as u8;
     c
 }

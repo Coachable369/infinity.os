@@ -999,7 +999,7 @@ impl<'a> Reader<'a> {
             return Err(InstallerTemplateError::InvalidElement);
         }
         let surface_material = if self.version >= 14 { self.u8()? } else { (flags >> 2) & 3 };
-        if surface_material > 24 { return Err(InstallerTemplateError::InvalidElement); }
+        if surface_material > 28 { return Err(InstallerTemplateError::InvalidElement); }
         let z_index = self.i16()?;
         let frame = InstallerTemplateRect {
             x: self.u16()?,

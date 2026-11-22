@@ -64,7 +64,7 @@ struct PrecisionAtlas {
         return data
     }()
 
-    private static let modernButtons = collectionData("modern-buttons-v1", count: 11 * 3 * 256 * 64 * 4)
+    private static let modernButtons = collectionData("modern-buttons-v1", count: 15 * 3 * 256 * 64 * 4)
     private static let modernFrames = collectionData("modern-frames-v1", count: 10 * 3 * 64 * 64 * 4)
 
     // ------------------------=
@@ -82,8 +82,8 @@ struct PrecisionAtlas {
     // DESC: Mirrors the native collection sampler including coverage, edges and state interpolation.
     // ------------------=
     private func collectionPixel(width w: Int, height h: Int, x: Int, y: Int, material m: PrecisionMaterial) -> PrecisionPixel {
-        let s = m.style, frame = s.material.rawValue >= 15
-        let family = s.material.rawValue - (frame ? 15 : 4), sw = frame ? 64 : 256, sh = 64
+        let s = m.style, frame = (15...24).contains(s.material.rawValue)
+        let family = s.material.rawValue - (s.material.rawValue >= 25 ? 14 : (frame ? 15 : 4)), sw = frame ? 64 : 256, sh = 64
         let scale = max(1, m.scale)
         let coord: (Int, Int) -> Int = { p, n in
             let cap = min(8 * scale, n / 2)
@@ -125,14 +125,30 @@ struct PrecisionAtlas {
         }
         if frame { c.alpha = c.alpha * Int(m.edgeOpacity) * frameCoverage / 65025; return c }
         let radius = s.corners == .square ? 0 : s.radius * scale
-        let (coverage, shapeDepth) = Self.roundedShape(x: x, y: y, width: w, height: h, radius: radius)
+        let shape: (Int,Int)
+        if family == 13 && radius > 0 {
+            let cut = min(radius,w/2,h/2)
+            let diagonal = (min(x,w-1-x)+min(y,h-1-y)-cut)*181+128
+            let depth = min(diagonal,min(x,y,w-1-x,h-1-y)*256+128)
+            shape = (min(255,max(0,depth+128)),max(0,depth))
+        } else { shape = Self.roundedShape(x: x, y: y, width: w, height: h, radius: radius) }
+        let (coverage, shapeDepth) = shape
         if coverage == 0 { return .clear }
         let edges = [(173,194,211,190),(86,128,181,110),(98,116,138,80),(0,0,0,0),(255,255,255,90),(76,82,95,100),(0,0,0,0),(118,151,185,220),(68,86,109,100),(101,125,153,130),(0,0,0,0)]
-        var e = edges[family]
+        var e = edges[min(family,10)]
+        if family >= 11 {
+            let u = x*255/max(1,w-1), v = y*255/max(1,h-1)
+            let glint = max(max(0,255-abs(u-20)*4-v*3),max(0,255-abs(u-232)*4-(255-v)*3))
+            let strength = m.pressed ? 80 : 120+Int(m.focus)/2
+            let rimAlpha = m.pressed ? 130+glint*100/255 : 150+glint*105/255+Int(m.focus)/5
+            let a = shapeDepth < scale*384 ? rimAlpha : shapeDepth < scale*1024 ? strength*(scale*1024-shapeDepth)/(scale*640) : 0
+            e = (100+glint*155/255,180+glint*75/255,255,min(255,a))
+            if family == 14 { e.0 = 100+u*100/255; e.1 = 180-u*80/255 }
+        }
         if let tint = s.border { e = (Int((tint >> 16) & 255),Int((tint >> 8) & 255),Int(tint & 255),e.3 * Int(tint >> 24) / 255) }
         e.3 = e.3 * Int(m.edgeOpacity) / 255
         let depth = radius == 0 ? min(x,y,w-1-x,h-1-y)*256 : shapeDepth
-        if depth < scale * 256 { c = Self.over(c, edge: PrecisionPixel(red: e.0, green: e.1, blue: e.2, alpha: e.3)) }
+        if depth < scale * 256 || family >= 11 { c = Self.over(c, edge: PrecisionPixel(red: e.0, green: e.1, blue: e.2, alpha: e.3)) }
         c.alpha = c.alpha * coverage * Int(m.opacity) / 65025
         return c
     }
@@ -367,7 +383,7 @@ struct PrecisionAtlas {
     func pixel(_ originalKind: PrecisionSurfaceKind, width: Int, height: Int, x: Int, y: Int, material original: PrecisionMaterial) -> PrecisionPixel {
         guard width > 0, height > 0, x >= 0, y >= 0, x < width, y < height else { return .clear }
         let id = original.style.material.rawValue
-        if ((4...14).contains(id) && (originalKind == .primary || originalKind == .secondary)) || ((15...24).contains(id) && originalKind == .frame) {
+        if (((4...14).contains(id) || (25...28).contains(id)) && (originalKind == .primary || originalKind == .secondary)) || ((15...24).contains(id) && originalKind == .frame) {
             return collectionPixel(width: width, height: height, x: x, y: y, material: original)
         }
         var kind = originalKind

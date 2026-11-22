@@ -84,7 +84,7 @@ def style_bytes(document):
         if not isinstance(style, dict):
             raise ValueError("UIKit surface recipe must be an object")
         material, corners, radius = (style.get(key, 0) for key in ("material", "corners", "radius"))
-        if any(type(value) is not int for value in (material, corners, radius)) or not 0 <= material <= 24 or not 0 <= corners <= 2 or not 0 <= radius <= 40:
+        if any(type(value) is not int for value in (material, corners, radius)) or not 0 <= material <= 28 or not 0 <= corners <= 2 or not 0 <= radius <= 40:
             raise ValueError("UIKit material, corners or radius is outside its native range")
         flags = 0
         colors = []

@@ -167,7 +167,7 @@ struct UIKitStylesPreview: View {
             guard let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
                 bytesPerRow: width * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
             if kind == .primary || kind == .secondary {
-                context.setFillColor(CGColor(red: 9.0 / 255, green: 15.0 / 255, blue: 38.0 / 255, alpha: 1))
+                context.setFillColor(CGColor(red: 14.0 / 255, green: 27.0 / 255, blue: 49.0 / 255, alpha: 1))
                 context.fill(CGRect(x: 0, y: 0, width: width, height: height))
             } else {
                 let scale = max(CGFloat(width) / CGFloat(source.width), CGFloat(height) / CGFloat(source.height))
@@ -210,6 +210,43 @@ struct UIKitStylesPreview: View {
         cache.totalCostLimit = 16 * 1024 * 1024
         cache.setObject(image, forKey: key, cost: raw.count)
         return image
+    }
+}
+
+/// One actual UIKit state strip shared by global and per-element dropdowns.
+struct ButtonStyleStateRow: View {
+    @ObservedObject var store: UIKitStore
+    let name: String
+    let style: UIKitSurfaceStyle
+    let selected: Bool
+    @State private var hovering = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(name).font(.callout.weight(.semibold)).foregroundStyle(Color(red: 0.91, green: 0.95, blue: 1))
+                Spacer()
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(selected ? InfinityUIKit.Palette.nativeAccent : Color(red: 0.4, green: 0.5, blue: 0.65))
+            }
+            HStack(spacing: 12) {
+                ForEach(0..<3) { state in
+                    VStack(spacing: 4) {
+                        if let image = UIKitStylePreviewImage.image(store: store, kind: .primary,
+                            width: 272, height: 72, material: PrecisionMaterial(focus: state == 1 ? 255 : 0,
+                                pressed: state == 2, scale: 2, style: style)) {
+                            Image(decorative: image, scale: 2).overlay {
+                                Text("Button").font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(style.material == .porcelain ? Color.black : .white)
+                            }.frame(width: 136, height: 36)
+                        }
+                        Text(["Normal", "Hover", "Pressed"][state]).font(.caption2).foregroundStyle(Color(red: 0.64, green: 0.73, blue: 0.85))
+                    }
+                }
+            }
+        }.padding(8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(hovering ? 0.065 : selected ? 0.035 : 0)))
+            .contentShape(Rectangle()).onHover { hovering = $0 }
+            .accessibilityElement(children: .combine)
     }
 }
 
@@ -260,7 +297,7 @@ struct ElementButtonStylePicker: View {
                         }.buttonStyle(.plain)
                     }
                     } }.frame(maxHeight: 440)
-                }.padding(16).frame(width: 320)
+                }.padding(16).frame(width: 480)
                     .background(InfinityUIKit.Palette.nativePanel)
             }
         }
@@ -271,17 +308,7 @@ struct ElementButtonStylePicker: View {
     // DESC: Shows each dropdown choice using the actual native button sampler and a visible selection checkmark.
     // ------------------=
     private func row(_ name: String, style: UIKitSurfaceStyle, selected: Bool) -> some View {
-        HStack(spacing: 12) {
-            if let image = UIKitStylePreviewImage.image(store: store.uiKit, kind: .primary,
-                width: 112, height: 32, material: PrecisionMaterial(style: style)) {
-                Image(decorative: image, scale: 1).overlay {
-                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(style.material == .porcelain ? Color.black : .white)
-                }.frame(width: 112, height: 32)
-            }
-            Text(name).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(selected ? InfinityUIKit.Palette.nativeAccent : .secondary)
-        }.padding(6).contentShape(Rectangle())
+        ButtonStyleStateRow(store: store.uiKit, name: name, style: style, selected: selected)
     }
 }
 
@@ -309,20 +336,8 @@ struct GlobalButtonStylePicker: View {
                     Button {
                         store.applyButtonPreset(preset)
                     } label: {
-                        HStack(spacing: 12) {
-                            if let image = UIKitStylePreviewImage.image(store: store, kind: .primary,
-                                width: 112, height: 32, material: PrecisionMaterial(style: preset.style)) {
-                                Image(decorative: image, scale: 1).overlay {
-                                    Text("Button").font(.system(size: 12, weight: .semibold)).foregroundStyle(preset.style.material == .porcelain ? Color.black : .white)
-                                }.frame(width: 112, height: 32)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(preset.rawValue).font(.callout)
-                                Text(preset.detail).font(.caption2).foregroundStyle(.secondary)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: selected == preset ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(selected == preset ? InfinityUIKit.Palette.nativeAccent : .secondary)
-                        }.padding(6).contentShape(Rectangle())
+                        ButtonStyleStateRow(store: store, name: preset.rawValue,
+                            style: preset.style, selected: selected == preset)
                     }.buttonStyle(.plain)
                 }
                 } }.frame(maxHeight: 470)
@@ -331,7 +346,7 @@ struct GlobalButtonStylePicker: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Button("Done") { expanded = false }
                     .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
-            }.padding(16).frame(width: 380).background(InfinityUIKit.Palette.nativePanel)
+            }.padding(16).frame(width: 480).background(InfinityUIKit.Palette.nativePanel)
         }
     }
 }

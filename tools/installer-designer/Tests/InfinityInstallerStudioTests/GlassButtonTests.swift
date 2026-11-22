@@ -4,6 +4,37 @@ import SwiftUI
 
 final class GlassButtonTests: XCTestCase {
     // ------------------------=
+    // FUNC: testStateStripAndStableCoverage
+    // DESC: Renders every selectable style in all three states and exports the actual new dropdown rows for visual review.
+    // ------------------=
+    @MainActor func testStateStripAndStableCoverage() throws {
+        let root = URL(fileURLWithPath: "/opt/codebase/infinity.os")
+        let atlas = try XCTUnwrap(PrecisionAtlas(data: Data(contentsOf: root.appending(path: "assets/ui-design-kit/default/eclipse-precision-v1.rgba"))))
+        for preset in GlassButtonPreset.allCases {
+            let normal = try XCTUnwrap(atlas.render(.primary, width: 250, height: 64, material: PrecisionMaterial(style: preset.style)))
+            let hover = try XCTUnwrap(atlas.render(.primary, width: 250, height: 64, material: PrecisionMaterial(focus: 255, style: preset.style)))
+            let pressed = try XCTUnwrap(atlas.render(.primary, width: 250, height: 64, material: PrecisionMaterial(pressed: true, style: preset.style)))
+            XCTAssertNotEqual(normal, hover); XCTAssertNotEqual(normal, pressed); XCTAssertNotEqual(hover, pressed)
+            if preset.style.material.rawValue >= 25 {
+                for offset in stride(from: 3, to: normal.count, by: 4) {
+                    XCTAssertEqual(normal[offset] == 0, hover[offset] == 0)
+                    XCTAssertEqual(normal[offset] == 0, pressed[offset] == 0)
+                }
+            }
+        }
+        let store = UIKitStore(projectRoot: root)
+        let view = VStack(spacing: 12) {
+            ForEach([GlassButtonPreset.luminous, .capsule, .faceted, .prism]) { preset in
+                ButtonStyleStateRow(store: store, name: preset.rawValue, style: preset.style, selected: false)
+            }
+        }.padding(20).frame(width: 500).background(InfinityUIKit.Palette.nativePanel)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        let image = try XCTUnwrap(renderer.cgImage)
+        let png = try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        try png.write(to: root.appending(path: "builds/futuristic-glass-dropdown.png"))
+    }
+    // ------------------------=
     // FUNC: testPersistentCloudTexture
     // DESC: Checks native and Studio texture bytes agree and glass has visible horizontal detail without a wallpaper behind it.
     // ------------------=
@@ -106,7 +137,7 @@ final class GlassButtonTests: XCTestCase {
             images.insert(pixels)
             let center = atlas.pixel(.primary, width: 250, height: 52, x: 125, y: 26, material: material)
             if [.outline, .textAction].contains(preset) { XCTAssertEqual(center.alpha, 0) }
-            else if [.optical, .liquid, .frosted, .tinted].contains(preset) || preset.style.material == .glass {
+            else if [.optical, .liquid, .frosted, .tinted, .luminous, .capsule, .faceted, .prism].contains(preset) || preset.style.material == .glass {
                 XCTAssertGreaterThan(center.alpha, 0); XCTAssertLessThan(center.alpha, 255)
             } else { XCTAssertEqual(center.alpha, 255) }
             XCTAssertEqual(atlas.pixel(.primary, width: 250, height: 52, x: 0, y: 0, material: material).alpha, 0)

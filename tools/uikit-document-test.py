@@ -79,16 +79,16 @@ class UIKitDocumentTests(unittest.TestCase):
         flat[2] = dict(styles[2], material=3)
         data = COMPILER.style_bytes(dict(styles=flat))
         self.assertEqual(struct.unpack("<4B2I", data[36:48]), (3, 2, 24, 3, 0x80123456, 0xffabcdef))
-        for patch in [dict(material=4), dict(corners=3), dict(radius=41), dict(fill=-1), dict(border=True)]:
+        for patch in [dict(material=29), dict(corners=3), dict(radius=41), dict(fill=-1), dict(border=True)]:
             invalid = styles.copy()
             invalid[2] = dict(styles[2], **patch)
             with self.assertRaises(ValueError):
                 COMPILER.style_bytes(dict(styles=invalid))
-        for index in (0, 1):
-            invalid = styles.copy()
-            invalid[index] = dict(corners=2, radius=12)
-            with self.assertRaises(ValueError):
-                COMPILER.style_bytes(dict(styles=invalid))
+        for material in range(25, 29):
+            selected = styles.copy()
+            selected[3] = dict(material=material, corners=2, radius=24)
+            encoded = COMPILER.style_bytes(dict(styles=selected))
+            self.assertEqual(struct.unpack_from("<4B2I", encoded, 48), (material, 2, 24, 0, 0, 0))
 
     # ------------------------=
     # FUNC: test_exact_cell_pixels

@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 enum GlassButtonPreset: String, CaseIterable, Identifiable {
+    case luminous = "Luminous Glass", capsule = "Optical Capsule", faceted = "Faceted Sapphire", prism = "Prism Glass"
     case optical = "Optical Glass"
     case liquid = "Liquid Pill"
     case frosted = "Frosted Slate"
@@ -19,8 +20,8 @@ enum GlassButtonPreset: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var style: UIKitSurfaceStyle {
         if let index = Self.modern.firstIndex(of: self) {
-            return UIKitSurfaceStyle(material: UIKitSurfaceMaterial(rawValue: index + 4)!, corners: .rounded,
-                radius: [10, 32, 12, 8, 10, 5, 14, 8, 12, 8, 8][index], fill: nil, border: nil)
+            return UIKitSurfaceStyle(material: UIKitSurfaceMaterial(rawValue: index < 11 ? index + 4 : index + 14)!, corners: .rounded,
+                radius: [10, 32, 12, 8, 10, 5, 14, 8, 12, 8, 8, 10, 32, 24, 10][index], fill: nil, border: nil)
         }
         let fill: UInt32 = switch self {
         case .sapphire: 0xE8204DAD
@@ -36,9 +37,13 @@ enum GlassButtonPreset: String, CaseIterable, Identifiable {
         return UIKitSurfaceStyle(material: material, corners: .rounded, radius: radius,
             fill: fill, border: 0xFF86C7FF)
     }
-    static let modern: [Self] = [.optical, .liquid, .frosted, .solid, .porcelain, .carbon, .aurora, .outline, .floating, .tinted, .textAction]
+    static let modern: [Self] = [.optical, .liquid, .frosted, .solid, .porcelain, .carbon, .aurora, .outline, .floating, .tinted, .textAction, .luminous, .capsule, .faceted, .prism]
     var detail: String {
         switch self {
+        case .luminous: "Clear sapphire · caustic edge glints"
+        case .capsule: "Optical capsule · curved reflection"
+        case .faceted: "Faceted sapphire · luminous chamfers"
+        case .prism: "Prism glass · violet refraction"
         case .optical: "Optical Glass · shared artwork and states"
         case .liquid: "Liquid Pill · shared artwork and states"
         case .frosted: "Frosted Slate · shared artwork and states"
@@ -111,6 +116,7 @@ enum UIKitSurfaceMaterial: Int, Codable, CaseIterable, Identifiable, Hashable {
     case frame7 = 22
     case frame8 = 23
     case frame9 = 24
+    case luminous = 25, capsule = 26, faceted = 27, prism = 28
     var id: Int { rawValue }
     var title: String {
         switch self { case .authored: "Kit default"; case .glass: "Glass"; case .matte: "Matte"; case .flat: "Flat"
@@ -135,6 +141,10 @@ enum UIKitSurfaceMaterial: Int, Codable, CaseIterable, Identifiable, Hashable {
         case .frame7: "Horizon Light"
         case .frame8: "Inset Shadow"
         case .frame9: "Cobalt Accent"
+        case .luminous: "Luminous Glass"
+        case .capsule: "Optical Capsule"
+        case .faceted: "Faceted Sapphire"
+        case .prism: "Prism Glass"
         }
     }
 }

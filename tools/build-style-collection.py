@@ -6,7 +6,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 KIT = ROOT / 'assets/ui-design-kit/default'
 RES = ROOT / 'tools/installer-designer/Sources/InfinityInstallerStudio/Resources'
-BUTTONS = ['Optical Glass','Liquid Pill','Frosted Slate','Solid Sapphire','Porcelain','Carbon','Aurora Silk','Clear Outline','Floating Surface','Tinted Glass','Text Action']
+BUTTONS = ['Optical Glass','Liquid Pill','Frosted Slate','Solid Sapphire','Porcelain','Carbon','Aurora Silk','Clear Outline','Floating Surface','Tinted Glass','Text Action','Luminous Glass','Optical Capsule','Faceted Sapphire','Prism Glass']
 FRAMES = ['Sapphire Hairline','Soft Shadow','Frosted Rim','Graphite Edge','Porcelain Edge','Satin Silver','Aurora Trace','Horizon Light','Inset Shadow','Cobalt Accent']
 
 # ------------------------=
@@ -21,7 +21,7 @@ def clamp(v): return max(0, min(255, round(v)))
 # ------------------=
 def button(family, state):
     im = Image.new('RGBA',(256,64)); pixels=[]
-    bases=[(52,81,108,225),(19,45,89,228),(51,67,87,245),(35,88,213,255),(235,235,229,255),(30,34,41,255),(63,51,133,255),(22,46,79,0),(24,35,53,255),(22,34,53,216),(23,51,88,0)]
+    bases=[(52,81,108,225),(19,45,89,228),(51,67,87,245),(35,88,213,255),(235,235,229,255),(30,34,41,255),(63,51,133,255),(22,46,79,0),(24,35,53,255),(22,34,53,216),(23,51,88,0),(7,31,62,220),(7,35,65,225),(8,34,66,230),(14,25,63,230)]
     for y in range(64):
         for x in range(256):
             r,g,b,a=bases[family]; t=y/63; u=x/255
@@ -33,6 +33,15 @@ def button(family, state):
             elif family==6: r+=25*u; g-=7*u; b+=25*u; light=9*(1-t)
             elif family==8: light=10*(1-t)-3*t
             elif family==9: light=13*(1-t)+13*(math.sin(u*9+t*4)+math.cos(u*14-t*7))*.5
+            if family>=11:
+                light=15*math.exp(-t*9)+8*t*t
+                if family==12: light+=32*max(0,1-t*3) if t < .55-.5*u else 0
+                if family==13: light+=10*abs(2*t-1)
+                if family==14:
+                    light+=23 if t < 1-u*1.8 else 0
+                    r+=int(23*u*t); b+=int(35*u*t)
+                if state==1: light+=14+12*t
+                if state==2: light-=7
             if state==1: light+=8
             if state==2: light-=10
             if family in (7,10): a=0 if state==0 else (105 if state==1 else 170)
