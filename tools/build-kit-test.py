@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 import unittest
+import contextlib
+import io
 
 SPEC = importlib.util.spec_from_file_location(
     "build_kit", Path(__file__).with_name("build-kit.py"))
@@ -171,6 +173,32 @@ class BuildKitTests(unittest.TestCase):
             "build_id": "active-fixture", "pid": os.getpid(), "root": str(self.root)}))
         with self.assertRaises(RuntimeError):
             build_kit.execute("incremental_probe", [], self.root, self.config)
+
+    # ------------------------=
+    # FUNC: test_iso_update_reports_lock_without_touching_artifacts
+    # DESC: Verifies Studio receives a structured failure while the active owner's lock and existing ISO remain intact.
+    # ------------------=
+    def test_iso_update_reports_lock_without_touching_artifacts(self):
+        with self.config.open("a") as stream:
+            stream.write('\n[profiles.update-iso]\ncommand = ["false"]\nclean = false\n')
+        releases = self.root / "builds"
+        releases.mkdir()
+        lock = releases / ".build-kit.lock"
+        lock.write_text(json.dumps({"build_id": "active-fixture", "pid": os.getpid()}))
+        original_lock = lock.read_bytes()
+        iso = releases / "installer.iso"
+        iso.write_bytes(b"existing verified ISO")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = build_kit.execute("update-iso", [], self.root, self.config)
+        event = json.loads(output.getvalue())
+        self.assertEqual(result, 1)
+        self.assertEqual(event["event"], "result")
+        self.assertEqual(event["status"], "failed")
+        self.assertEqual(event["code"], "build_lock_unavailable")
+        self.assertEqual(lock.read_bytes(), original_lock)
+        self.assertEqual(iso.read_bytes(), b"existing verified ISO")
+        self.assertFalse((releases / "manifests").exists())
 
     # ------------------------=
     # FUNC: test_studio_is_independent_of_iso_lock_and_cleanup

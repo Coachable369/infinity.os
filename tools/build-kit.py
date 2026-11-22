@@ -207,7 +207,16 @@ def execute(selection, arguments, root=PROJECT_ROOT, config_path=CONFIG_PATH):
         layout["temporary"] = layout["scratch"] / "tmp"
         layout["logs"] = layout["scratch"] / "logs"
     build_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + f"-{os.getpid()}"
-    lock = acquire_lock(root, layout, build_id, domain)
+    try:
+        lock = acquire_lock(root, layout, build_id, domain)
+    except RuntimeError as error:
+        if selection != "update-iso":
+            raise
+        print(json.dumps({
+            "event": "result", "status": "failed", "code": "build_lock_unavailable",
+            "error": f"ISO update could not start: {error}. Wait for the active build to finish, then retry. The existing ISO has not been changed.",
+        }), flush=True)
+        return 1
     started = datetime.now(timezone.utc)
     removed = []
     pruned_logs = []
