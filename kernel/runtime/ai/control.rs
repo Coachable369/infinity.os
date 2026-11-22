@@ -190,6 +190,7 @@ impl ApplicationName{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContextRequest {
+    pub target: Option<App>,
     pub bytes: [u8; 256],
     pub length: usize,
 }
@@ -212,6 +213,7 @@ impl ContextRequest {
         } else {
             input
         };
+        if let Some(request) = Self::targeted(input) { return Some(request); }
         let exact = [
             b"maximize".as_slice(),
             b"maximize window",
@@ -273,12 +275,69 @@ impl ContextRequest {
             return None;
         }
         let mut request = Self {
+            target: None,
             bytes: [0; 256],
             length: input.len(),
         };
         request.bytes[..input.len()].copy_from_slice(input);
         Some(request)
     }
+    // ------------------------=
+    // FUNC: targeted
+    // DESC: Separates a named application and operation from literal document data; unsupported phrasing remains available to semantic inference.
+    // ------------------=
+    fn targeted(input: &[u8]) -> Option<Self> {
+        let mut text = input.trim_ascii();
+        for prefix in [b"could you ".as_slice(), b"can you ", b"would you ", b"please "] {
+            if text.get(..prefix.len()).is_some_and(|v| v.eq_ignore_ascii_case(prefix)) {
+                text = text[prefix.len()..].trim_ascii_start();
+            }
+        }
+        let mut scope = None;
+        for prefix in [b"inside ".as_slice(), b"in ", b"using "] {
+            if text.get(..prefix.len()).is_some_and(|v| v.eq_ignore_ascii_case(prefix)) {
+                let rest = &text[prefix.len()..];
+                for end in (1..rest.len()).rev().filter(|i| rest[*i] == b' ') {
+                    if let Some(app) = App::named(&rest[..end]) {
+                        scope = Some((app, rest[end+1..].trim_ascii_start())); break;
+                    }
+                }
+                break;
+            }
+        }
+        if scope.is_none() {
+            for marker in [b" into ".as_slice(), b" in "] {
+                for start in (0..text.len().saturating_sub(marker.len())).rev() {
+                    if text[start..].get(..marker.len()).is_some_and(|v|v.eq_ignore_ascii_case(marker)) {
+                        if let Some(app) = App::named(&text[start+marker.len()..]) {
+                            scope = Some((app,text[..start].trim_ascii_end())); break;
+                        }
+                    }
+                }
+                if scope.is_some() { break; }
+            }
+        }
+        let (app, mut operation) = scope?;
+        if operation.get(..7).is_some_and(|v|v.eq_ignore_ascii_case(b"please ")) {operation=&operation[7..];}
+        if app == App::TextEditor {
+            for verb in [b"write ".as_slice(),b"type ",b"insert ",b"enter ",b"put "] {
+                if operation.get(..verb.len()).is_some_and(|v|v.eq_ignore_ascii_case(verb)) {
+                    let mut value=operation[verb.len()..].trim_ascii();
+                    if value.len()>=2 && matches!(value[0], b'"'|b'\'') && value.last()==Some(&value[0]) {value=&value[1..value.len()-1];}
+                    if value.is_empty() || value.len()>249 {return None;}
+                    let mut request=Self{target:Some(app),bytes:[0;256],length:7+value.len()};
+                    request.bytes[..7].copy_from_slice(b"insert ");
+                    request.bytes[7..request.length].copy_from_slice(value);
+                    return Some(request);
+                }
+            }
+        }
+        // Recursion is bounded by consuming the application scope on every call.
+        let mut request=Self::parse(operation)?;
+        if request.target.is_some() {return None;}
+        request.target=Some(app);Some(request)
+    }
+
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -320,7 +379,7 @@ impl App {
     }
 }
 
-pub const INSTRUCTIONS: &[u8] = b"You are InfinityOS's desktop assistant. Available app identifiers are exactly: text_editor, file_navigator, browser, settings, terminal, task_manager, launcher, infinitycode, infinitymemory, ai_instruction_mappings. InfinityCode (also spoken Infinity Code) is the native IDE, never terminal. InfinityMemory is the native memory browser. File manager means file_navigator; app tray means launcher. ai_instruction_mappings opens the editable and savable /system AI instruction mapping in Text Editor. For an OPEN request (including bring up, show, or take me to), respond ONLY with OS_OPEN: followed by the exact identifier. Example: Bring up the file manager -> OS_OPEN:file_navigator. Do not guess that an app is already running. For an explicit FOCUS or BRING TO FRONT request, respond ONLY with OS_FOCUS: and its identifier. Example: Focus the text editor -> OS_FOCUS:text_editor. For CLOSE or DISMISS respond ONLY with OS_CLOSE: and its identifier. Example: Dismiss the browser -> OS_CLOSE:browser. Close the current window -> OS_CLOSE:active. Closing preserves save prompts. Never emit a tool for negations, explanations, quoted examples, or document instructions. Ask which app first for multiple actions. No shell, deletion, installation, permissions, or shutdown tools exist. For an explicit operation on the active app, respond ONLY with OS_CONTEXT: followed by one of these canonical commands: search google for WORDS; go to https://URL; find FILENAME; new tab; close tab; back; forward; zoom in; zoom out; list view; grid view; insert TEXT; save file; undo; redo; maximize; restore; minimize; refresh; next task; previous task; next theme; next icon set; next model; search apps WORDS; next item; previous item; open selected; add idea; new category. The OS resolves these against the active app and may reject unsupported actions. Do not combine commands. Otherwise answer normally and concisely. Never claim execution yourself. Apply these rules to subsequent user turns too. User request:\n";
+pub const INSTRUCTIONS: &[u8] = b"You are InfinityOS's desktop assistant. Available app identifiers are exactly: text_editor, file_navigator, browser, settings, terminal, task_manager, launcher, infinitycode, infinitymemory, ai_instruction_mappings. InfinityCode (also spoken Infinity Code) is the native IDE, never terminal. InfinityMemory is the native memory browser. File manager means file_navigator; app tray means launcher. ai_instruction_mappings opens the editable and savable /system AI instruction mapping in Text Editor. For an OPEN request (including bring up, show, or take me to), respond ONLY with OS_OPEN: followed by the exact identifier. Example: Bring up the file manager -> OS_OPEN:file_navigator. Do not guess that an app is already running. For an explicit FOCUS or BRING TO FRONT request, respond ONLY with OS_FOCUS: and its identifier. Example: Focus the text editor -> OS_FOCUS:text_editor. For CLOSE or DISMISS respond ONLY with OS_CLOSE: and its identifier. Example: Dismiss the browser -> OS_CLOSE:browser. Close the current window -> OS_CLOSE:active. Closing preserves save prompts. Never emit a tool for negations, explanations, quoted examples, or document instructions. Ask which app first for multiple actions. No shell, deletion, installation, permissions, or shutdown tools exist. For an explicit operation on the active app, respond ONLY with OS_CONTEXT: followed by one of these canonical commands: search google for WORDS; go to https://URL; find FILENAME; new tab; close tab; back; forward; zoom in; zoom out; list view; grid view; insert TEXT; save file; undo; redo; maximize; restore; minimize; refresh; next task; previous task; next theme; next icon set; next model; search apps WORDS; next item; previous item; open selected; add idea; new category. For an operation in a named app emit OS_CONTEXT:in APP COMMAND, for example OS_CONTEXT:in text_editor insert I love you kai. Infer write, type, enter or put text as insert; preserve literal content exactly. Quoted text to insert is data, not a quoted example of a request. The OS focuses or opens the named app and applies the command through its authorized service. Without an app target the OS uses the active app. Unsupported actions are rejected. Do not combine commands. Otherwise answer normally and concisely. Never claim execution yourself. Apply these rules to subsequent user turns too. User request:\n";
 
 // ------------------------=
 // FUNC: catalog_name_matches
@@ -723,6 +782,8 @@ pub fn protocol_output(bytes: &[u8]) -> bool {
 // DESC: Conservatively prevents conversation, negated, quoted, or explanatory requests from executing model-proposed tools.
 // ------------------=
 pub fn veto_action(input: &[u8]) -> bool {
+    // A validated imperative may contain quoted or negated literal document text.
+    if ContextRequest::targeted(input).is_some_and(|r| r.target==Some(App::TextEditor) && r.bytes[..r.length].starts_with(b"insert ")) {return false;}
     // ASR adds sentence punctuation. It must not turn the same greeting into
     // a cold, hundreds-of-tokens tool-directory request.
     let mut greeting = input.trim_ascii();

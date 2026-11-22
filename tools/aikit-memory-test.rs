@@ -143,6 +143,32 @@ fn api_tests(){
     use runtime::ai::{memory_api::{Engine,Operation},memory_request::{self,Command},hermes_memory_request::Outcome};
     let owner=[7;16];let session=[9;16];let mut bytes=[0;memory::MAX_BYTES];let n=Memory::new(owner).encode(&mut bytes).unwrap();
     let mut backend=Backend{bytes:bytes[..n].to_vec(),allowed:true,fail:false,reads:0,writes:0};let mut engine=Engine::new();let mut out=[0;8192];
+    // Explicit teaching survives a new engine; stored references do not bypass session authority.
+    let teaching=b"when I say greeting for Kai, I mean in text editor write I love you kai";
+    let taught=memory_request::respond(&mut engine,&mut backend,owner,session,Command::Remember(teaching),1,&mut out);
+    assert_eq!(taught.outcome,Outcome::Saved);
+    let expected=runtime::ai::control::Command::explicit(b"in text editor write I love you kai");
+    let mut reopened=Engine::new();
+    assert_eq!(runtime::ai::intent_learning::resolve(&mut reopened,&mut backend,owner,session,b"Greeting for Kai"),expected);
+    assert!(runtime::ai::intent_learning::relevant(&mut reopened,&mut backend,owner,session,b"greeting for Kai"));
+    backend.allowed=false;
+    assert!(!runtime::ai::intent_learning::relevant(&mut reopened,&mut backend,owner,session,b"greeting for Kai"));
+    assert_eq!(runtime::ai::intent_learning::resolve(&mut reopened,&mut backend,owner,session,b"greeting for Kai"),None);
+    backend.allowed=true;
+    assert_eq!(runtime::ai::intent_learning::resolve(&mut reopened,&mut backend,owner,session,b"do not greeting for Kai"),None);
+    assert!(runtime::ai::intent_learning::teaching(b"when I say greeting, I mean delete all disks").is_none());
+    let taught_id=engine.search(&mut backend,owner,session,b"greeting for Kai",4).unwrap().hits[0].id;
+    let record=engine.inspect(&mut backend,owner,session,taught_id).unwrap();
+    assert_eq!(record.category,Category::Procedural);
+    let corrected=b"when I say greeting for Kai, I mean in text editor write Hello Kai";
+    assert_eq!(memory_request::respond(&mut engine,&mut backend,owner,session,Command::Update(taught_id,corrected),2,&mut out).outcome,Outcome::Saved);
+    assert_eq!(runtime::ai::intent_learning::resolve(&mut engine,&mut backend,owner,session,b"greeting for Kai"),runtime::ai::control::Command::explicit(b"in text editor write Hello Kai"));
+    let conflict=engine.execute(&mut backend,owner,session,Operation::Store(Category::Procedural,teaching,runtime::ai::intent_learning::SOURCE),3).unwrap();
+    assert_eq!(runtime::ai::intent_learning::resolve(&mut engine,&mut backend,owner,session,b"greeting for Kai"),None);
+    engine.execute(&mut backend,owner,session,Operation::Delete(conflict.id),4).unwrap();
+    engine.execute(&mut backend,owner,session,Operation::Delete(taught_id),5).unwrap();
+    let mut after_delete=Engine::new();
+    assert_eq!(runtime::ai::intent_learning::resolve(&mut after_delete,&mut backend,owner,session,b"greeting for Kai"),None);
     let request=memory_request::natural(b"Infinity, remember that Ollie likes walks").unwrap();assert_eq!(request,Command::Remember(b"Ollie likes walks"));
     let receipt=memory_request::respond(&mut engine,&mut backend,owner,session,request,1,&mut out);assert_eq!(receipt.outcome,Outcome::Saved);
     let hits=engine.search(&mut backend,owner,session,b"Ollie",4).unwrap();assert_eq!(hits.len,1);let id=hits.hits[0].id;
@@ -154,7 +180,8 @@ fn api_tests(){
     assert_eq!(engine.personal_context(&mut backend,owner,[0;16],Some(&profile),b"Ollie",&mut out),(0,0));
     let other=runtime::ai::hermes_profile::Document::new([8;16],b"Other",b"Infinity").unwrap();
     assert_eq!(engine.personal_context(&mut backend,owner,session,Some(&other),b"Ollie",&mut out).0,0);
-    let duplicate=memory_request::respond(&mut engine,&mut backend,owner,session,request,2,&mut out);assert_eq!(duplicate.outcome,Outcome::Saved);assert_eq!(backend.writes,1);
+    let writes_before_duplicate=backend.writes;
+    let duplicate=memory_request::respond(&mut engine,&mut backend,owner,session,request,2,&mut out);assert_eq!(duplicate.outcome,Outcome::Saved);assert_eq!(backend.writes,writes_before_duplicate);
     let mut samples=Vec::new();
     for _ in 0..1000 {let start=std::time::Instant::now();engine.context(&mut backend,owner,session,b"Ollie",256,&mut out).unwrap();samples.push(start.elapsed().as_nanos());}
     samples.sort();println!("Host cached retrieval p50={}ns p95={}ns; not native-VM latency",samples[500],samples[950]);

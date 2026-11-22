@@ -1322,7 +1322,7 @@ fn aikit_contract() {
     assert_eq!(CapabilityDirectory::count(), mapping::CAPABILITY_TARGETS.len());
     assert_eq!(CapabilityDirectory::descriptor(0).unwrap().family, CapabilityFamily::Open);
     assert_eq!(CapabilityDirectory::descriptor(103).unwrap().family, CapabilityFamily::Clock);
-    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Memory);
+    assert_eq!(CapabilityDirectory::descriptor(CapabilityDirectory::count() - 1).unwrap().family, CapabilityFamily::Context);
     assert!(CapabilityDirectory::descriptor(CapabilityDirectory::count()).is_none());
     assert!(CapabilityDirectory::contains(mapping::CAPABILITY_TARGETS[0]));
 
@@ -1450,7 +1450,7 @@ fn settings_mutation_contract() {
 fn instruction_mapping_contract() {
     use runtime::ai::{control::{Command,ContextRequest},mapping};
     assert!(mapping::validate(mapping::DEFAULT).is_ok());
-    assert_eq!(mapping::CAPABILITY_TARGETS.len(),120);
+    assert_eq!(mapping::CAPABILITY_TARGETS.len(),121);
     assert!(matches!(mapping::resolve(mapping::DEFAULT,b"memory status").unwrap(),Some(Command::Memory(_))));
     assert_eq!(mapping::resolve(mapping::DEFAULT,b"set accent color to grey").unwrap(),
         Some(Command::Setting(runtime::ai::control::setting_command::Request::Accent(0x808080))));
@@ -1642,6 +1642,32 @@ fn app_native() {
 // ------------------=
 fn control_contract() {
     use runtime::ai::control::{self, App, Command};
+    for phrase in [b"In text editor write I love you kai".as_slice(),
+        b"inside text editor write \"I love you kai\"", b"Could you please type I love you kai into the text editor",
+        b"Please enter I love you kai in Text Editor"] {
+        let request=control::ContextRequest::parse(phrase).unwrap();
+        assert_eq!(request.target,Some(App::TextEditor));
+        assert_eq!(&request.bytes[..request.length],b"insert I love you kai");
+        assert!(!control::veto_action(phrase));
+        assert_eq!(Command::explicit(phrase),Some(Command::Context(request)));
+        let mut panel=ui::app_assistant::Panel::new();
+        panel.input[..request.length].copy_from_slice(&request.bytes[..request.length]);panel.length=request.length;
+        assert!(panel.propose(true,1));assert_eq!(panel.pending,ui::app_assistant::Action::Insert);
+        assert_eq!(&panel.argument[..panel.argument_len],b"I love you kai");
+        let mut document=ui::text_editor::TextDocument::new();
+        assert!(panel.edit_document(panel.pending,&mut document));
+        assert_eq!(document.bytes(),b"I love you kai");
+        assert!(!document.is_saved());assert!(document.undo());assert!(document.bytes().is_empty());
+        assert!(document.redo());assert_eq!(document.bytes(),b"I love you kai");
+    }
+    for phrase in [b"Do not write hello in text editor".as_slice(), b"Explain how to write hello in text editor",
+        b"\"in text editor write hello\"", b"in text editor do not write hello"] {
+        assert!(control::ContextRequest::parse(phrase).is_none());assert!(control::veto_action(phrase));
+    }
+    let literal=control::ContextRequest::parse(b"in text editor write \"do not delete this\"").unwrap();
+    assert_eq!(&literal.bytes[..literal.length],b"insert do not delete this");
+    assert_eq!(Command::decode(b"OS_CONTEXT:in text_editor insert I love you kai"),
+        Some(Command::Context(control::ContextRequest::parse(b"in text editor write I love you kai").unwrap())));
     for text in [b"Search google for Hello World".as_slice(),b"find Hello.c",b"new tab",b"next icon set",b"type echo Hello",
         b"save and compile my code",b"save then compile this file",b"compile my code"] {
         let expected=control::ContextRequest::parse(text).unwrap();

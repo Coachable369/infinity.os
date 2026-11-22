@@ -275,14 +275,17 @@ pub fn respond(
                 return Ok(Outcome::Inspected);
             }
             Command::Remember(text) => {
-                Operation::Store(Category::Semantic, unquote(text), b"explicit user request")
+                if super::intent_learning::teaching(unquote(text)).is_some() {
+                    Operation::Store(Category::Procedural, unquote(text), super::intent_learning::SOURCE)
+                }else{Operation::Store(Category::Semantic, unquote(text), b"explicit user request")}
             }
-            Command::Update(id, text) => Operation::Update(
-                id,
-                engine.inspect(backend,owner,session,id)?.category,
-                unquote(text),
-                b"explicit user correction",
-            ),
+            Command::Update(id, text) => {
+                let category=engine.inspect(backend,owner,session,id)?.category;
+                let source=if category==Category::Procedural && super::intent_learning::teaching(unquote(text)).is_some() {
+                    super::intent_learning::SOURCE
+                }else{b"explicit user correction"};
+                Operation::Update(id,category,unquote(text),source)
+            },
             Command::ForgetId(id) => Operation::Delete(id),
             Command::ForgetQuery(query) => {
                 let hits = engine.search(backend, owner, session, unquote(query), 16)?;

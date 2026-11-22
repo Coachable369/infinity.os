@@ -3107,7 +3107,19 @@ impl ConsoleRuntime {
                 }
                 return Some(true);
             },
-            Command::Context(request) => return Some(self.dispatch_context_request(&request.bytes[..request.length])),
+            Command::Context(request) => {
+                if !self.ai_chat_allowed() {return Some(false);}
+                if let Some(app)=request.target {
+                    if self.dispatch_ai_window(app,false)!=Some(true) {
+                        use crate::runtime::ai::control::App;
+                        let open=match app {App::TextEditor=>Command::TextEditor,App::FileNavigator=>Command::FileNavigator,
+                            App::Browser=>Command::Browser,App::Settings=>Command::Settings,App::Terminal=>Command::Terminal,
+                            App::TaskManager=>Command::TaskManager,App::Launcher=>Command::Launcher};
+                        if self.dispatch_ai_control(open)!=Some(true) {return Some(false);}
+                    }
+                }
+                return Some(self.dispatch_context_request(&request.bytes[..request.length]));
+            },
             Command::SettingsSection(section) => {self.open_settings(section as usize);return Some(self.settings_open);},
             Command::Spatial => {self.spatial_open();return Some(self.spatial.open);},
             Command::Holographic => {self.holographic_open();return Some(self.spatial.open);},

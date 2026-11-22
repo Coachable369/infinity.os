@@ -8,10 +8,11 @@ pub const REGISTRY_PATH: &[u8] = b"/system/service-registry.json";
 pub const MAX_BYTES: usize = 16 * 1024;
 pub const REGISTRY_DEFAULT: &[u8] = include_bytes!("../../../system/ai/service-registry.json");
 pub const DEFAULT: &[u8] = include_bytes!("../../../system/ai/instruction-mappings.json");
+const _: () = assert!(DEFAULT.len() <= MAX_BYTES);
 const SCHEMA: &[u8] = b"infinityos.ai-instruction-map";
 const ARGUMENT: &[u8] = b"{argument}";
 const MAX_ALIASES: usize = 512;
-pub const CAPABILITY_TARGETS: [&[u8]; 120] = [
+pub const CAPABILITY_TARGETS: [&[u8]; 121] = [
     b"OS_OPEN:text_editor",
     b"OS_OPEN:file_navigator",
     b"OS_OPEN:browser",
@@ -132,6 +133,7 @@ pub const CAPABILITY_TARGETS: [&[u8]; 120] = [
     b"OS_RESTORE:{argument}",
     b"OS_SHELL:logout",
     b"OS_MEMORY:{argument}",
+    b"OS_CONTEXT:in {argument}",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
