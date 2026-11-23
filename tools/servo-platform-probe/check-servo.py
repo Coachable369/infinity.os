@@ -29,6 +29,7 @@ def main():
         subprocess.run(["python3", str(Path(__file__).with_name("prepare-parking.py"))], check=True)
         subprocess.run(["python3", str(Path(__file__).with_name("prepare-entropy.py"))], check=True)
         subprocess.run(["python3", str(Path(__file__).with_name("prepare-fonts.py"))], check=True)
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-fontsan.py"))], check=True)
         subprocess.run(["python3", str(Path(__file__).with_name("prepare-style.py"))], check=True)
         subprocess.run(["python3", str(Path(__file__).with_name("prepare-webdriver.py"))], check=True)
         subprocess.run(["python3", str(Path(__file__).with_name("prepare-surfman.py"))], check=True)
@@ -139,6 +140,7 @@ def main():
     command += ["--config", 'patch.crates-io.wr_glyph_rasterizer.path="' + str(root / "build/servo-native-deps/wr_glyph_rasterizer-0.70.0") + '"']
     if options.package == "servo":
         command += ["--config", 'patch.crates-io.webrender.path="' + str(root / "build/servo-native-deps/webrender-0.70.0") + '"']
+    command += ["--config", 'patch.crates-io.fontsan.path="' + str(root / "build/servo-native-deps/fontsan-0.7.0") + '"']
     command += ["--config", 'patch.crates-io.freetype-sys.path="' + str(root / "build/servo-native-deps/freetype-sys-0.23.0") + '"']
     for index, version in enumerate(("0.2.17", "0.3.4", "0.4.1")):
         key = 'patch.crates-io.getrandom_native_' + str(index)

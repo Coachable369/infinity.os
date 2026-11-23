@@ -122,7 +122,12 @@ def main():
                 .await;"""
     new = """            let pending_cache_entry = match cache_guard {
                 CachedResourcesOrGuard::Guard(guard) => Some(guard),
-                CachedResourcesOrGuard::Value(_) => None,
+                CachedResourcesOrGuard::Value(entry) => {
+                    // Release an existing entry before revalidating and reacquiring it.
+                    // Keeping its write guard here deadlocks the same cache key.
+                    drop(entry);
+                    None
+                },
             };
             let forward_response =
                 http_network_fetch(http_fetch_params, include_credentials, done_chan, context)

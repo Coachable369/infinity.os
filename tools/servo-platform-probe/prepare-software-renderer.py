@@ -47,6 +47,21 @@ pub use native_software_context::SoftwareRenderingContext;
                 // software blend-key table does not implement.
                 #[cfg(all(target_os = "none", infinity_native))]
                 allow_advanced_blend_equation: true,
+                // CPU textures share the governed browser heap with decoded
+                // images and JavaScript. GPU-sized atlases waste substantial
+                // backing on sparse pages; smaller atlases retain the same
+                // pixels and eviction rules without reducing image resolution.
+                #[cfg(all(target_os = "none", infinity_native))]
+                texture_cache_config: webrender::TextureCacheConfig {
+                    color8_linear_texture_size: 1024,
+                    color8_nearest_texture_size: 512,
+                    color8_glyph_texture_size: 512,
+                    alpha8_texture_size: 512,
+                    alpha8_glyph_texture_size: 1024,
+                    alpha16_texture_size: 512,
+                },
+                #[cfg(all(target_os = "none", infinity_native))]
+                picture_tile_size: Some(webrender_api::units::DeviceIntSize::new(512, 256)),
 ''')
     marker = "enable_dithering: true,"
     if source.count(marker) != 1:

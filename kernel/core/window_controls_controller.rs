@@ -162,6 +162,15 @@ impl ConsoleRuntime {
                 let highlight=controls::hit(buttons,point).map(|index|
                     controls::Highlight{rect:buttons[index],pressed:self.pointer_pressed})
                     .or_else(|| {
+                        if id==2 && self.editor_tools.menu==crate::ui::editor_chrome::Menu::None {
+                            let g=crate::ui::editor_chrome::Layout::new(window,layout.scale(),
+                                crate::ui::app_assistant::read(2).expanded,self.editor_tools.field);
+                            let running=crate::ui::editor_chrome::terminal::inspect(|state|state.running);
+                            return [(g.terminal.run,!running),(g.terminal.stop,running),(g.terminal.restart,true),
+                                (g.field_close,self.editor_tools.field!=crate::ui::editor_tools::Field::None)]
+                                .into_iter().find(|(rect,enabled)|*enabled && rect.contains(point))
+                                .map(|(rect,_)|controls::Highlight{rect,pressed:self.pointer_pressed});
+                        }
                         if id!=4 {return None;}
                         let row=self.settings_window.expanded_row?;
                         let action=layout.settings_action_geometry(self.settings_window,stack.settings_section,row)?;

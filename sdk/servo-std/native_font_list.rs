@@ -5,10 +5,11 @@ use crate::FallbackFontSelectionOptions;
 
 // ------------------------=
 // FUNC: for_each_available_family
-// DESC: Enumerates the three actual fonts embedded in the native engine package.
+// DESC: Enumerates packaged faces and explicit web-compatible system-family substitutions.
 // ------------------=
 pub(crate) fn for_each_available_family<F: FnMut(String)>(mut callback: F) {
-    for name in ["Fira Sans", "EB Garamond", "IBM Plex Mono"] { callback(name.into()); }
+    for name in ["Fira Sans", "EB Garamond", "IBM Plex Mono", "Inter", "Arimo", "Roboto",
+        "Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "-apple-system", "BlinkMacSystemFont"] { callback(name.into()); }
 }
 // ------------------------=
 // FUNC: for_each_variation
@@ -18,6 +19,11 @@ pub(crate) fn for_each_variation<F: FnMut(FontTemplate)>(family_name: &str, mut 
     let id = if family_name.eq_ignore_ascii_case("Fira Sans") { LocalFontIdentifier::Sans }
         else if family_name.eq_ignore_ascii_case("EB Garamond") { LocalFontIdentifier::Serif }
         else if family_name.eq_ignore_ascii_case("IBM Plex Mono") { LocalFontIdentifier::Mono }
+        else if ["Inter", "Segoe UI", "-apple-system", "BlinkMacSystemFont"].iter()
+            .any(|name|family_name.eq_ignore_ascii_case(name)) { LocalFontIdentifier::Inter }
+        else if ["Arimo", "Arial", "Helvetica", "Helvetica Neue"].iter()
+            .any(|name|family_name.eq_ignore_ascii_case(name)) { LocalFontIdentifier::Arimo }
+        else if family_name.eq_ignore_ascii_case("Roboto") { LocalFontIdentifier::Roboto }
         else { return; };
     callback(FontTemplate::new(FontIdentifier::Local(id), FontTemplateDescriptor::default(), None));
 }

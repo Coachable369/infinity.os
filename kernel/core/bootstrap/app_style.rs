@@ -391,6 +391,9 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn app_button_surface(&mut self, r: Rect, primary: bool, focus: u8, pressed: bool, scale: usize) {
         use crate::ui::panel_recipe::{Material,Surface};
+        let interaction=crate::ui::app_launcher::window_controls::state(r);
+        let focus=if interaction!=0 {255}else{focus};
+        let pressed=pressed || interaction==2;
         let colors=crate::ui::skin::kit_tokens::runtime_colors();
         let rgb=|v:u32|((v>>16)as u8,(v>>8)as u8,v as u8);
         self.precision_surface(r,if primary {Surface::Primary}else{Surface::Secondary},

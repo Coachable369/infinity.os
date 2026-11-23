@@ -14,7 +14,7 @@ import tempfile
 
 # ------------------------=
 # FUNC: verify_embedded_fonts
-# DESC: Checks exact native Inter raster and metric bytes inside each shipped installed kernel.
+# DESC: Checks exact browser chrome atlases and packaged web-font bytes in each installed kernel.
 # ------------------=
 def verify_embedded_fonts(kernel, root):
     records = []
@@ -29,6 +29,12 @@ def verify_embedded_fonts(kernel, root):
                 offset = image.find(expected)
                 assert offset >= 0, (kernel, asset)
                 records.append({"asset": asset.name, "bytes": length, "kernel_offset": offset})
+        for name in ("FiraSans-Regular.ttf", "EBGaramond.ttf", "IBMPlexMono-Regular.ttf",
+                     "Inter-Variable.ttf", "Arimo-Regular.ttf", "Roboto-Variable.ttf"):
+            expected = (root / "assets/fonts" / name).read_bytes()
+            offset = image.find(expected)
+            assert offset >= 0, (kernel, name)
+            records.append({"asset": name, "bytes": len(expected), "kernel_offset": offset})
     return records
 
 

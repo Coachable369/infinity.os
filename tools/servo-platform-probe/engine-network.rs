@@ -77,7 +77,7 @@ impl native_https::Factory for Factory {
     // ------------------=
     fn authorize(&mut self, host: &str, port: u16) -> Result<(Connection, Configuration, u64, [u8;32]), ()> {
         if !(matches!(host, "www.google.com" | "www.gstatic.com" | "www.googleusercontent.com" | "en.wikipedia.org" | "upload.wikimedia.org" | "example.com")
-            || matches!(host,"cdnjs.cloudflare.com"|"fonts.googleapis.com"|"fonts.gstatic.com")
+            || matches!(host,"cdnjs.cloudflare.com"|"fonts.googleapis.com"|"fonts.gstatic.com"|"saaslineup.com")
             || ["coachable.online", "duckduckgo.com", "yahoo.com", "yimg.com"].iter()
                 .any(|domain|host==*domain || host.strip_suffix(domain).is_some_and(|prefix|prefix.ends_with('.'))))
             || port != 443 { return Err(()); }
@@ -87,7 +87,8 @@ impl native_https::Factory for Factory {
         let link=Connection {nic:self.nic.clone()};
         let config=Configuration { mac:self.nic.borrow().mac, address:[10,0,2,15],prefix:24,
             gateway:Some([10,0,2,2]),dns_server:[10,0,2,3],local_port:self.port,
-            deadline:link.now()+infinity_browser_native_network::smoltcp::time::Duration::from_secs(30) };
+            // Match the production streaming browser deadline, including renderer backpressure.
+            deadline:link.now()+infinity_browser_native_network::smoltcp::time::Duration::from_secs(120) };
         Ok((link,config,super::super::utc().ok_or(())?.0,seed))
     }
 }
@@ -198,8 +199,16 @@ pub fn verify(engine: &servo::Servo) -> bool {
     }
     {
         let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();
-        view.evaluate_javascript("JSON.stringify(Array.from(document.images).filter(i=>!i.complete||!i.naturalWidth).map(i=>[i.getAttribute('loading'),i.complete,i.getBoundingClientRect().y,(i.currentSrc||i.src).slice(0,80)]))",move |value| {
+        view.evaluate_javascript("JSON.stringify(Array.from(document.images).filter(i=>!i.complete||!i.naturalWidth).sort((a,b)=>Number(b.complete)-Number(a.complete)).map(i=>[i.getAttribute('loading'),i.complete,i.getBoundingClientRect().y,(i.currentSrc||i.src).slice(0,80)]))",move |value| {
             if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&std::format!("\nUnresolved images: {value}\n"));}
+            inspection.set(1);
+        });
+        wait_for_callback(engine,&view,&repaint,&resources,&inspected);
+    }
+    {
+        let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();
+        view.evaluate_javascript("JSON.stringify([...document.fonts].map(f=>[f.family,f.weight,f.status]))",move |value| {
+            if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&std::format!("\nWeb fonts: {value}\n"));}
             inspection.set(1);
         });
         wait_for_callback(engine,&view,&repaint,&resources,&inspected);

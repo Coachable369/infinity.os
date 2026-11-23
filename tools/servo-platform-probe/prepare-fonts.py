@@ -28,7 +28,7 @@ mod platform {
     use serde::{Deserialize, Serialize};
     use crate::{FontData, FontDataAndIndex};
     #[derive(Clone, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
-    pub enum LocalFontIdentifier { Sans, Serif, Mono }
+    pub enum LocalFontIdentifier { Sans, Serif, Mono, Inter, Arimo, Roboto }
     impl LocalFontIdentifier {
         // ------------------------=
         // FUNC: index
@@ -44,6 +44,9 @@ mod platform {
                 Self::Sans => include_bytes!("native-fonts/FiraSans-Regular.ttf"),
                 Self::Serif => include_bytes!("native-fonts/EBGaramond.ttf"),
                 Self::Mono => include_bytes!("native-fonts/IBMPlexMono-Regular.ttf"),
+                Self::Inter => include_bytes!("native-fonts/Inter-Variable.ttf"),
+                Self::Arimo => include_bytes!("native-fonts/Arimo-Regular.ttf"),
+                Self::Roboto => include_bytes!("native-fonts/Roboto-Variable.ttf"),
             };
             Some(FontDataAndIndex { data: FontData::from_bytes(bytes), index: 0 })
         }
@@ -53,7 +56,7 @@ mod platform {
     (servo / relative).write_text(text)
     font_dir = (servo / relative).parent / "native-fonts"
     font_dir.mkdir(exist_ok=True)
-    for name in ("FiraSans-Regular.ttf", "EBGaramond.ttf", "IBMPlexMono-Regular.ttf"):
+    for name in ("FiraSans-Regular.ttf", "EBGaramond.ttf", "IBMPlexMono-Regular.ttf", "Inter-Variable.ttf", "Arimo-Regular.ttf", "Roboto-Variable.ttf"):
         (font_dir / name).write_bytes((root / "assets/fonts" / name).read_bytes())
     native = 'all(target_os = "none", infinity_native)'
     for relative in ("components/fonts/platform/mod.rs", "components/fonts/Cargo.toml"):

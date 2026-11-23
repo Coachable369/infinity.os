@@ -38,7 +38,11 @@ pub fn verify(engine: &Servo) -> bool {
     if !spin_until(engine,&view,&repaint,&loaded) {return false;}
     if !javascript_true(engine,&view,&repaint,r#"
         document.body.innerHTML='<img id="lazy" width="40" height="40">';
-        window.seen=false;window.fontLoaded=false;window.variableLoaded=false;
+        window.seen=false;window.fontLoaded=false;window.variableLoaded=false;window.systemFontsLoaded=false;
+        Promise.all(['Inter','Arimo','Roboto','Arial','Helvetica Neue','Segoe UI','-apple-system','BlinkMacSystemFont'].map((name,index)=>{
+            const face=new FontFace('SystemProbe'+index,'local("'+name+'")');document.fonts.add(face);
+            return face.load().then(()=>face.status==='loaded');
+        })).then(results=>{window.systemFontsLoaded=results.every(Boolean)});
         const face=new FontFace('NativeProbe','local("Fira Sans")');
         document.fonts.add(face);face.load().then(()=>{window.fontLoaded=face.status==='loaded'});
         const variable=new FontFace('VariableProbe','local("EB Garamond")',{weight:'400 800'});
@@ -72,19 +76,22 @@ pub fn verify(engine: &Servo) -> bool {
         let outer=row.getBoundingClientRect(),inner=row.lastElementChild.getBoundingClientRect();
         return outer.width<=301 && inner.right<=rail.getBoundingClientRect().right+1 && inner.right<card.getBoundingClientRect().left && inner.width<=229;
     })()"#) {return false;}
-    let woff=include_bytes!("../../build/servo-port-audit/tests/wpt/tests/fonts/hasubi-mono/HasubiMono-Regular.woff2");
+    #[cfg(not(infinity_external_font_probe))]
+    let woff: &[u8]=include_bytes!("../../build/servo-port-audit/tests/wpt/tests/fonts/hasubi-mono/HasubiMono-Regular.woff2");
+    #[cfg(infinity_external_font_probe)]
+    let woff: &[u8]=include_bytes!(env!("INFINITY_BROWSER_FONT_PROBE"));
     let bytes=woff.iter().map(|b|std::format!("{b}")).collect::<Vec<_>>().join(",");
     let script=std::format!("window.woffLoaded=false;window.woffError='';const remote=new FontFace('WoffProbe',new Uint8Array([{bytes}]));document.fonts.add(remote);remote.load().then(()=>{{window.woffLoaded=remote.status==='loaded'}}).catch(e=>{{window.woffError=String(e)}});true");
     if !javascript_true(engine,&view,&repaint,&script) {return false;}
     let deadline=Instant::now()+Duration::from_secs(5);
     let mut ready=false;
     while Instant::now()<deadline {
-        if javascript_true(engine,&view,&repaint,"seen && fontLoaded && variableLoaded && woffLoaded && lazy.complete && lazy.naturalWidth===40") {ready=true;break;}
+        if javascript_true(engine,&view,&repaint,"seen && fontLoaded && systemFontsLoaded && variableLoaded && woffLoaded && lazy.complete && lazy.naturalWidth===40") {ready=true;break;}
         std::thread::sleep(Duration::from_millis(5));
     }
     if !ready {
         let done=Rc::new(Cell::new(0));let result=done.clone();
-        view.evaluate_javascript("JSON.stringify({seen,fontLoaded,variableLoaded,woffLoaded,woffError,widths:window.widths,image:[lazy.complete,lazy.naturalWidth]})",move |value| {
+        view.evaluate_javascript("JSON.stringify({seen,fontLoaded,systemFontsLoaded,variableLoaded,woffLoaded,woffError,widths:window.widths,image:[lazy.complete,lazy.naturalWidth]})",move |value| {
             if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&value);}
             result.set(1);
         });
@@ -97,21 +104,22 @@ pub fn verify(engine: &Servo) -> bool {
     true
 }
 
-struct CacheProvider { starts:Rc<Cell<u32>>, phase:u8, font:bool, document:bool }
+struct CacheProvider { starts:Rc<Cell<u32>>, phase:u8, font:bool, document:bool, revalidate:bool, validations:u8 }
 impl resources::Provider for CacheProvider {
     // ------------------------=
     // FUNC: begin
     // DESC: Counts observable wire requests to one deterministic cacheable origin.
     // ------------------=
-    fn begin(&mut self,url:&str)->Result<u64,()> {self.font=url.ends_with(".woff2");self.document=url.ends_with("/document");self.phase=0;self.starts.set(self.starts.get()+1);Ok(self.starts.get() as u64)}
+    fn begin(&mut self,url:&str)->Result<u64,()> {self.font=url.ends_with(".woff2");self.document=url.ends_with("/document");self.revalidate=url.ends_with("/revalidate");if self.revalidate {self.validations+=1;}self.phase=0;self.starts.set(self.starts.get()+1);Ok(self.starts.get() as u64)}
     // ------------------------=
     // FUNC: poll
     // DESC: Returns a bounded cacheable response with explicit cross-origin policy.
     // ------------------=
     fn poll(&mut self,_id:u64)->Result<Option<resources::Response>,()> {
-        Ok(Some(resources::Response {status:200,headers:std::vec![
+        Ok(Some(resources::Response {status:if self.revalidate && self.validations>1 {304} else {200},headers:std::vec![
             ("Content-Type".into(),if self.document {"text/html".into()} else {"text/plain".into()}),
-            ("Cache-Control".into(),"public, max-age=3600".into()),
+            ("Cache-Control".into(),if self.revalidate {"public, no-cache".into()} else {"public, max-age=3600".into()}),
+            ("ETag".into(),"\"cache-fixture\"".into()),
             ("Access-Control-Allow-Origin".into(),"*".into())],body:b"cache payload".to_vec()}))
     }
     // ------------------------=
@@ -121,7 +129,8 @@ impl resources::Provider for CacheProvider {
     fn poll_stream(&mut self,id:u64)->Result<Option<resources::Event>,()> {
         self.phase+=1;
         Ok(Some(match self.phase {
-            1=>resources::Event::Head(200,self.poll(id)?.unwrap().headers),
+            1=>{let response=self.poll(id)?.unwrap();resources::Event::Head(response.status,response.headers)},
+            _ if self.revalidate && self.validations>1=>resources::Event::Done,
             2=>resources::Event::Data(if self.font {include_bytes!("../../build/servo-port-audit/tests/wpt/tests/fonts/hasubi-mono/HasubiMono-Regular.woff2").to_vec()} else if self.document {br#"<!doctype html><html><head><link rel="preload" as="font" type="font/woff2" crossorigin href="/style.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="/style.woff2"><style>@font-face{font-family:SheetProbe;src:url('/style.woff2')}body{font-family:SheetProbe;font-size:32px}</style></head><body><span id="wide">WWWWWW</span><span id="narrow">iiiiii</span></body></html>"#.to_vec()} else {b"cache payload".to_vec()}),
             _=>resources::Event::Done,
         }))
@@ -138,7 +147,7 @@ impl resources::Provider for CacheProvider {
 // ------------------=
 fn verify_cache(engine:&Servo)->bool {
     let starts=Rc::new(Cell::new(0));
-    let resources=Rc::new(resources::Resources::new(CacheProvider{starts:starts.clone(),phase:0,font:false,document:false},super::super::monotonic));
+    let resources=Rc::new(resources::Resources::new(CacheProvider{starts:starts.clone(),phase:0,font:false,document:false,revalidate:false,validations:0},super::super::monotonic));
     engine.set_delegate(resources.clone());
     let Ok(context)=SoftwareRenderingContext::new((320,240).into()) else {return false;};
     let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));
@@ -152,6 +161,14 @@ fn verify_cache(engine:&Servo)->bool {
     super::super::record(2,64,starts.get() as u64);
     super::super::record(2,65,u64::from(delivered));
     if !delivered || starts.get()!=1 {return false;}
+    if !javascript_true(engine,&view,&repaint,r#"window.revalidated=false;(async()=>{
+        const first=await(await fetch('https://cache.test/revalidate',{credentials:'omit'})).text();
+        const second=await(await fetch('https://cache.test/revalidate',{credentials:'omit'})).text();
+        window.revalidated=first==='cache payload' && second===first;
+    })();true"#){return false;}
+    let deadline=Instant::now()+Duration::from_secs(5);let mut revalidated=false;
+    while Instant::now()<deadline {engine.spin_event_loop();resources.pump();if javascript_true(engine,&view,&repaint,"revalidated===true"){revalidated=true;break;}std::thread::sleep(Duration::from_millis(1));}
+    if !revalidated || starts.get()!=3 {return false;}
     if !javascript_true(engine,&view,&repaint,r#"window.preloadFont=0;const preload=document.createElement('link');preload.rel='preload';preload.as='font';preload.crossOrigin='anonymous';preload.href='https://cache.test/font.woff2';document.head.appendChild(preload);const face=new FontFace('PreloadProbe','url(https://cache.test/font.woff2)');document.fonts.add(face);face.load().then(()=>{window.preloadFont=1}).catch(()=>{window.preloadFont=2});true"#){return false;}
     let deadline=Instant::now()+Duration::from_secs(5);let mut font_loaded=false;
     while Instant::now()<deadline {engine.spin_event_loop();resources.pump();if javascript_true(engine,&view,&repaint,"preloadFont===1"){font_loaded=true;break;}std::thread::sleep(Duration::from_millis(1));}

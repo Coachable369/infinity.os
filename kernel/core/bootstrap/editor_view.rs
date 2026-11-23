@@ -43,7 +43,8 @@ impl super::DisplayDevice {
         self.app_disclosure(Rect{x:g.toggle.x+8*s as i32,width:18*s as u32,..g.toggle},state.preferences.open,MUTED,s);
         self.app_label(Rect{x:g.toggle.x+32*s as i32,width:g.toggle.width.saturating_sub(32*s as u32),..g.toggle},b"Terminal",MUTED,false,s);
         for (rect,label,enabled) in [(g.run,b"Run".as_slice(),!state.running),(g.stop,b"Stop",state.running),(g.restart,b"Restart",true)] {
-            self.app_card(rect,if enabled{(15,27,46)}else{(11,18,32)},if enabled{(33,92,124)}else{border},s);
+            if enabled { self.app_button_surface(rect,false,0,false,s); }
+            else { self.app_card(rect,(11,18,32),border,s); }
             self.app_label(Rect{x:rect.x+10*s as i32,width:rect.width.saturating_sub(12*s as u32),..rect},label,if enabled{TEXT}else{MUTED},false,s);
         }
         if !state.preferences.open{return;}

@@ -174,6 +174,7 @@ def main():
     command = ["rustc", *target_flags, "--edition=2021", "--target", target_spec,
                "--cfg", "infinity_native", "-C", "panic=abort", "-C", "opt-level=2",
                *(["--cfg", "infinity_page_probe"] if options.page_probe else []),
+               *(["--cfg", "infinity_external_font_probe"] if options.page_probe and os.environ.get("INFINITY_BROWSER_FONT_PROBE") else []),
                *(["--cfg", "infinity_network_probe"] if options.network_probe else []),
                *(["--cfg", "infinity_swgl_probe", "--extern",
                   "infinity_swgl_probe=" + str(target / "libinfinity_swgl_probe.rlib")]

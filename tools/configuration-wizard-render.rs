@@ -1047,6 +1047,22 @@ pub(super) fn verify_voice(){
 // DESC: Verifies repeated themed navigation state repaints equal a fresh scene without accumulated alpha or stale captions.
 // ------------------=
 pub fn verify_button_interaction() {
+    // Exercise the running OS shared button entry point, including wrappers
+    // which do not explicitly pass pointer state (such as polished_button).
+    let button=crate::ui::geometry::Rect{x:20,y:20,width:180,height:40};
+    let mut actual=Vec::new();
+    for state in 0..3 {
+        crate::ui::app_launcher::window_controls::publish((state!=0).then_some(
+            crate::ui::app_launcher::window_controls::Highlight{rect:button,pressed:state==2}));
+        let mut pixels=vec![0xff102030;220*80];
+        display(&mut pixels,220,80).app_button_surface(button,true,0,false,1);
+        std::fs::create_dir_all("builds/validation/button-interactions").unwrap();
+        write_ppm(&format!("builds/validation/button-interactions/app-state-{state}.ppm"),&pixels,220,80);
+        actual.push(pixels);
+    }
+    crate::ui::app_launcher::window_controls::publish(None);
+    assert_ne!(actual[0],actual[1]);
+    assert_ne!(actual[1],actual[2]);
     let bytes=crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES;
     let template=InstallerTemplate::parse(bytes).unwrap();
     let screen=6; let (w,h)=(1280,800);
