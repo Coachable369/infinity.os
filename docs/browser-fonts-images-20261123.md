@@ -86,3 +86,29 @@ The corrected lock path passes `browser-font-cache-final` (manifest
 `20261123T191514749871Z-11368.json`). The previously stalled 2,222,910-byte
 image now completes and renders in `coachable-featured-image-lock-fixed`
 (manifest `20261123T191552337329Z-11397.json`); its captured pixels were reviewed.
+
+## Final native run and ARM publication
+
+The final current-code homepage run, `coachable-release-images`, passed:
+80/80 images decoded, no unresolved images, completed page load and no failed
+allocation. Its manifest is `20261123T191648249191Z-11463.json`.
+The complete gallery exercise took 346.6 seconds, with peak heap 890,647,552
+bytes and maximum paint work 2.11 seconds. These results establish image
+completion, not satisfactory interactive performance or installed-VM acceptance.
+
+ARM installer: `builds/InfinityOS-aarch64.iso`.
+Release manifest: `builds/manifests/20261123T192337485802Z-11976.json`.
+SHA-256: `b962df94bd85bf9bb8210f5ff5690c80816b12171b1de66cb48d95db412f7454`.
+Packaging, checksum and live/installed parity passed. Additional browser font
+and artwork parity passed in manifest `20261123T193605774717Z-15406.json`.
+Dependencies were reused under the user's incremental-release authorization.
+
+## x86 publication
+
+x86 installer: `builds/InfinityOS-x86_64.iso`.
+Release manifest: `builds/manifests/20261123T194237781355Z-17607.json`.
+SHA-256: `ec23bc602d6b635d2b4f72661f3dae1e0e6282cf343939c1ec4a8dc8e6bc5496`.
+Packaging, checksum and live/installed parity passed. Additional browser font
+and artwork parity passed in manifest `20261123T195418786988Z-21011.json`.
+ARM publication completed before x86 packaging began. The broad regression
+suite was deferred; neither package result establishes installed-VM acceptance.
