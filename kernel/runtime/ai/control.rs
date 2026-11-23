@@ -297,9 +297,9 @@ impl ContextRequest {
         for prefix in [b"inside ".as_slice(), b"in ", b"using "] {
             if text.get(..prefix.len()).is_some_and(|v| v.eq_ignore_ascii_case(prefix)) {
                 let rest = &text[prefix.len()..];
-                for end in (1..rest.len()).rev().filter(|i| rest[*i] == b' ') {
+                for end in (1..rest.len()).rev().filter(|i| rest[*i].is_ascii_whitespace() || matches!(rest[*i], b'.'|b','|b':')) {
                     if let Some(app) = App::named(&rest[..end]) {
-                        scope = Some((app, rest[end+1..].trim_ascii_start())); break;
+                        scope = Some((app, Self::operation_start(&rest[end..]))); break;
                     }
                 }
                 break;
@@ -320,9 +320,11 @@ impl ContextRequest {
         let (app, mut operation) = scope?;
         if operation.get(..7).is_some_and(|v|v.eq_ignore_ascii_case(b"please ")) {operation=&operation[7..];}
         if app == App::TextEditor {
-            for verb in [b"write ".as_slice(),b"type ",b"insert ",b"enter ",b"put "] {
-                if operation.get(..verb.len()).is_some_and(|v|v.eq_ignore_ascii_case(verb)) {
-                    let mut value=operation[verb.len()..].trim_ascii();
+            // A transcription homophone is accepted only inside an explicit editor scope.
+            for verb in [b"write".as_slice(),b"right",b"type",b"insert",b"input",b"enter",b"put",b"add"] {
+                if operation.get(..verb.len()).is_some_and(|v|v.eq_ignore_ascii_case(verb))
+                    && operation.get(verb.len()).is_some_and(|v|v.is_ascii_whitespace() || matches!(v,b'.'|b','|b':')) {
+                    let mut value=Self::operation_start(&operation[verb.len()..]).trim_ascii_end();
                     if value.len()>=2 && matches!(value[0], b'"'|b'\'') && value.last()==Some(&value[0]) {value=&value[1..value.len()-1];}
                     if value.is_empty() || value.len()>249 {return None;}
                     let mut request=Self{target:Some(app),bytes:[0;256],length:7+value.len()};
@@ -336,6 +338,17 @@ impl ContextRequest {
         let mut request=Self::parse(operation)?;
         if request.target.is_some() {return None;}
         request.target=Some(app);Some(request)
+    }
+
+    // ------------------------=
+    // FUNC: operation_start
+    // DESC: Skips spoken-clause punctuation at syntax boundaries without rewriting literal document contents.
+    // ------------------=
+    fn operation_start(mut bytes: &[u8]) -> &[u8] {
+        while bytes.first().is_some_and(|v|v.is_ascii_whitespace() || matches!(v,b'.'|b','|b':')) {
+            bytes=&bytes[1..];
+        }
+        bytes
     }
 
 }

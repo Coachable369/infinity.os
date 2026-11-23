@@ -803,6 +803,10 @@ fn desktop_chat() {
 // DESC: Runs the Milestone 6 host acceptance suite.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg| arg == "--editor-followup-contract") {
+        control_contract();
+        return;
+    }
     if std::env::args().any(|arg| arg == "--memory-native") {
         memory_native();
         return;
@@ -1642,6 +1646,41 @@ fn app_native() {
 // ------------------=
 fn control_contract() {
     use runtime::ai::control::{self, App, Command};
+    let mut followup=Box::new(AiRuntime::new());
+    followup.bind_chat_owner([1;16]);
+    for byte in b"Open text editor" {assert!(followup.chat.push_input(*byte));}
+    assert!(followup.submit_chat());
+    assert_eq!(followup.take_control([1;16],true),Some(Command::TextEditor));
+    followup.finish_control(Command::TextEditor,true);
+    for phrase in [b"Inside text editor. Right I love you Kai.".as_slice(),
+        b"Inside text editor. Input. I love you Kai.", b"In the text editor, please write: I love you Kai.",
+        b"Using Text Editor: add I love you Kai.", b"inside text editor. Type \"I love you Kai.\""] {
+        let expected=control::ContextRequest::parse(b"in text editor insert I love you Kai.").unwrap();
+        for byte in phrase {assert!(followup.chat.push_input(*byte));}
+        assert!(followup.submit_chat());
+        assert_eq!(followup.take_control([1;16],true),Some(Command::Context(expected)));
+        assert_eq!(followup.take_control([1;16],true),None);
+        followup.finish_control(Command::Context(expected),true);
+        assert_eq!(followup.chat.generation_state,GenerationState::Complete);
+        let mut mapping=runtime::ai::mapping::ConfiguredMap::new();
+        let mut requests=RequestApi::new();
+        for origin in [RequestOrigin::DesktopChat,RequestOrigin::Voice] {
+            let request=requests.accept(phrase,[1;16],origin);
+            assert_eq!(IntentRouter::route(&mut mapping,&request),RequestRoute::Control(Command::Context(expected)));
+        }
+        let mut panel=ui::app_assistant::Panel::new();
+        panel.input[..expected.length].copy_from_slice(&expected.bytes[..expected.length]);panel.length=expected.length;
+        assert!(panel.propose(true,1));
+        let mut document=ui::text_editor::TextDocument::new();
+        assert!(panel.edit_document(panel.pending,&mut document));
+        assert_eq!(document.bytes(),b"I love you Kai.");
+        assert!(document.undo());assert!(document.bytes().is_empty());
+    }
+    for phrase in [b"Inside text editor. Do not write hello".as_slice(),
+        b"Inside text editor. Explain how to write hello",b"Inside text editor. Righteous hello",
+        b"Inside text editor. Input.",b"Right I love you Kai."] {
+        assert!(control::ContextRequest::parse(phrase).is_none());
+    }
     for phrase in [b"In text editor write I love you kai".as_slice(),
         b"inside text editor write \"I love you kai\"", b"Could you please type I love you kai into the text editor",
         b"Please enter I love you kai in Text Editor"] {
