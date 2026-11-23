@@ -79,6 +79,11 @@ fn record(status:u64, phase:u64, detail:u64) {
 // DESC: Records actual success or failure before powering down this disposable guest.
 // ------------------=
 fn finish(status:u64,phase:u64,detail:u64)->! {
+    unsafe {
+        record(2,80,Runtime::allocated() as u64);
+        record(2,81,Runtime::peak_allocated() as u64);
+        record(2,82,Runtime::failed_request() as u64);
+    }
     record(status,phase,detail);
     unsafe { core::arch::asm!("hvc #0",in("x0") 0x84000008u64); }
     loop { core::hint::spin_loop(); }

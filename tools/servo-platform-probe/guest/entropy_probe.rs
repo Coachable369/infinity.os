@@ -30,6 +30,16 @@ fn word() -> Option<u64> { unsafe {
 // DESC: Fills the entire requested buffer from actual virtual CPU entropy or reports failure.
 // ------------------=
 pub fn fill(bytes: &mut [u8]) -> bool {
+    if option_env!("INFINITY_BROWSER_FIXTURE_ENTROPY") == Some("1") {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+        static OFFSET: AtomicUsize = AtomicUsize::new(0);
+        let Ok(offset) = OFFSET.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+            |offset| offset.checked_add(bytes.len()).filter(|end| *end <= 1024*1024)) else {return false;};
+        // The fixture loader populates this dedicated range from os.urandom.
+        // Consume each byte once and fail closed when the finite pool is exhausted.
+        unsafe { bytes.copy_from_slice(core::slice::from_raw_parts((0x7fc00000usize+offset) as *const u8,bytes.len())); }
+        return true;
+    }
     for chunk in bytes.chunks_mut(8) {
         let Some(value) = word() else { return false; };
         chunk.copy_from_slice(&value.to_le_bytes()[..chunk.len()]);

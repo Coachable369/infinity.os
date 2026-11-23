@@ -435,10 +435,40 @@ fn verify_gradients(engine:&Servo)->bool {
 }
 
 // ------------------------=
+// FUNC: verify_blending
+// DESC: Checks actual screen and exclusion compositing pixels through the native software renderer.
+// ------------------=
+fn verify_blending(engine:&Servo)->bool {
+    let Ok(context)=SoftwareRenderingContext::new((128,128).into()) else{return false;};
+    let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));let input=Rc::new(Cell::new(0));
+    let view=WebViewBuilder::new(engine,Rc::new(context))
+        .delegate(Rc::new(PageDelegate{repaint:repaint.clone(),loaded:loaded.clone(),input}))
+        .url("data:text/html,<html><body></body></html>".parse().unwrap()).build();
+    view.show();
+    if !spin_until(engine,&view,&repaint,&loaded) {return false;}
+    for (mode,expected) in [("screen",[192u8,0,0,255]),("exclusion",[128u8,0,0,255])] {
+        if !javascript_true(engine,&view,&repaint,&std::format!(
+            "document.documentElement.style.cssText='background:rgb(128,0,0)';document.body.style.margin='0';document.body.innerHTML='<div style=\"position:fixed;inset:0;background:rgb(128,0,0);mix-blend-mode:{mode}\"></div>';true")) {return false;}
+        let done=Rc::new(Cell::new(0));let result=done.clone();
+        view.take_screenshot(None,move |image| {
+            result.set(if image.is_ok_and(|image| {
+                let pixel=image.get_pixel(64,64).0;
+                pixel.iter().zip(expected).all(|(actual,wanted)| actual.abs_diff(wanted)<=2)
+            }) {1}else{2});
+        });
+        if !spin_until(engine,&view,&repaint,&done) {return false;}
+    }
+    drop(view);drain_close(engine);true
+}
+
+// ------------------------=
 // FUNC: verify
 // DESC: Loads real HTML/CSS, verifies its pixels, mutates the DOM through SpiderMonkey and verifies repaint.
 // ------------------=
 pub fn verify(engine: &Servo) -> u64 {
+    if option_env!("INFINITY_BROWSER_BLENDING_ONLY")==Some("1") {
+        return if verify_blending(engine) {0} else {55};
+    }
     if option_env!("INFINITY_BROWSER_MODERN_WEB_ONLY")==Some("1") {
         return if modern_web::verify(engine) {0} else {62};
     }
@@ -473,6 +503,7 @@ pub fn verify(engine: &Servo) -> u64 {
     if !modern_web::verify(engine) {return 62;}
     if !scrollbars::verify(engine) {return 61;}
     if !verify_gradients(engine) {return 54;}
+    if !verify_blending(engine) {return 55;}
     if !streaming::verify(engine) {return 41;}
     if !request::verify(engine) {return 46;}
     if !recovery::verify(engine) {return 52;}

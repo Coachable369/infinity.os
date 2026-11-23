@@ -444,6 +444,8 @@ pub unsafe extern "C" fn infinity_browser_run(host:*mut abi::Host)->u32 {
 // ------------------=
 #[no_mangle]
 pub extern "C" fn infinity_browser_abort()->! {
-    event(abi::EVENT_ALLOCATION_FAILURE,unsafe{Runtime::failed_request().min(u32::MAX as usize)} as u32,"");
-    event(abi::EVENT_MEMORY,unsafe{Runtime::peak_allocated()} as u32,"");fatal(4)
+    let failed_request=unsafe{Runtime::failed_request()};
+    event(abi::EVENT_ALLOCATION_FAILURE,failed_request.min(u32::MAX as usize) as u32,"");
+    event(abi::EVENT_MEMORY,unsafe{Runtime::peak_allocated()} as u32,"");
+    fatal(abi::abort_failure(failed_request))
 }

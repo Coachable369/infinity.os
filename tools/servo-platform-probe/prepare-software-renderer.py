@@ -42,6 +42,11 @@ pub use native_software_context::SoftwareRenderingContext;
     source = source.replace(marker, marker + '''
                 #[cfg(all(target_os = "none", infinity_native))]
                 clear_caches_with_quads: false,
+                // SWGL implements coherent advanced blending. Use it instead
+                // of GPU blend-factor shortcuts (screen/exclusion) that its
+                // software blend-key table does not implement.
+                #[cfg(all(target_os = "none", infinity_native))]
+                allow_advanced_blend_equation: true,
 ''')
     marker = "enable_dithering: true,"
     if source.count(marker) != 1:

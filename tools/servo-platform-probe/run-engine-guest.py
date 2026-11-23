@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--url", help="Public HTTPS destination for the native network probe")
     parser.add_argument("--assert-script", help="JavaScript boolean over real page state; required with --url")
     parser.add_argument("--network-only", action="store_true", help="Retest only site compatibility after engine fixtures have passed")
+    parser.add_argument("--accel", choices=("tcg", "hvf"), default="tcg", help="Use native ARM virtualization for live-site performance checks")
     parser.add_argument("--load-timeout-seconds", type=int, default=60, choices=range(30,601), metavar="30..600", help="Bounded observation budget for slow emulation; does not change transport deadlines")
     parser.add_argument("--viewport-width", type=int, default=800, choices=range(320,1921,2), metavar="320..1920")
     parser.add_argument("--viewport-height", type=int, default=600, choices=range(240,1081,2), metavar="240..1080")
@@ -35,6 +36,8 @@ def main():
     if bool(options.url) != bool(options.assert_script) or (options.network_only and not (options.network_probe or options.url)):
         parser.error("--url requires --assert-script; --network-only requires --network-probe")
     environment=os.environ.copy()
+    if options.accel == "hvf":
+        environment["INFINITY_BROWSER_FIXTURE_ENTROPY"] = "1"
     environment["INFINITY_BROWSER_LOAD_TIMEOUT"]=str(options.load_timeout_seconds)
     environment["INFINITY_BROWSER_VIEWPORT_WIDTH"]=str(options.viewport_width)
     environment["INFINITY_BROWSER_VIEWPORT_HEIGHT"]=str(options.viewport_height)
@@ -57,10 +60,17 @@ def main():
     registers=None
     monitor=output / "engine-qmp.sock"
     monitor.unlink(missing_ok=True)
-    process=subprocess.Popen(["qemu-system-aarch64","-machine","virt,highmem=off","-accel","tcg","-cpu","max",
+    entropy_file = output / "engine-entropy.bin"
+    entropy_args = []
+    if options.accel == "hvf":
+        # Apple virtual CPUs do not expose RNDR. Supply fresh host CSPRNG bytes
+        # to this disposable fixture only; the installed entropy service is unchanged.
+        entropy_file.write_bytes(os.urandom(1024 * 1024))
+        entropy_args = ["-device", "loader,file=" + str(entropy_file) + ",addr=0x7fc00000,force-raw=on"]
+    process=subprocess.Popen(["qemu-system-aarch64","-machine","virt,highmem=off","-accel",options.accel,"-cpu","host" if options.accel=="hvf" else "max",
             "-m","2G","-display","none","-serial","file:"+str(result),"-monitor","none",
             "-qmp","unix:"+str(monitor)+",server=on,wait=off",
-            "-kernel",str(output / "engine-boot.elf")] +
+            "-kernel",str(output / "engine-boot.elf")] + entropy_args +
             (["-netdev","user,id=browser","-device","e1000,netdev=browser,addr=1",
               "-object","filter-dump,id=packets,netdev=browser,file="+str(output / "browser-network.pcap")]
              if options.network_probe else []))
@@ -88,6 +98,7 @@ def main():
         if process.poll() is None:
             process.kill()
         process.wait()
+        entropy_file.unlink(missing_ok=True)
     data=result.read_bytes()
     records=[list(struct.unpack("<4Q",data[i:i+32])) for i in range(0,len(data)-31,32)]
     passed=not timed_out and bool(records) and records[-1][:3]==[9,0,5]
@@ -138,7 +149,11 @@ def main():
     } if options.network_probe else None
     report["load_timeout_seconds"] = options.load_timeout_seconds if options.network_probe else None
     report["observed_load_ms"] = next((r[3]/1_000_000 for r in records if r[:3]==[9,2,74]),None)
-    report["accelerator"] = "tcg"
+    report["heap_bytes"] = {
+        name: next((row[3] for row in records if row[:3] == [9,2,code]), None)
+        for name, code in (("allocated",80), ("peak",81), ("failed_request",82))
+    }
+    report["accelerator"] = options.accel
     if options.evidence_dir:
         options.evidence_dir.mkdir(parents=True, exist_ok=True)
         if screenshot:

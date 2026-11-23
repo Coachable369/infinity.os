@@ -55,6 +55,28 @@ pub const EVENT_TAB_CLOSED: u32 = 12;
 /// Supervisor diagnostics only; never render raw engine text as an error page.
 pub const EVENT_DIAGNOSTIC: u32 = 100;
 
+// ------------------------=
+// FUNC: abort_failure
+// DESC: Reports memory exhaustion only when the private allocator recorded a rejected request; other C aborts are engine failures.
+// ------------------=
+pub fn abort_failure(failed_request: usize) -> u32 {
+    if failed_request == 0 { 5 } else { 4 }
+}
+
+#[cfg(test)]
+mod tests {
+    // ------------------------=
+    // FUNC: renderer_abort_is_not_memory_exhaustion
+    // DESC: Distinguishes a renderer assertion from a recorded allocation failure in the supervisor ABI.
+    // ------------------=
+    #[test]
+    fn renderer_abort_is_not_memory_exhaustion() {
+        assert_eq!(super::abort_failure(0), 5);
+        assert_eq!(super::abort_failure(16), 4);
+        assert_eq!(super::abort_failure(usize::MAX), 4);
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Command {
