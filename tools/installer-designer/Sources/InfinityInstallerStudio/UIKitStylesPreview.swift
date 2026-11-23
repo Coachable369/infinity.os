@@ -17,14 +17,13 @@ struct UIKitStylesPreview: View {
                     ForEach(GlassButtonPreset.allCases) { preset in
                         Button { store.applyButtonPreset(preset) } label: {
                             VStack(alignment: .leading, spacing: 12) {
-                                sample(.primary, width: 250, height: 52, style: preset.style)
-                                    .frame(height: 52)
+                                InteractiveButtonThemeSample(store: store, style: preset.style)
                                 Text(preset.rawValue).font(.headline)
                                 Text(preset.detail).font(.caption).foregroundStyle(.secondary)
                                 Text("Apply to shared buttons").font(.caption).foregroundStyle(.secondary)
                             }.padding(16).background(InfinityUIKit.Palette.nativePanel)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(UIKitPreviewInteractionStyle())
                     }
                 }
             }
@@ -220,6 +219,7 @@ struct ButtonStyleStateRow: View {
     let style: UIKitSurfaceStyle
     let selected: Bool
     @State private var hovering = false
+    @Environment(\.uiKitPreviewPressed) private var pressing
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -232,14 +232,14 @@ struct ButtonStyleStateRow: View {
                 ForEach(0..<3) { state in
                     VStack(spacing: 4) {
                         if let image = UIKitStylePreviewImage.image(store: store, kind: .primary,
-                            width: 272, height: 72, material: PrecisionMaterial(focus: state == 1 ? 255 : 0,
-                                pressed: state == 2, scale: 2, style: style)) {
+                            width: 272, height: 72, material: PrecisionMaterial(focus: state == 1 || (state == 0 && hovering) ? 255 : 0,
+                                pressed: state == 2 || (state == 0 && pressing), scale: 2, style: style)) {
                             Image(decorative: image, scale: 2).overlay {
                                 Text("Button").font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(style.material == .porcelain ? Color.black : .white)
                             }.frame(width: 136, height: 36)
                         }
-                        Text(["Normal", "Hover", "Pressed"][state]).font(.caption2).foregroundStyle(Color(red: 0.64, green: 0.73, blue: 0.85))
+                        Text(["Try me", "Hover", "Pressed"][state]).font(.caption2).foregroundStyle(Color(red: 0.64, green: 0.73, blue: 0.85))
                     }
                 }
             }
@@ -294,7 +294,7 @@ struct ElementButtonStylePicker: View {
                             expanded = false
                         } label: {
                             row(preset.rawValue, style: preset.style, selected: GlassButtonPreset.matching(element) == preset)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(UIKitPreviewInteractionStyle())
                     }
                     } }.frame(maxHeight: 440)
                 }.padding(16).frame(width: 480)
@@ -338,7 +338,7 @@ struct GlobalButtonStylePicker: View {
                     } label: {
                         ButtonStyleStateRow(store: store, name: preset.rawValue,
                             style: preset.style, selected: selected == preset)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(UIKitPreviewInteractionStyle())
                 }
                 } }.frame(maxHeight: 470)
                 Divider()
@@ -435,5 +435,42 @@ struct GlobalWindowFrameEditor: View {
             }
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct UIKitPreviewPressedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+private extension EnvironmentValues {
+    var uiKitPreviewPressed: Bool {
+        get { self[UIKitPreviewPressedKey.self] }
+        set { self[UIKitPreviewPressedKey.self] = newValue }
+    }
+}
+struct UIKitPreviewInteractionStyle: ButtonStyle {
+    // ------------------------=
+    // FUNC: makeBody
+    // DESC: Shares native SwiftUI press tracking with themed previews without consuming selection gestures.
+    // ------------------=
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.environment(\.uiKitPreviewPressed, configuration.isPressed)
+    }
+}
+private struct InteractiveButtonThemeSample: View {
+    @ObservedObject var store: UIKitStore
+    let style: UIKitSurfaceStyle
+    @Environment(\.uiKitPreviewPressed) private var pressing
+    @State private var hovering = false
+    var body: some View {
+        Group {
+            if let image = UIKitStylePreviewImage.image(store: store, kind: .primary,
+                width: 500, height: 104, material: PrecisionMaterial(
+                    focus: hovering ? 255 : 0, pressed: pressing, scale: 2, style: style)) {
+                Image(decorative: image, scale: 2).overlay {
+                    Text("Try this button").font(.callout.weight(.semibold))
+                        .foregroundStyle(style.material == .porcelain ? Color.black : .white)
+                }
+            }
+        }.frame(width: 250, height: 52).contentShape(Rectangle()).onHover { hovering = $0 }
     }
 }

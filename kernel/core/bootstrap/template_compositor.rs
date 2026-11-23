@@ -438,15 +438,21 @@ impl DisplayDevice {
         cursor_y: i32,
         pressed: bool,
     ) -> bool {
-        self.template_screen(
-            INSTALLER_TEMPLATE_BYTES,
-            screen,
-            Some((focus, has_primary, Some((cursor_x, cursor_y, pressed)))),
-            false,
-            false,
-            None,
-            None,
-        )
+        let Ok(template) = InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES) else { return false; };
+        let previous = self.render_clip;
+        for role in [InstallerTemplateRole::BackButton, InstallerTemplateRole::PrimaryButton] {
+            let Some(element) = template.element(screen, role) else { continue; };
+            let rect = scale_template_rect(element.frame, self.width, self.height);
+            self.render_clip = previous;
+            self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+            // Restore the authored backdrop before compositing translucent states.
+            // Repainting over the previous button accumulates its glow and caption.
+            self.template_screen(INSTALLER_TEMPLATE_BYTES, screen,
+                Some((focus, has_primary, Some((cursor_x, cursor_y, pressed)))),
+                true, false, None, None);
+        }
+        self.render_clip = previous;
+        true
     }
 
     // ------------------------=
@@ -1156,7 +1162,7 @@ impl DisplayDevice {
                 edge:(element.border[0],element.border[1],element.border[2]),
                 opacity:button_fill,edge_opacity:button_edge,
                 focus:if focused {
-                    if element.role==InstallerTemplateRole::SettingsRowAction as u8 {100}
+                    if element.role==InstallerTemplateRole::SettingsRowAction as u8 {255}
                     else {super::access_style::focus_amount()}
                 }else{0},
                 pressed:depressed,scale:self.ui_scale()},style);

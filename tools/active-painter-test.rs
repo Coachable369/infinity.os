@@ -409,6 +409,7 @@ fn main() {
     if std::env::args().any(|arg|arg=="--voice-enrollment-only") {configuration_wizard_render::verify_voice();return;}
     if std::env::args().any(|arg|arg=="--face-enrollment-only") {configuration_wizard_render::verify_face();return;}
     if std::env::args().any(|arg|arg=="--password-confirmation") {configuration_wizard_render::verify_password_pair();return;}
+    if std::env::args().any(|arg|arg=="--button-interaction-only") {configuration_wizard_render::verify_button_interaction();return;}
     if std::env::args().any(|arg|arg=="--configuration-wizard-only") {configuration_wizard_render::verify();return;}
     if std::env::args().any(|arg|arg=="--precision-benchmark-only") {precision_surface_benchmark();return;}
     if std::env::args().any(|arg|arg=="--window-substrate-only") {window_substrate_pixels();return;}

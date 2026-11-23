@@ -1041,3 +1041,37 @@ pub(super) fn verify_voice(){
   write_ppm(&format!("builds/validation/voice-enrollment/{name}.ppm"),&pixels,w,h);
  }
 }
+
+// ------------------------=
+// FUNC: verify_button_interaction
+// DESC: Verifies repeated themed navigation state repaints equal a fresh scene without accumulated alpha or stale captions.
+// ------------------=
+pub fn verify_button_interaction() {
+    let bytes=crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES;
+    let template=InstallerTemplate::parse(bytes).unwrap();
+    let screen=6; let (w,h)=(1280,800);
+    let e=template.element(screen,Role::PrimaryButton).unwrap();
+    let rect=crate::ui::installer_layout::scale_template_rect(e.frame,w,h);
+    let point=(e.frame.x as i32+e.frame.width as i32/2,e.frame.y as i32+e.frame.height as i32/2);
+    let output="builds/validation/button-interactions";
+    std::fs::create_dir_all(output).unwrap();
+    let mut pixels=vec![0;w*h];
+    let mut target=display(&mut pixels,w,h);
+    assert!(target.template_scene_data(bytes,screen,Some((2,true,Some((-1,-1,false)))),true,false,None,None,false,false));
+    let mut states=Vec::new();
+    for state in [0,1,2,1,0,2,0] {
+        let pressed=state==2;
+        let (x,y)=if state==0 {(-1,-1)}else{point};
+        access_style::animate(1,1000,pressed,true);
+        for _ in 0..3 {assert!(target.installer_template_navigation(screen,2,true,x,y,pressed));}
+        let mut expected=vec![0;w*h];
+        let mut clean=display(&mut expected,w,h);
+        assert!(clean.template_scene_data(bytes,screen,Some((2,true,Some((x,y,pressed)))),true,false,None,None,false,false));
+        let crop=|data:&[u32]| (rect.top..rect.bottom()).flat_map(|y|data[y*w+rect.left..y*w+rect.right()].iter().copied()).collect::<Vec<_>>();
+        assert_eq!(crop(&pixels),crop(&expected),"button state {state}");
+        if states.len()<3 {states.push(crop(&pixels));}
+        write_ppm(&format!("{output}/state-{state}.ppm"),&pixels,w,h);
+    }
+    assert_ne!(states[0],states[1]); assert_ne!(states[1],states[2]); assert_ne!(states[0],states[2]);
+    println!("Button idle, hover, press, release and repeated repaint pixels passed");
+}

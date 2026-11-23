@@ -77,6 +77,20 @@ distinctness, translucency, corner coverage, serialization and undo. The saved
 recipe uses the existing UIKit JSON/style payload and existing ISO-update path.
 Runtime and installed-system visual checks remain separate from host parity.
 
+## Interactive state previews
+
+The first sample in each style-picker row is interactive: pointer hover shows
+the theme's hover artwork, holding the mouse shows its pressed artwork, and
+release restores hover or idle according to pointer position. The adjacent
+Hover and Pressed samples remain fixed references. The Surface Styles gallery
+uses the same interaction contract. Selecting a style retains the existing
+selection and undo behavior.
+
+Installer navigation restores the authored backdrop inside each button's bounds
+before drawing a new translucent state. Repeated hover, press, and release must
+produce the same pixels as a fresh render of that state, without accumulated
+highlights or caption ghosts. Settings action hover uses the full themed state.
+
 Remaining Studio integration work: login is still an imperative authentication
 scene; top-bar placement, menus and hit testing are also imperative. Exposing
 either as editable layers requires a shared authored geometry/action contract,

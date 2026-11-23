@@ -1119,6 +1119,9 @@ pub fn console_present(
             let date_time_part_changed =
                 console.last_installer_date_time_part != installer_date_time_part;
             let old_cursor_y = console.cursor_y;
+            let navigation_hover_changed = crate::ui::installer_layout::installer_navigation_target(
+                installer_screen, console.cursor_x, console.cursor_y)
+                != crate::ui::installer_layout::installer_navigation_target(installer_screen, cursor_x, cursor_y);
             let pressed_changed = console.pointer_pressed != pointer_pressed;
             let pointer_changed =
                 console.cursor_x != cursor_x || console.cursor_y != cursor_y || pressed_changed;
@@ -1184,7 +1187,7 @@ pub fn console_present(
                         pointer_pressed,
                     );
                 }
-                if full_redraw || screen_changed || focus_changed || pressed_changed {
+                if full_redraw || screen_changed || focus_changed || pressed_changed || navigation_hover_changed {
                     console.display.installer_navigation(
                         installer_screen,
                         installer_focus,
