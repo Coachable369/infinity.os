@@ -65,3 +65,15 @@ repaint comparisons passed. Updated comparison artifacts are in
 `builds/validation/task-tray-bubble/`. Visual acceptance remains open: the current
 icon treatment and glass shading are not an exact reference match. No updated
 ISO is claimed for this correction.
+
+## Accepted motion refinement
+
+Keep the accepted hover/selection timing. Center the existing app icon below the
+app name, at two-thirds of the base header height, sized two-fifths of that height.
+Do not repaint an invisible context menu during hover. The expansion damage
+envelope follows the actual three-base rail width, including edge padding.
+
+Selection and spine use shared pale glass at 190/255 alpha, preserving the
+underlying canvas. Native preview: `builds/validation/task-tray-bubble/app-icon-glass.gif`.
+49 behavioral checks and both targeted production-painter checks pass.
+Repaint reduction is verified structurally; installed-VM frame rate is not measured.

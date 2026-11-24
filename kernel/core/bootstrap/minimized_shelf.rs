@@ -81,6 +81,14 @@ impl DisplayDevice {
             let label=if shelf::presentation().0>180 {state.hover.map(shelf::label).unwrap_or(b"Tasks")}else if count<10 {&digits[1..]}else{&digits};
             self.ui_text_centered(x,w,y+12,label,154,211,238,1);
         }
+        // Reuse the selected application's UIKit icon, centered under its name.
+        if shelf::presentation().0 > 180 && state.menu.is_none() {
+            if let Some(id) = state.hover {
+                let size = (g.base as usize * 2 / 5).max(24);
+                self.launcher_icon(x + w / 2, y + g.base as usize * 2 / 3,
+                    shelf::icon(id), size);
+            }
+        }
         if count>g.capacity {
             let track=h.saturating_sub(56);
             let thumb=(track*g.capacity/count).max(4).min(track);
@@ -106,9 +114,10 @@ impl DisplayDevice {
             if let Some(old)=previous_clip {clip.left=clip.left.max(old.left);clip.top=clip.top.max(old.top);clip.right=clip.right.min(old.right);clip.bottom=clip.bottom.min(old.bottom);}
             self.render_clip=Some(clip);
             let opacity=((expansion-40)*255/215) as u8;
+            let glass_opacity=(opacity as u16*190/255) as u8;
             let spine=(base*62/100).max(18);
             let spine_x=x+w-spine-5;
-            self.fill_rounded_rect_alpha(spine_x,y+5,spine,h.saturating_sub(10),spine/2,248,250,255,opacity);
+            self.fill_rounded_rect_alpha(spine_x,y+5,spine,h.saturating_sub(10),spine/2,248,250,255,glass_opacity);
             let (hover,tail)=shelf::bubble_state();
             let first=g.action_rect(0);
             let pitch=g.action_rect(1).y-first.y;
@@ -139,9 +148,9 @@ impl DisplayDevice {
                 for py in top-shoulder..bottom+shoulder {
                     if let Some((left,_))=shelf::bubble_span(py*4+2,top*4,bottom*4,first.x*4,spine_x as i32*4,shoulder*4) {
                         let start=(left+3)/4;
-                        self.fill_rect_alpha(start.max(0)as usize,py.max(0)as usize,(spine_x as i32-start).max(0)as usize,1,248,250,255,opacity);
+                        self.fill_rect_alpha(start.max(0)as usize,py.max(0)as usize,(spine_x as i32-start).max(0)as usize,1,248,250,255,glass_opacity);
                         let coverage=(start*4-left).clamp(0,4);
-                        if coverage>0 {self.fill_rect_alpha((start-1).max(0)as usize,py.max(0)as usize,1,1,248,250,255,(opacity as i32*coverage/4)as u8);}
+                        if coverage>0 {self.fill_rect_alpha((start-1).max(0)as usize,py.max(0)as usize,1,1,248,250,255,(glass_opacity as i32*coverage/4)as u8);}
                     }
                 }
             }

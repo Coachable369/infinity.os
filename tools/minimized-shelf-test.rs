@@ -285,3 +285,20 @@ fn hover_bubble_grows_and_reverses_continuously() {
     state.row=Some(4);state.selected_row=4;publish(state);animate(601,true);assert_eq!(bubble_state().0[4],255);assert_eq!(bubble_state().1,1024);
     publish(State::new());animate(602,true);
 }
+
+#[test]
+// ------------------------=
+// FUNC: hover_damage_excludes_closed_context_menu
+// DESC: Hover repaints only the rail; an opened context menu extends its damage.
+// ------------------=
+fn hover_damage_excludes_closed_context_menu() {
+    let mut state=State::new(); state.set(EDITOR,true); state.hover=Some(EDITOR);
+    let g=Geometry::new(1440,900,state);
+    let hover=g.damage(state);
+    assert_eq!(hover.width,g.rail.width+24);
+    assert_eq!(hover.height,g.rail.height+24);
+    state.menu=Some(EDITOR);
+    let menu=g.damage(state);
+    assert!(menu.width>=hover.width);
+    assert!(menu.contains(Point{x:g.menu.x,y:g.menu.y}));
+}

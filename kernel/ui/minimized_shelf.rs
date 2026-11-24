@@ -278,14 +278,14 @@ impl Geometry {
     // DESC: Clears the entire expansion envelope on every motion frame, including the collapsed endpoint.
     // ------------------=
     pub fn animation_damage(self, state:State)->Rect {
-        self.damage(state).union(Rect {x:if state.left || state.floating[0]>0 || state.drag.is_some() {self.rail.x-12}else{self.rail.right()-(self.base*4)as i32-12}, y:self.rail.y-12,width:self.base*4+24,height:self.rail.height+24})
+        self.damage(state).union(Rect {x:if state.left || state.floating[0]>0 || state.drag.is_some() {self.rail.x-12}else{self.rail.right()-(self.base*3)as i32-12}, y:self.rail.y-12,width:self.base*3+24,height:self.rail.height+24})
     }
     // ------------------------=
     // FUNC: damage
     // DESC: Bounds shelf/menu effects independently of the full desktop.
     // ------------------=
     pub fn damage(self, state: State) -> Rect {
-        let r = if state.menu.is_some() || state.hover.is_some() {
+        let r = if state.menu.is_some() {
             self.rail.union(self.menu)
         } else {
             self.rail
