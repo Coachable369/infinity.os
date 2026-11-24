@@ -17,10 +17,10 @@ pub use crate::ui::voice_setup_layout::{Stage,Failure};
 struct Host{
  account:Option<StableId>,stage:Stage,enrollment:policy::Enrollment,pending:Option<super::voice_identity_login::Pending>,
  proof:Option<super::voice_identity_login::Proof>,template:[u8;policy::BYTES],pcm:[i16;speaker::SAMPLES],length:usize,
- cap:u64,capture_session:capture_session::Session,resampler:Resampler,deadline:u64,captured:u64,level:u16,task:Option<Task>,terminal:Option<State>,scrubbed:usize,result:Option<[f32;speaker::DIM]>,login:bool,waiting_face:bool,face_started:bool,
+ cap:u64,capture_session:capture_session::Session,resampler:Resampler,deadline:u64,captured:u64,level:u16,task:Option<Task>,terminal:Option<State>,scrubbed:usize,result:Option<[f32;speaker::DIM]>,login:bool,greeting_pending:bool,waiting_face:bool,face_started:bool,
 }
 static mut HOST:Host=Host{account:None,stage:Stage::Idle,enrollment:policy::Enrollment::new(),pending:None,proof:None,
- template:[0;policy::BYTES],pcm:[0;speaker::SAMPLES],length:0,cap:0,capture_session:capture_session::Session::new(),resampler:Resampler::empty(),deadline:0,captured:0,level:0,task:None,terminal:None,scrubbed:0,result:None,login:false,waiting_face:false,face_started:false};
+ template:[0;policy::BYTES],pcm:[0;speaker::SAMPLES],length:0,cap:0,capture_session:capture_session::Session::new(),resampler:Resampler::empty(),deadline:0,captured:0,level:0,task:None,terminal:None,scrubbed:0,result:None,login:false,greeting_pending:false,waiting_face:false,face_started:false};
 // ------------------------=
 // FUNC: now
 // DESC: Reads the existing monotonic clock without changing audio scheduling.
@@ -36,7 +36,8 @@ pub fn snapshot()->(Stage,usize,u16){unsafe{let h=&*core::ptr::addr_of!(HOST);(h
 // DESC: Supplies actionable login status while retaining password fallback.
 // ------------------=
 pub fn caption()->Option<&'static[u8]>{unsafe{let h=&*core::ptr::addr_of!(HOST);if !h.login{return None;}if h.waiting_face{return Some(super::face_setup_host::login_caption());}if h.face_started&&matches!(h.stage,Stage::Failed(_)){return Some(b"Face not verified - retry sign-in");}Some(match h.stage{
- Stage::Capturing=>b"Speak naturally for 2 seconds",
+ Stage::Capturing=>b"Say Hello Infinity or Infinity Hello",
+ Stage::Comparing if h.greeting_pending=>b"Checking your sign-in phrase...",
  Stage::Comparing=>b"Verifying your voice...",
  Stage::Verified=>b"Face and voice verified",
  Stage::Failed(Failure::NoEnrollment)=>b"Voice not enrolled - use your password",
@@ -77,6 +78,7 @@ impl capture_session::Backend for Microphone<'_>{
 // DESC: Revokes only this workflow's microphone lease and clears its private resampler history.
 // ------------------=
 fn stop_capture(h:&mut Host){
+ if h.greeting_pending{super::ai::voice_input::stop(OWNER);h.greeting_pending=false;}
  h.capture_session.close(&mut Microphone(&mut h.cap));
  h.resampler.clear();h.level=0;
 }
@@ -122,6 +124,7 @@ fn capture(h:&mut Host)->bool{
  if !h.capture_session.begin(clock,&mut Microphone(&mut h.cap)){fail(h,Failure::Unavailable);return false;}
  let rate=crate::drivers::audio::capture_status().map(|s|s.sample_rate).unwrap_or(0);
  if !h.resampler.configure(rate){fail(h,Failure::Unavailable);return false;}
+ if h.login{h.pending=h.account.map(|account|super::voice_identity_login::Pending::begin(account,clock/1_000_000));}
  h.deadline=clock+20_000_000_000;h.stage=Stage::Capturing;true
 }
 // ------------------------=
@@ -172,6 +175,36 @@ fn save(h:&mut Host)->bool{
  crate::storage::voice_identity_load(account.0,&mut *readback)==Ok(readback.len())&&super::voice_identity_vault::open(&key,account,&model,&readback).is_some_and(|p|*p==*payload)
 }
 // ------------------------=
+// FUNC: recognize_greeting
+// DESC: Checks login words from the exact private speaker sample; keeps its capability valid until transcript delivery.
+// ------------------=
+fn recognize_greeting(h:&mut Host){
+ if super::ai::voice_input::submit(OWNER,h.cap,&h.pcm).is_ok(){
+  h.greeting_pending=true;h.stage=Stage::Comparing;h.deadline=now()+30_000_000_000;
+ }else{fail(h,Failure::Unavailable);}
+}
+// ------------------------=
+// FUNC: poll_greeting
+// DESC: Requires a recognized login greeting before speaker inference; unrelated speech never starts face authentication.
+// ------------------=
+fn poll_greeting(h:&mut Host,clock:u64){
+ use super::ai::voice_input::{self,InputState};
+ voice_input::poll();
+ if clock>=h.deadline{fail(h,Failure::Timeout);return;}
+ match voice_input::status().state{
+  InputState::Ready=>{
+   let mut text=[0u8;512];
+   let result=voice_input::take(OWNER,&mut text);
+   h.greeting_pending=false;
+   let accepted=result.ok().is_some_and(|n|h.pending.as_mut().is_some_and(|p|p.accept_greeting(h.account.unwrap(),h.captured,clock/1_000_000,&text[..n])));
+   text.fill(0);
+   if accepted{launch(h);}else{capture(h);}
+  },
+  InputState::Failed|InputState::Cancelled=>fail(h,Failure::Unavailable),
+  _=>{},
+ }
+}
+// ------------------------=
 // FUNC: launch
 // DESC: Starts only the packaged isolated Rust speaker worker with bounded private model memory.
 // ------------------=
@@ -187,7 +220,7 @@ fn launch(h:&mut Host)->bool{unsafe{
 // DESC: Advances authorized capture, isolated inference, matching and private-memory reclamation without blocking desktop services.
 // ------------------=
 pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
- let h=&mut *core::ptr::addr_of_mut!(HOST);let before=(h.stage,h.enrollment.count());let clock=now();
+ let h=&mut *core::ptr::addr_of_mut!(HOST);let before=(h.stage,h.enrollment.count(),h.greeting_pending);let clock=now();
  let valid=h.account.is_some()&&h.account==if h.login{selected}else{enrollment}
   &&super::with_runtime(|r|h.account.is_some_and(|a|r.identity.user(a).is_some_and(|u|u.state==UserState::Active))).unwrap_or(false);
  if !valid&&h.account.is_some(){cancel();}
@@ -204,11 +237,12 @@ pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
     if nout>0{h.level=mono[..nout].iter().map(|s|s.unsigned_abs()).max().unwrap_or(0);}
     if h.captured==0&&nout>0&&mono[..nout].iter().map(|&s|(s as i64)*(s as i64)).sum::<i64>()/nout as i64>90_000{h.captured=clock/1_000_000;}
     if h.captured!=0{let take=nout.min(speaker::SAMPLES-h.length);h.pcm[h.length..h.length+take].copy_from_slice(&mono[..take]);h.length+=take;}
-    if h.length==speaker::SAMPLES{launch(h);}
+    if h.length==speaker::SAMPLES{if h.login{recognize_greeting(h);}else{launch(h);}}
    }
    raw.fill(0);mono.fill(0);
   }
  }
+ if h.greeting_pending{poll_greeting(h,clock);}
  if let Some(mut task)=h.task.take(){
   if let Some(state)=h.terminal{
    if schedule::batch(now,|_|task.scrub_private(&mut h.scrubbed).then_some(())).is_some(){
@@ -251,7 +285,7 @@ pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
    h.task=Some(task);
   }
  }
- before!=(h.stage,h.enrollment.count())
+ before!=(h.stage,h.enrollment.count(),h.greeting_pending)
 }}
 // ------------------------=
 // FUNC: take_proof

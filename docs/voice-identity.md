@@ -6,7 +6,10 @@ recording must agree with both previous recordings. Skip preserves password
 login. Captured PCM is not persisted.
 
 The login button starts a 90-second account-bound voice attempt. Only a fresh
-matching speaker recording starts the camera automatically. The face result must
+recording of “Infinity Hello” or “Hello Infinity” must first pass local speech
+recognition and then match the enrolled speaker before starting the camera.
+The phrase and speaker check use the same captured PCM; the words alone never
+authorize login. Unrelated speech returns to capture without starting the camera. The face result must
 be issued after speaker verification and belong to the same selected account;
 only then can the combined proof create or unlock a session. Account changes,
 cancellation, missing enrollment, mismatch and timeout fail closed. Password
@@ -92,3 +95,17 @@ are preserved under `builds/validation/voice-enrollment-retry/`. This matches th
 previously documented host-side zero-progress capture deadlock. Removing repeated
 guest reopen calls reduces that trigger but cannot repair a stuck host library.
 A rebuilt ISO is not proof that this host defect is fixed.
+
+## Login greeting admission (2026-11-24)
+
+Automatic biometric sign-in and the explicit biometric button use the login-only
+capture owner. The prompt asks for either greeting above. Existing recognition
+APIs are called without modifying desktop conversation behavior, speech assets,
+or the speaker matching thresholds. Account/page changes cancel pending phrase
+recognition before releasing its microphone capability. Password remains the
+fallback. The existing bounded capture lifetime and retry behavior still apply.
+
+The authentication harness checks both word orders, punctuation/case handling,
+rejection of unrelated speech and phrase-only login, capture substitution,
+account substitution, and fresh voice-before-face proof ordering. Physical
+microphone acceptance of short greetings remains a VM testing requirement.

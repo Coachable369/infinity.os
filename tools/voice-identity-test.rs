@@ -24,18 +24,18 @@ fn sequential_account_bound_authorization(){
   assert!(p.complete(a,face_login::Proof::new(a,104),105).is_none());
  }
  for (account,face_time,complete) in [(b,104,105),(a,101,105),(a,103,105),(a,106,105),(a,104,5104),(a,90100,90101)] {
-  let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+  let mut p=Pending::begin(a,100);assert!(p.accept_greeting(a,101,102,b"Hello Infinity"));assert!(p.accept_voice(a,101,103));
   assert!(p.complete(account,face_login::Proof::new(account,face_time),complete).is_none());
  }
- let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ let mut p=Pending::begin(a,100);assert!(p.accept_greeting(a,101,102,b"Hello Infinity"));assert!(p.accept_voice(a,101,103));
  assert!(!p.accept_voice(a,104,105));
  assert!(p.complete(a,face_login::Proof::new(a,106),107).unwrap().consume(a,108));
- let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ let mut p=Pending::begin(a,100);assert!(p.accept_greeting(a,101,102,b"Hello Infinity"));assert!(p.accept_voice(a,101,103));
  assert!(!p.complete(a,face_login::Proof::new(a,104),105).unwrap().consume(b,106));
- let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ let mut p=Pending::begin(a,100);assert!(p.accept_greeting(a,101,102,b"Hello Infinity"));assert!(p.accept_voice(a,101,103));
  assert!(!p.complete(a,face_login::Proof::new(a,104),105).unwrap().consume(a,5105));
  // A face result for a different account cannot complete the selected account.
- let mut p=Pending::begin(a,100);assert!(p.accept_voice(a,101,103));
+ let mut p=Pending::begin(a,100);assert!(p.accept_greeting(a,101,102,b"Hello Infinity"));assert!(p.accept_voice(a,101,103));
  assert!(p.complete(a,face_login::Proof::new(b,104),105).is_none());
 }
 // ------------------------=
@@ -56,4 +56,30 @@ fn encrypted_voice_owner_model_and_integrity(){
   let mut changed=record.clone();changed[i]^=1;assert!(v::open(&key,a,&model,&changed).is_none());
  }
  assert!(v::seal(&key,a,&model,[0;12],&payload).is_none());
+}
+
+// ------------------------=
+// FUNC: greeting_and_speaker_must_share_fresh_capture
+// DESC: Rejects phrase-only authorization, unrelated speech and substitution of a different speaker recording.
+// ------------------=
+#[test]
+fn greeting_and_speaker_must_share_fresh_capture(){
+ use identity::StableId;use voice_identity_login::Pending;
+ let a=StableId([1;16]);let b=StableId([2;16]);
+ for phrase in [b"Infinity Hello".as_slice(),b"Hello Infinity",b"hello INFINITY!"]{
+  let mut p=Pending::begin(a,100);
+  assert!(!p.accept_voice(a,101,102));
+  assert!(!p.accept_greeting(b,101,102,phrase));
+  assert!(!p.accept_greeting(a,100,102,phrase));
+  assert!(p.accept_greeting(a,101,102,phrase));
+  assert!(!p.accept_voice(a,102,103));
+  assert!(p.accept_voice(a,101,103));
+  assert!(p.complete(a,face_login::Proof::new(a,104),105).unwrap().consume(a,106));
+ }
+ for phrase in [b"hello".as_slice(),b"Infinity",b"Hello Infinity open files",b"random speech",b""]{
+  let mut p=Pending::begin(a,100);
+  assert!(!p.accept_greeting(a,101,102,phrase));assert!(!p.accept_voice(a,101,103));
+ }
+ let mut p=Pending::begin(a,100);assert!(p.accept_greeting(a,101,102,b"Infinity Hello"));
+ assert!(p.complete(a,face_login::Proof::new(a,104),105).is_none());
 }
