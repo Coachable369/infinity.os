@@ -14907,6 +14907,9 @@ fn poll_native_ai_inner() {
         static mut AUTO_BIOMETRICS: crate::runtime::biometric_autostart::Gate = crate::runtime::biometric_autostart::Gate::new();
         let enabled=selected.is_some_and(|account| crate::runtime::with_runtime(|r|
             r.identity.user_profile(account).is_some_and(|p|p.auto_biometrics_enabled&&p.face_login_enabled)).unwrap_or(false));
+        if crate::runtime::voice_identity_host::retryable_login() {
+            (&mut *core::ptr::addr_of_mut!(AUTO_BIOMETRICS)).retry(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000);
+        }
         if (&mut *core::ptr::addr_of_mut!(AUTO_BIOMETRICS)).poll(selected,enabled,runtime.command_length>0,crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000) {
             if let Some(account)=selected.filter(|account|crate::storage::biometric_enrollments_present(account.0)) {
                 crate::runtime::voice_identity_host::start_login(account);

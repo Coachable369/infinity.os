@@ -63,6 +63,7 @@ impl DisplayDevice{
             }
    match id{
     b"voiceGuidance"=>e.text=message,
+    b"voicePhrase"=>e.text=match count{0=>b"Hello Infinity",1=>b"Infinity Hello",_=>b"Hello Infinity"},
     b"voiceSubtitle"=>e.text=b"Verify your voice, then your face at sign-in.",
     b"voiceStepTitle"=>e.text=match stage{Stage::Capturing=>b"Listening to you",Stage::Comparing=>b"Verifying voice",Stage::Saved=>b"Identity saved",Stage::Failed(_)=>b"Please try again",_=>b"Read the phrase"},
     b"voiceRecordStatus"=>e.text=match stage{Stage::Capturing=>b"Recording",Stage::Comparing=>b"Comparing",Stage::Saved=>b"Saved",Stage::Failed(_)=>b"Ready to retry",_=>b"Ready to record"},

@@ -109,3 +109,23 @@ The authentication harness checks both word orders, punctuation/case handling,
 rejection of unrelated speech and phrase-only login, capture substitution,
 account substitution, and fresh voice-before-face proof ordering. Physical
 microphone acceptance of short greetings remains a VM testing requirement.
+
+## Short-greeting enrollment and automatic recovery (2026-11-24)
+
+Enrollment prompts alternate Hello Infinity / Infinity Hello / Hello Infinity,
+matching the length and phonetic content used at sign-in instead of truncating a
+long unrelated sentence. Each additional enrollment must agree with all earlier
+recordings at 0.45, including the third sample. Existing encrypted templates remain
+readable; re-enrollment is recommended for templates captured with the old sentence.
+
+Combined login uses a 0.50 centroid floor and agreement of at least two samples at
+0.45. The standalone SDK matching policy retains its 0.60 floor. These are
+experimental tolerances, not a calibrated security/error-rate claim; the face
+threshold is unchanged and a fresh same-account face proof remains mandatory.
+VoiceIdentity logs record agreement count and centroid score, never PCM or vectors.
+
+Auto sign-in remains enabled by default for new accounts. Recoverable voice/face
+mismatch, quiet/clipped capture, and timeout rearm after two seconds, once the
+worker is fully reclaimed. Missing enrollment, authorization, storage or device
+errors do not create a retry storm. Explicit disable and password entry suppress
+automatic attempts. No desktop conversation pipeline changes are included.

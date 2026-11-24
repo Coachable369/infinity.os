@@ -288,6 +288,14 @@ pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
  before!=(h.stage,h.enrollment.count(),h.greeting_pending)
 }}
 // ------------------------=
+// FUNC: retryable_login
+// DESC: Allows automatic retry only after worker reclamation and a recoverable login failure; missing enrollment and storage errors remain explicit.
+// ------------------=
+pub fn retryable_login()->bool{unsafe{
+ let h=&*core::ptr::addr_of!(HOST);
+ h.login&&h.task.is_none()&&h.terminal.is_none()&&matches!(h.stage,Stage::Failed(Failure::Mismatch|Failure::Quiet|Failure::Clipped|Failure::Timeout|Failure::AnalysisTimeout))
+}}
+// ------------------------=
 // FUNC: take_proof
 // DESC: Delivers a completed combined proof only once to the kernel login controller.
 // ------------------=
@@ -301,14 +309,19 @@ fn finish(h:&mut Host,state:State,alive:bool,clock:u64){
     if alive&&state==State::Exited(0){
      if let Some(mut vector)=h.result.take(){
       if h.login{
-       if policy::matches(&h.template,&vector)==Ok(true){
+       let scores=policy::comparison(&h.template,&vector);
+       if policy::matches_combined(&h.template,&vector)==Ok(true){
         let account=h.account.unwrap();
         if h.pending.as_mut().is_some_and(|p|p.accept_voice(account,h.captured,clock)){
          h.face_started=true;
          if super::face_setup_host::start_login(account){h.waiting_face=true;h.stage=Stage::Verified;}
          else{fail(h,Failure::Unavailable);}
         }else{fail(h,Failure::Unauthorized);}}
-       else{fail(h,Failure::Mismatch);}
+       else{
+        let stamp=super::ai::clock::SYSTEM.utc_nanoseconds(now()).map(|n|n/1_000_000_000);
+        let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"speaker-comparison",format_args!("agreement_and_centroid={scores:?} combined_threshold=0.50 face_required=true"));
+        fail(h,Failure::Mismatch);
+       }
        h.template.fill(0);
       }else if h.enrollment.add(vector).is_err(){fail(h,Failure::Mismatch);}
       else if h.enrollment.count()==policy::COUNT{if save(h){stop_capture(h);h.stage=Stage::Saved;h.enrollment.clear();}else{fail(h,Failure::Storage);}}

@@ -22,7 +22,7 @@ impl Enrollment {
     pub fn add(&mut self,mut vector:[f32;DIM])->Result<(),Error>{
         normalize(&mut vector)?;
         if self.count>=COUNT{return Err(Error::Shape);}
-        let threshold=if self.count==2{0.60}else{0.45};
+        let threshold=0.45;
         for sample in &self.samples[..self.count]{if similarity(sample,&vector)?<threshold{return Err(Error::Mismatch);}}
         self.samples[self.count]=vector;self.count+=1;Ok(())
     }
@@ -53,6 +53,13 @@ impl Drop for Enrollment{
 // DESC: Compares against the normalized enrollment centroid and requires agreement with two recordings; invalid templates fail closed.
 // ------------------=
 pub fn matches(template:&[u8;BYTES],vector:&[f32;DIM])->Result<bool,Error>{
+ let (accepted,score)=comparison(template,vector)?;Ok(accepted>=2&&score>=0.60)
+}
+// ------------------------=
+// FUNC: comparison
+// DESC: Reports individual agreement and centroid similarity without authorizing a login.
+// ------------------=
+pub fn comparison(template:&[u8;BYTES],vector:&[f32;DIM])->Result<(usize,f32),Error>{
     let mut accepted=0;let mut centroid=[0f32;DIM];
     for raw in template.chunks_exact(DIM*4){
         let mut sample=[0f32;DIM];
@@ -64,12 +71,37 @@ pub fn matches(template:&[u8;BYTES],vector:&[f32;DIM])->Result<bool,Error>{
     }
     let score=similarity(&centroid,vector)?;
     for x in &mut centroid{unsafe{core::ptr::write_volatile(x,0.0);}}
-    Ok(accepted>=2&&score>=0.60)
+    Ok((accepted,score))
+}
+
+// ------------------------=
+// FUNC: matches_combined
+// DESC: Applies the short-greeting tolerance for voice-first authentication; callers must still require a fresh face proof.
+// ------------------=
+pub fn matches_combined(template:&[u8;BYTES],vector:&[f32;DIM])->Result<bool,Error>{
+ let (accepted,score)=comparison(template,vector)?;
+ Ok(accepted>=2&&score>=0.50)
 }
 
 #[cfg(test)]
 mod tests {
  use super::*;
+ // ------------------------=
+ // FUNC: combined_tolerance_preserves_rejection
+ // DESC: Permits moderate greeting variation while rejecting low similarity and malformed samples.
+ // ------------------=
+ #[test]
+ fn combined_tolerance_preserves_rejection(){
+  let mut e=Enrollment::new();let mut a=[0.0;DIM];a[0]=1.0;
+  for _ in 0..COUNT{e.add(a).unwrap();}let mut bytes=[0;BYTES];e.encode(&mut bytes).unwrap();
+  for (score,expected) in [(0.55f32,true),(0.49,false),(0.0,false),(-0.8,false)]{
+   let mut v=[0.0;DIM];v[0]=score;v[1]=libm::sqrtf(1.0-score*score);
+   assert_eq!(matches_combined(&bytes,&v),Ok(expected));
+   assert_eq!(matches(&bytes,&v),Ok(false));
+  }
+  assert!(matches_combined(&bytes,&[f32::NAN;DIM]).is_err());
+  assert!(matches_combined(&bytes,&[0.0;DIM]).is_err());
+ }
  // ------------------------=
  // FUNC: enrollment_requires_consistent_complete_samples
  // DESC: Incomplete, inconsistent and malformed samples cannot produce a usable enrollment.

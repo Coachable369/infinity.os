@@ -123,9 +123,14 @@ fn main() {
     assert!(!gate.poll(Some(owner.id),true,false,749));
     assert!(gate.poll(Some(owner.id),true,false,750));
     assert!(!gate.poll(Some(owner.id),true,false,100_000));
+    gate.retry(100_000);
+    gate.retry(100_100); // Repeated failed-state polls must not postpone retry.
+    assert!(!gate.poll(Some(owner.id),true,false,101_999));
+    assert!(gate.poll(Some(owner.id),true,false,102_000));
     assert!(!gate.poll(None,true,false,100_001));
     assert!(!gate.poll(Some(owner.id),true,true,100_002));
-    assert!(!gate.poll(Some(owner.id),true,false,101_002));
+    gate.retry(100_002);
+    assert!(!gate.poll(Some(owner.id),true,false,103_002));
     assert!(!gate.poll(Some(guest.id),false,false,102_002));
     assert!(!gate.poll(Some(guest.id),false,false,103_002));
     assert!(gate.poll(Some(guest.id),true,false,104_002));

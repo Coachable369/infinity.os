@@ -12,7 +12,7 @@ fn main(){
  let args:Vec<_>=std::env::args().skip(1).collect();assert!(args.len()>=5);
  let mut e=policy::Enrollment::new();for path in &args[..3]{e.add(read(path)).unwrap();}
  let mut bytes=[0;policy::BYTES];e.encode(&mut bytes).unwrap();
- assert_eq!(policy::matches(&bytes,&read(&args[3])),Ok(true));
- for path in &args[4..]{assert_eq!(policy::matches(&bytes,&read(path)),Ok(false));}
+ assert_eq!(policy::matches_combined(&bytes,&read(&args[3])),Ok(true));
+ for path in &args[4..]{assert_eq!(policy::matches_combined(&bytes,&read(path)),Ok(false));}
  println!("Held-out genuine sample accepted; {} distinct-speaker samples rejected",args.len()-4);
 }
