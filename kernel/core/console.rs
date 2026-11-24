@@ -6706,10 +6706,14 @@ impl ConsoleRuntime {
     fn input_face_setup(&mut self,key:ConsoleKey) {
         use crate::runtime::{face_setup::Stage,face_setup_host as face};
         if let ConsoleKey::Tab(reverse)=key {
-            self.system_focus=if reverse {(self.system_focus+3)%4}else{(self.system_focus+1)%4};return;
+            let count=if face::view(|s|s.saved()){5}else{4};
+            self.system_focus=(self.system_focus+if reverse{count-1}else{1})%count;return;
         }
         if matches!(key,ConsoleKey::Escape) || (matches!(key,ConsoleKey::Enter) && self.system_focus==0) {
             face::cancel();self.system_step=6;self.system_focus=1;self.reset_input();return;
+        }
+        if self.system_focus==4 && face::view(|s|s.saved()) {
+            if matches!(key,ConsoleKey::Enter|ConsoleKey::Character(b' ')){self.toggle_auto_biometrics();}return;
         }
         if self.system_focus==2 {
             if matches!(key,ConsoleKey::Enter) && face::view(|state|state.stage()==Stage::Review) {
@@ -6748,7 +6752,10 @@ impl ConsoleRuntime {
     #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
     fn input_voice_setup(&mut self,key:ConsoleKey){
         use crate::runtime::voice_identity_host as voice;
-        if let ConsoleKey::Tab(reverse)=key{self.system_focus=(self.system_focus+if reverse{2}else{1})%3;return;}
+        if let ConsoleKey::Tab(reverse)=key{let count=if voice::snapshot().0==voice::Stage::Saved{4}else{3};self.system_focus=(self.system_focus+if reverse{count-1}else{1})%count;return;}
+        if self.system_focus==3 && voice::snapshot().0==voice::Stage::Saved {
+            if matches!(key,ConsoleKey::Enter|ConsoleKey::Character(b' ')){self.toggle_auto_biometrics();}return;
+        }
         if matches!(key,ConsoleKey::Escape)||(matches!(key,ConsoleKey::Enter)&&self.system_focus==0){voice::cancel();self.system_step=7;self.system_focus=1;return;}
         if !matches!(key,ConsoleKey::Enter){return;}
         if self.system_focus==2{voice::cancel();self.system_step=8;self.system_focus=1;return;}
@@ -6758,6 +6765,19 @@ impl ConsoleRuntime {
             if !voice::begin_enrollment(self.current_user,&self.onboarding_secret[..self.onboarding_secret_length]){return;}
         }
         voice::record();
+    }
+
+    // ------------------------=
+    // FUNC: toggle_auto_biometrics
+    // DESC: Persists the shared enrollment choice for the current account without changing desktop audio preferences.
+    // ------------------=
+    fn toggle_auto_biometrics(&mut self) {
+        crate::runtime::with_runtime(|r| {
+            if let Some(p)=r.identity.user_profile(self.current_user) {
+                let _=r.identity.set_auto_biometrics(self.current_user,self.current_user,!p.auto_biometrics_enabled);
+            }
+        });
+        self.redraw();
     }
 
     // ------------------------=
@@ -9021,7 +9041,9 @@ impl ConsoleRuntime {
             if self.mode==ConsoleMode::Onboarding && self.system_step==9 {
                 let layout=crate::ui::voice_setup_layout::Layout::new(self.system.framebuffer_width as usize,self.system.framebuffer_height as usize);
                 let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
-                if let Some(target)=layout.hit(point){self.system_focus=target;if clicked{self.input_voice_setup(ConsoleKey::Enter);}}
+                let toggle=crate::runtime::voice_identity_host::snapshot().0==crate::ui::voice_setup_layout::Stage::Saved
+                    && crate::ui::voice_setup_layout::binding(b"voiceGuidance",self.system.framebuffer_width as usize,self.system.framebuffer_height as usize).is_some_and(|r|r.contains(point));
+                if let Some(target)=if toggle{Some(3)}else{layout.hit(point)}{self.system_focus=target;if clicked{self.input_voice_setup(ConsoleKey::Enter);}}
                 if clicked{self.redraw();}else{crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}return;
             }
             #[cfg(all(feature="native-face",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
@@ -9030,7 +9052,8 @@ impl ConsoleRuntime {
                 let face=crate::ui::face_setup_layout::Layout::new(self.system.framebuffer_width as usize,self.system.framebuffer_height as usize);
                 let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,
                     y:self.pointer_y*self.system.framebuffer_height as i32/1000};
-                if let Some(target)=face.hit(point) {
+                let toggle=crate::runtime::face_setup_host::view(|s|s.saved())&&face.guidance.contains(point);
+                if let Some(target)=if toggle{Some(4)}else{face.hit(point)} {
                     self.system_focus=target;
                     let retake=target==2 && crate::runtime::face_setup_host::view(|state|state.stage()==crate::runtime::face_setup::Stage::Review);
                     if clicked && (target!=2 || retake) {self.input_face_setup(ConsoleKey::Enter);}
@@ -14881,6 +14904,15 @@ fn poll_native_ai_inner() {
             && !runtime.authentication_success.active();
         let selected=if !login_page {None}else if runtime.mode==ConsoleMode::Locked {Some(runtime.current_user)}else{
             crate::runtime::with_runtime(|r|r.identity.user_nth(runtime.system_step).map(|u|u.id)).flatten()};
+        static mut AUTO_BIOMETRICS: crate::runtime::biometric_autostart::Gate = crate::runtime::biometric_autostart::Gate::new();
+        let enabled=selected.is_some_and(|account| crate::runtime::with_runtime(|r|
+            r.identity.user_profile(account).is_some_and(|p|p.auto_biometrics_enabled&&p.face_login_enabled)).unwrap_or(false));
+        if (&mut *core::ptr::addr_of_mut!(AUTO_BIOMETRICS)).poll(selected,enabled,runtime.command_length>0,crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000) {
+            if let Some(account)=selected.filter(|account|crate::storage::biometric_enrollments_present(account.0)) {
+                crate::runtime::voice_identity_host::start_login(account);
+                runtime.redraw();
+            }
+        }
         let was_busy=crate::runtime::face_setup_host::login_busy();
         crate::runtime::ai::voice_conversation::sync_login_listener(None);
         if let Some(proof)=crate::runtime::face_setup_host::poll_login(if crate::runtime::voice_identity_host::waiting_for_face(){selected}else{None}) {
@@ -14913,7 +14945,7 @@ fn poll_native_ai_inner() {
         if crate::runtime::face_setup_host::poll(visible) {
             let after=crate::runtime::face_setup_host::view(|s|(s.stage(),s.pending(),s.rejection(),s.checking_photo()));
             if visible && crate::runtime::face_setup_host::view(|s|s.saved()) {
-                runtime.system_step=9;runtime.system_focus=1;runtime.reset_input();runtime.redraw();
+                runtime.system_focus=1;runtime.redraw();
             }
             else if visible && before==after {crate::bootstrap::face_preview_present();}
             else {runtime.redraw();}
@@ -15305,6 +15337,10 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
             if state.visible&4!=0 {widget_changed|=keys::weather_phase(now,reduced);}
             widget_changed|=keys::advance(2,if state.visible&4!=0{255}else{0},now,reduced);
             widget_changed|=keys::advance(3,if minimized_shelf::current().hover.is_some(){255}else{0},now,reduced);
+
+        }
+        if matches!(runtime.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !defer_decoration {
+            widget_changed|=crate::ui::app_launcher::minimized_shelf::animate(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,runtime.spatial.state.reduced_motion);
         }
         let mut frame_changed = widget_changed || motion_frame || assistant_changed || effects_changed;
         let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
@@ -15729,4 +15765,13 @@ fn storage_error_text(error: StorageError) -> &'static [u8] {
         StorageError::VerifySystemComponents => b"required CORE component missing or invalid",
         StorageError::ActivateGeneration => b"generation activation failed",
     }
+}
+
+// ------------------------=
+// FUNC: auto_biometrics_enabled
+// DESC: Supplies the enrolled account's saved toggle state to shared setup renderers.
+// ------------------=
+pub fn auto_biometrics_enabled() -> bool {
+    unsafe { (&*core::ptr::addr_of!(RUNTIME)).as_ref().and_then(|c|
+        crate::runtime::with_runtime(|r|r.identity.user_profile(c.current_user).map(|p|p.auto_biometrics_enabled)).flatten()).unwrap_or(true) }
 }

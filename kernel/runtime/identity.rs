@@ -245,6 +245,7 @@ struct Credential {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UserProfile {
     pub face_login_enabled: bool,
+    pub auto_biometrics_enabled: bool,
     pub user: StableId,
     pub language: ShortText,
     pub region: ShortText,
@@ -569,6 +570,7 @@ impl IdentitySystem {
         self.users[slot] = Some(user);
         self.profiles[slot] = Some(UserProfile {
             face_login_enabled: true,
+            auto_biometrics_enabled: true,
             user: user_id,
             language: ShortText::new(b"English (US)")?,
             region: ShortText::new(b"United States")?,
@@ -962,6 +964,18 @@ impl IdentitySystem {
         if actor!=user {return Err(IdentityError::AccessDenied);}
         let profile=self.profiles.iter_mut().flatten().find(|p|p.user==user).ok_or(IdentityError::NotFound)?;
         profile.face_login_enabled=enabled;self.commit();Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: set_auto_biometrics
+    // DESC: Saves the account owner's automatic two-factor sign-in preference independently of manual sign-in.
+    // ------------------=
+    pub fn set_auto_biometrics(&mut self, actor: StableId, user: StableId, enabled: bool) -> Result<(), IdentityError> {
+        if actor != user { return Err(IdentityError::AccessDenied); }
+        let profile = self.profiles.iter_mut().flatten().find(|p| p.user == user).ok_or(IdentityError::NotFound)?;
+        profile.auto_biometrics_enabled = enabled;
+        self.commit();
+        Ok(())
     }
 
     // ------------------------=
@@ -1598,6 +1612,7 @@ impl IdentitySystem {
                 }
                 if let Some(profile) = state.profiles[index].as_mut() {
                     profile.face_login_enabled=user.1.face_login_enabled;
+                    profile.auto_biometrics_enabled=user.1.auto_biometrics_enabled;
                     profile.no_activity_timeout_minutes = user.1.no_activity_timeout_minutes;
                     profile.icon_theme = icon_theme;
                     let accent_at = USER_ACCENT_OFFSET + index * 3;
@@ -2021,6 +2036,7 @@ fn write_profile(out: &mut [u8], at: usize, profile: UserProfile) {
 fn read_profile(input: &[u8], at: usize, user: StableId) -> Result<UserProfile, IdentityError> {
     Ok(UserProfile {
         face_login_enabled: true,
+            auto_biometrics_enabled: true,
         user,
         language: read_text(input, at)?,
         region: read_text(input, at + 49)?,
@@ -2051,7 +2067,8 @@ fn write_user(
     put64(out, at + 116, user.created);
     write_id(out, at + 124, user.profile_ref);
     write_id(out, at + 140, user.personal_space_ref);
-    out[at + 156] = ai.map(|v| v.provider_policy as u8).unwrap_or(1);
+    out[at + 156] = ai.map(|v| v.provider_policy as u8).unwrap_or(1)
+        | if profile.is_some_and(|p| !p.auto_biometrics_enabled) { 0x80 } else { 0 };
     out[at + 157] = ai
         .map(|value| {
             0x80 | (value.remote_processing as u8)
@@ -2098,6 +2115,7 @@ fn read_user(
     };
     let profile = UserProfile {
         face_login_enabled: input[at+159]&0x80==0,
+        auto_biometrics_enabled: input[at+156]&0x80==0,
         user: id,
         language: ShortText::new(b"English (US)")?,
         region: ShortText::new(b"United States")?,
@@ -2114,7 +2132,7 @@ fn read_user(
     let ai_preferences_versioned = ai_preferences & 0x80 != 0;
     let ai = AiProfile {
         user: id,
-        provider_policy: match input[at + 156] {
+        provider_policy: match input[at + 156] & 0x7f {
             1 => AiProviderPolicy::LocalOnly,
             2 => AiProviderPolicy::PreferLocal,
             3 => AiProviderPolicy::AskBeforeRemote,

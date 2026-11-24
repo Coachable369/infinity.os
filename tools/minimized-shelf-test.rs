@@ -233,3 +233,26 @@ fn unchanged_pointer_state_has_no_scene_damage() {
     assert!(take_damage(1920, 1080).unwrap().intersection(menu) == menu);
     assert_eq!(take_damage(1920, 1080), None);
 }
+
+#[test]
+// ------------------------=
+// FUNC: expanded_motion_preserves_rows_and_reverses_without_jumps
+// DESC: Verifies timed expansion, exact targets, sliding row selection, bounded action regions and reduced-motion endpoints.
+// ------------------=
+fn expanded_motion_preserves_rows_and_reverses_without_jumps() {
+    publish(State::new()); animate(0,true);
+    let mut s=State::new();s.set(EDITOR,true);s.set(COMMAND,true);s.hover=Some(COMMAND);s.row=Some(0);s.expanded=true;publish(s);
+    let initial=Geometry::new(1440,900,s);
+    animate(100,false);animate(220,false);
+    let mid=Geometry::new(1440,900,s);
+    assert!(mid.rail.width>initial.rail.width);
+    assert_eq!(mid.tile_rect(0).y,initial.tile_rect(0).y);
+    assert_eq!(mid.tile_rect(0).height,initial.tile_rect(0).height);
+    let before=presentation();s.expanded=false;publish(s);animate(220,false);assert_eq!(presentation(),before);
+    animate(460,false);assert_eq!(presentation().0,0);
+    s.expanded=true;publish(s);animate(500,true);assert_eq!(presentation().0,255);
+    let full=Geometry::new(1440,900,s);
+    for i in 0..ACTIONS.len() {let r=full.action_rect(i);let p=Point{x:r.x+1,y:r.y+1};assert_eq!(full.action_hit(p),Some(i));assert_eq!(full.hit(s,p),None);}
+    s.row=Some(1);publish(s);animate(600,false);animate(690,false);assert!(presentation().1>0 && presentation().1<256);animate(780,false);assert_eq!(presentation().1,256);
+    publish(State::new());animate(800,true);
+}

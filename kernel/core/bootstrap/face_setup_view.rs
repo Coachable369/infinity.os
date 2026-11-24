@@ -195,6 +195,10 @@ impl DisplayDevice {
             let id=e.code_identifier;
             if matches!(id,b"facePoseGuide0"|b"facePoseGuide1"|b"facePoseGuide2")
                 && state.photo((id[id.len()-1]-b'0') as usize).is_some() {continue;}
+            if id==b"faceGuidance" && state.saved() {
+                self.biometric_auto_toggle(crate::ui::geometry::Rect{x:r.left as i32,y:r.top as i32,width:r.width as u32,height:r.height as u32},focus==4);
+                continue;
+            }
             match id {
                 b"faceGuidance"=>e.text=match state.stage() {
                     Stage::Photos(0) if !state.pending()=>b"Keep your whole face visible in even lighting.",

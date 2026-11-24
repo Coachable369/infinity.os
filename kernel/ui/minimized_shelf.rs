@@ -15,10 +15,15 @@ pub enum Action {
     Restore,
     Maximize,
     Close,
+    ForceKill,
+    Inspect,
 }
+pub const ACTIONS: [Action;5] = [Action::Restore,Action::Maximize,Action::Close,Action::ForceKill,Action::Inspect];
+pub const ACTION_LABELS: [&[u8];5] = [b"Show",b"Maximize",b"Close",b"Force Kill",b"Show in Task Browser"];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
     pub left: bool,
+    pub expanded: bool,
     pub drag: Option<(i32, i32, i32, i32)>,
     pub floating: [u16; 2],
     pub mask: u32,
@@ -73,6 +78,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             left: true,
+            expanded: false,
             drag: None,
             floating: [0; 2],
             mask: 0,
@@ -145,6 +151,7 @@ impl State {
 pub struct Geometry {
     pub rail: Rect,
     pub tile: u32,
+    pub base: u32,
     pub capacity: usize,
     pub menu: Rect,
     pub row_height: u32,
@@ -157,6 +164,8 @@ impl Geometry {
     pub fn new(width: usize, height: usize, state: State) -> Self {
         let w = (width * 6 / 100).max(72).min(width / 4) as u32;
         let h = (height * 58 / 100) as u32;
+        let expansion = presentation().0 as u32;
+        let extra = w * 3 * expansion / 255;
         let rail = Rect {
             x: state
                 .drag
@@ -167,7 +176,7 @@ impl Geometry {
                     } else if state.left {
                         (width / 100) as i32
                     } else {
-                        (width * 99 / 100) as i32 - w as i32
+                        (width * 99 / 100) as i32 - (w + extra) as i32
                     }
                 }),
             y: state
@@ -180,13 +189,13 @@ impl Geometry {
                         (height * 18 / 100) as i32
                     }
                 }),
-            width: w,
+            width: w + extra,
             height: h,
         };
         let tile = w + w / 4;
         let capacity = (h.saturating_sub(w) / tile.max(1)).max(1) as usize;
         let row_height = (height / 24).clamp(28, 52) as u32;
-        let menu_width = (width / 7).clamp(150, 300) as u32;
+        let menu_width = (width / 7).clamp(280, 340) as u32;
         let index = state
             .menu
             .or(state.hover)
@@ -200,13 +209,14 @@ impl Geometry {
                 (rail.x - menu_width as i32 - 12).max(0)
             },
             y: (rail.y + (w / 2 + index as u32 * tile) as i32)
-                .min((height as i32 - (row_height * 4) as i32).max(0)),
+                .min((height as i32 - (row_height * 6) as i32).max(0)),
             width: menu_width,
-            height: row_height * 4,
+            height: row_height * 6,
         };
         Self {
             rail,
             tile,
+            base: w,
             capacity,
             menu,
             row_height,
@@ -218,10 +228,10 @@ impl Geometry {
     // ------------------=
     pub fn tile_rect(self, index: usize) -> Rect {
         Rect {
-            x: self.rail.x + (self.rail.width / 10) as i32,
-            y: self.rail.y + (self.rail.width / 2 + index as u32 * self.tile) as i32,
-            width: self.rail.width * 8 / 10,
-            height: self.rail.width,
+            x: self.rail.x + (self.base / 10) as i32,
+            y: self.rail.y + (self.base / 2 + index as u32 * self.tile) as i32,
+            width: self.base.saturating_sub(self.base / 5),
+            height: self.base,
         }
     }
     // ------------------------=
@@ -229,20 +239,44 @@ impl Geometry {
     // DESC: Hit tests only populated visible tiles.
     // ------------------=
     pub fn hit(self, state: State, point: Point) -> Option<usize> {
+        if presentation().0>220 {return None;}
         (0..self.capacity)
             .find(|i| self.tile_rect(*i).contains(point))
             .and_then(|i| state.item(state.offset + i))
     }
     // ------------------------=
+    // FUNC: action_rect
+    // DESC: Places the selected app action rows beside the fixed icon rail.
+    // ------------------=
+    pub fn action_rect(self, index:usize) -> Rect {
+        let height=(self.rail.height.saturating_sub(self.base)/5).min(self.base);
+        Rect {x:self.rail.x+(self.base/10)as i32,y:self.rail.y+(self.base/2)as i32+(index as u32*(height+4))as i32,width:self.rail.width.saturating_sub(self.base/10+12),height:height.saturating_sub(4)}
+    }
+    // ------------------------=
+    // FUNC: action_hit
+    // DESC: Resolves only fully exposed task actions; hidden controls cannot receive clicks.
+    // ------------------=
+    pub fn action_hit(self, point:Point)->Option<usize> {
+        if presentation().0<=220 {return None;}
+        (0..ACTIONS.len()).find(|i|self.action_rect(*i).contains(point))
+    }
+    // ------------------------=
     // FUNC: menu_row
-    // DESC: Resolves the three real context actions below the menu title.
+    // DESC: Resolves shared task actions below the context menu title.
     // ------------------=
     pub fn menu_row(self, point: Point) -> Option<usize> {
         if !self.menu.contains(point) {
             return None;
         }
         let row = (point.y - self.menu.y) as u32 / self.row_height;
-        (row > 0 && row <= 3).then_some(row.saturating_sub(1) as usize)
+        (row > 0 && row <= ACTIONS.len() as u32).then_some(row.saturating_sub(1) as usize)
+    }
+    // ------------------------=
+    // FUNC: animation_damage
+    // DESC: Clears the entire expansion envelope on every motion frame, including the collapsed endpoint.
+    // ------------------=
+    pub fn animation_damage(self, state:State)->Rect {
+        self.damage(state).union(Rect {x:if state.left || state.floating[0]>0 || state.drag.is_some() {self.rail.x-12}else{self.rail.right()-(self.base*4)as i32-12}, y:self.rail.y-12,width:self.base*4+24,height:self.rail.height+24})
     }
     // ------------------------=
     // FUNC: damage
@@ -254,6 +288,7 @@ impl Geometry {
         } else {
             self.rail
         };
+
         Rect {
             x: r.x.saturating_sub(12),
             y: r.y.saturating_sub(12),
@@ -331,9 +366,41 @@ pub fn take_damage(width: usize, height: usize) -> Option<Rect> {
         let new = current();
         *(&raw mut PAINTED) = new;
         (old != new).then(|| {
-            Geometry::new(width, height, old)
-                .damage(old)
-                .union(Geometry::new(width, height, new).damage(new))
+            let previous=Geometry::new(width,height,old);
+            let next=Geometry::new(width,height,new);
+            let old_damage=if old.expanded {previous.animation_damage(old)} else {previous.damage(old)};
+            let new_damage=if new.expanded {next.animation_damage(new)} else {next.damage(new)};
+            old_damage.union(new_damage)
         })
+    }
+}
+
+
+static mut EXPANSION: crate::ui::app_launcher::motion::Motion = crate::ui::app_launcher::motion::Motion::settled(0);
+static mut SELECTION: crate::ui::app_launcher::motion::Motion = crate::ui::app_launcher::motion::Motion::settled(0);
+static mut PRESENTATION: (i32, i32) = (0, 0);
+static mut MOTION_TARGET: (i32, i32) = (0, 0);
+// ------------------------=
+// FUNC: presentation
+// DESC: Reads prepared expansion and selection keyframes without changing animation during paint.
+// ------------------=
+pub fn presentation() -> (i32, i32) { unsafe { *(&raw const PRESENTATION) } }
+// ------------------------=
+// FUNC: animate
+// DESC: Retargets the expanding rail and sliding selection from current positions; reduced motion settles immediately.
+// ------------------=
+pub fn animate(now: u64, reduced: bool) -> bool {
+    let s = current();
+    let row = s.row.map(|row|row as i32*256);
+    unsafe {
+        let target = (if s.visible() && s.drag.is_none() && (s.expanded || s.menu.is_some()) {255} else {0}, row.unwrap_or(MOTION_TARGET.1));
+        if target.0 != MOTION_TARGET.0 || reduced { (*(&raw mut EXPANSION)).retarget(target.0, now, 240, reduced); }
+        if target.1 != MOTION_TARGET.1 || reduced { (*(&raw mut SELECTION)).retarget(target.1, now, 180, reduced); }
+        MOTION_TARGET = target;
+        let next = ((*(&raw const EXPANSION)).value(now), (*(&raw const SELECTION)).value(now));
+        let changed = next != PRESENTATION;
+        PRESENTATION = next;
+        if changed { crate::ui::widget_keyframes::invalidate(3); }
+        changed
     }
 }

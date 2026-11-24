@@ -1025,6 +1025,18 @@ fn verify_template_bitmap_damage() {
 // DESC: Captures production enrollment states with real template geometry and verifies progress changes native pixels.
 // ------------------=
 pub(super) fn verify_voice(){
+    use crate::runtime::face_setup::{Setup,wire};
+    let mut saved_face=Setup::new();
+    saved_face.begin_login(1,[3;32],&[1;wire::ENROLLMENT_BYTES],100).unwrap();
+    for n in 1..=3 {saved_face.accept(wire::Report::new(saved_face.control().command_id,
+        if n==3{wire::PASSED}else{wire::VERIFYING},0,3,n),100+n as u64).unwrap();}
+    saved_face.finish_save(true);
+    assert!(saved_face.saved());
+    let mut face_pixels=vec![0u32;1672*941];let mut face_display=display(&mut face_pixels,1672,941);
+    assert!(face_display.face_template_frame(CONFIGURATION_TEMPLATE_BYTES,b"Everyday",4,false,&saved_face,true));
+    std::fs::create_dir_all("builds/validation/auto-biometrics").unwrap();
+    write_ppm("builds/validation/auto-biometrics/face-saved.ppm",&face_pixels,1672,941);
+
     let wave=crate::ui::voice_setup_layout::wave_height;
     assert_ne!(wave(100,19,0,false,0),wave(100,19,0,false,360));
     assert_ne!(wave(100,19,0,true,0),wave(100,19,0,true,360));

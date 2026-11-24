@@ -5,6 +5,25 @@ static mut WAVE_BASE:[u32;1024*256]=[0;1024*256];
 static mut WAVE_RECT:Option<crate::ui::installer_layout::InstallerRect>=None;
 static mut WAVE_TIME:u64=0;
 impl DisplayDevice{
+    // ------------------------=
+    // FUNC: biometric_auto_toggle
+    // DESC: Reuses the UIKit switch and typography inside the authored enrollment guidance bounds after a verified save.
+    // ------------------=
+    pub(super) fn biometric_auto_toggle(&mut self, rect: crate::ui::geometry::Rect, focused: bool) {
+        #[cfg(target_os="none")]
+        let checked=crate::console::auto_biometrics_enabled();
+        #[cfg(not(target_os="none"))]
+        let checked=true;
+        let pixels=(self.height*20/1000).clamp(16,28);
+        let height=(pixels+6).min(rect.height as usize);
+        let width=height*2;
+        let switch=crate::ui::geometry::Rect{x:rect.x,y:rect.y,width:width as u32,height:height as u32};
+        self.precision_toggle(switch,checked,true,crate::ui::panel_recipe::Material{fill:(36,90,212),edge:(80,137,190),opacity:255,edge_opacity:255,focus:if focused{255}else{0},pressed:false,scale:1});
+        self.access_text_wrapped((rect.x.max(0)as usize)+width+12,rect.y.max(0)as usize,
+            (rect.width as usize).saturating_sub(width+12),b"Auto Biometrics Sign-In",235,245,255,255,pixels,false);
+    }
+
+
  // ------------------------=
  // FUNC: voice_setup_frame
  // DESC: Presents only the native identity workflow state; desktop assistant audio is not involved.
@@ -38,6 +57,10 @@ impl DisplayDevice{
   for index in 0..n{
    let Some(mut e)=t.layer_at(10,index)else{continue;};if e.hidden||e.opacity==0{continue;}
    let r=scale_template_rect(e.frame,self.width,self.height);let id=e.code_identifier;
+            if id==b"voiceGuidance" && stage==Stage::Saved {
+                self.biometric_auto_toggle(crate::ui::geometry::Rect{x:r.left as i32,y:r.top as i32,width:r.width as u32,height:r.height as u32},focus==3);
+                continue;
+            }
    match id{
     b"voiceGuidance"=>e.text=message,
     b"voiceSubtitle"=>e.text=b"Verify your voice, then your face at sign-in.",

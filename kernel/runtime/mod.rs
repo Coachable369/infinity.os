@@ -8,6 +8,7 @@ pub mod face_login;
 pub mod face_vault;
 pub mod voice_identity_vault;
 pub mod voice_identity_login;
+pub mod biometric_autostart;
 #[cfg(all(feature="native-face",target_os="none", any(target_arch="aarch64",target_arch="x86_64")))]
 pub mod voice_identity_host;
 pub mod face_setup_dispatch;

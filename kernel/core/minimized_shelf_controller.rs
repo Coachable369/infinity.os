@@ -102,6 +102,7 @@ impl ConsoleRuntime {
             y: (self.pointer_y as i64 * self.system.framebuffer_height as i64 / 1000) as i32,
         };
         let mut consumed = g.rail.contains(point);
+        state.expanded = consumed || state.menu.is_some();
         if state.drag.is_some() {
             let rail_width =
                 g.rail.width as i32 * 1000 / self.system.framebuffer_width.max(1) as i32;
@@ -123,7 +124,8 @@ impl ConsoleRuntime {
         if clicked
             && state.menu.is_none()
             && consumed
-            && point.y < g.rail.y + (g.rail.width / 2) as i32
+            && g.action_hit(point).is_none()
+            && point.y < g.rail.y + (g.base / 2) as i32
         {
             let x = g.rail.x * 1000 / self.system.framebuffer_width.max(1) as i32;
             let y = g.rail.y * 1000 / self.system.framebuffer_height.max(1) as i32;
@@ -140,7 +142,7 @@ impl ConsoleRuntime {
                 state.menu = None;
                 shelf::publish(state);
                 if let Some(row) = state.row {
-                    self.shelf_action(id, [Action::Restore, Action::Maximize, Action::Close][row]);
+                    self.shelf_action(id, shelf::ACTIONS[row]);
                 }
                 self.redraw();
                 return true;
@@ -150,12 +152,23 @@ impl ConsoleRuntime {
                 state.row = None;
             }
         }
-        state.hover = g.hit(state, point);
+        if state.menu.is_none() {
+            if let Some(action)=g.action_hit(point) {
+                if let Some(id)=state.hover {
+                    state.row=Some(action); shelf::publish(state);
+                    if clicked {self.shelf_action(id,shelf::ACTIONS[action]);}
+                    if clicked || state!=old {self.redraw();}
+                    return true;
+                }
+            }
+        }
+        let icon_hit = g.hit(state, point);
+        state.hover = if consumed && old.expanded && old.hover.is_some() {old.hover} else {icon_hit};
         if let Some(id) = state.hover {
             if secondary {
                 state.menu = Some(id);
                 state.row = Some(0);
-            } else if clicked {
+            } else if clicked && icon_hit == Some(id) {
                 shelf::publish(state);
                 self.shelf_action(id, Action::Restore);
                 self.redraw();
@@ -163,7 +176,7 @@ impl ConsoleRuntime {
             }
         } else if clicked && consumed && state.count() > g.capacity {
             state.scroll(
-                if point.y < g.rail.y + (g.rail.width / 2) as i32 {
+                if point.y < g.rail.y + (g.base / 2) as i32 {
                     -1
                 } else {
                     1
@@ -227,11 +240,11 @@ impl ConsoleRuntime {
                 state.menu = None;
                 state.row = None;
             }
-            ConsoleKey::Up => state.row = Some((state.row.unwrap_or(0) + 2) % 3),
-            ConsoleKey::Down => state.row = Some((state.row.unwrap_or(0) + 1) % 3),
+            ConsoleKey::Up => state.row = Some((state.row.unwrap_or(0) + shelf::ACTIONS.len()-1) % shelf::ACTIONS.len()),
+            ConsoleKey::Down => state.row = Some((state.row.unwrap_or(0) + 1) % shelf::ACTIONS.len()),
             ConsoleKey::Enter => {
                 let action =
-                    [Action::Restore, Action::Maximize, Action::Close][state.row.unwrap_or(0)];
+                    shelf::ACTIONS[state.row.unwrap_or(0)];
                 state.menu = None;
                 shelf::publish(state);
                 self.shelf_action(id, action);
@@ -250,6 +263,21 @@ impl ConsoleRuntime {
     // ------------------=
     fn shelf_action(&mut self, id: usize, action: Action) {
         if shelf::current().mask & (1 << id) == 0 {
+            return;
+        }
+        if matches!(action,Action::ForceKill|Action::Inspect) {
+            let selected=crate::runtime::with_runtime(|runtime| {
+                let handle=if id<shelf::NAVIGATORS {runtime.file_navigators.window(id).map(|w|crate::runtime::execution::ContextHandle(w.task_handle))}
+                else if id>=shelf::NATIVE {shelf::current().native[id-shelf::NATIVE].and_then(|wid|runtime.ui.windows.inspect(wid)).and_then(|w|python_commands::gui_task_handle(w.owner))}
+                else {None};
+                let image=match id {shelf::COMMAND=>crate::runtime::task_manager::IMAGE_COMMAND_WINDOW,shelf::EDITOR=>crate::runtime::task_manager::IMAGE_TEXT_EDITOR,shelf::TASKS=>crate::runtime::task_manager::IMAGE_TASK_MANAGER,shelf::SETTINGS=>crate::runtime::task_manager::IMAGE_SETTINGS,shelf::BROWSER=>crate::runtime::task_manager::IMAGE_BROWSER,_=>0};
+                (0..runtime.task_manager.task_count(&runtime.execution)).find(|index|runtime.task_manager.task_nth(&runtime.execution,*index).is_some_and(|task|handle.map(|h|h==task.handle).unwrap_or(image!=0&&image==task.image_identity)))
+            }).flatten();
+            if let Some(selected)=selected {
+                self.task_manager_selected=selected;
+                if action==Action::Inspect {self.open_task_manager();}
+                else {self.task_manager_action(5);self.publish_minimized_shelf();}
+            }
             return;
         }
         self.window_action(id, action);

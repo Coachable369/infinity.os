@@ -1371,3 +1371,11 @@ pub(super) fn gui_control(console: &ConsoleRuntime, name: Option<&[u8]>, action:
         }).flatten()
     }
 }
+
+// ------------------------=
+// FUNC: gui_task_handle
+// DESC: Resolves a native window owner to its exact registered execution task.
+// ------------------=
+pub(super) fn gui_task_handle(owner:crate::ui::window::ContextId)->Option<crate::runtime::execution::ContextHandle> {
+    unsafe {let job=&*(&raw const JOB);job.task.as_ref().filter(|task|task.context_id()==owner.0).and_then(Task::monitor_handle)}
+}

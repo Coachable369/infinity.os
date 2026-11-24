@@ -53,7 +53,7 @@ impl DisplayDevice {
             x + 2,
             y + 2,
             w.saturating_sub(4),
-            (w / 3).max(8),
+            (g.base as usize / 3).max(8),
             8,
             135,
             212,
@@ -78,7 +78,8 @@ impl DisplayDevice {
         let count=state.count();
         if count>0 && state.drag.is_none() && snap.is_none() {
             let digits=[b'0'+(count/10) as u8,b'0'+(count%10) as u8];
-            self.ui_text_centered(x,w,y+12,if count<10 {&digits[1..]} else {&digits},154,211,238,1);
+            let label=if shelf::presentation().0>180 {state.hover.map(shelf::label).unwrap_or(b"Tasks")}else if count<10 {&digits[1..]}else{&digits};
+            self.ui_text_centered(x,w,y+12,label,154,211,238,1);
         }
         if count>g.capacity {
             let track=h.saturating_sub(56);
@@ -86,56 +87,48 @@ impl DisplayDevice {
             let offset=(track-thumb)*state.offset.min(count-g.capacity)/(count-g.capacity);
             self.fill_rounded_rect_alpha(x+w-5,y+32+offset,3,thumb,1,106,197,235,200);
         }
-        for index in 0..g.capacity {
-            let Some(id) = state.item(state.offset + index) else {
-                break;
-            };
-            let tile = g.tile_rect(index);
-            let tx = tile.x.max(0) as usize;
-            let ty = tile.y.max(0) as usize;
-            let tw = tile.width as usize;
-            let selected = state.menu == Some(id);
-            let hovered = state.hover == Some(id);
-            let level=if hovered {crate::ui::widget_keyframes::value(3) as usize}else{0};
-            self.precision_surface(crate::ui::geometry::Rect {
-                x: tile.x, y: tile.y, width: tile.width, height: tile.width,
-            }, crate::ui::panel_recipe::Surface::Secondary,
-            crate::ui::panel_recipe::Material {
-                fill: self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
-                edge, opacity: if selected {220} else if hovered {(100+85*level/255)as u8}else{100},
-                edge_opacity: if selected || hovered {175}else{70},
-                focus: if selected {180}else{level as u8}, pressed: false,
-                scale: self.ui_scale(),
-            });
-            self.launcher_icon(tx + tw / 2, ty + tw / 2 - 2*level/255, shelf::icon(id), tw * (80+9*level/255) / 100);
-            self.fill_rounded_rect_alpha(tx + tw - 8, ty + tw - 8, 5, 5, 2, 63, 221, 174, 255);
-            if id < shelf::NAVIGATORS {
-                self.fill_rounded_rect_alpha(
-                    tx + tw - 22,
-                    ty + tw - 22,
-                    24,
-                    27,
-                    8,
-                    16,
-                    52,
-                    75,
-                    255,
-                );
-                self.ui_text(
-                    tx + tw - 17,
-                    ty + tw - 20,
-                    &[b'1' + id as u8],
-                    221,
-                    242,
-                    252,
-                    1,
-                );
+        let expansion = shelf::presentation().0 as usize;
+        let base = g.base as usize;
+        // The compact rail yields to the selected application action menu.
+        for index in 0..if expansion<=180 {g.capacity}else{0} {
+            let Some(id)=state.item(state.offset+index) else {break;};
+            let tile=g.tile_rect(index);
+            let tx=tile.x.max(0) as usize;
+            let ty=tile.y.max(0) as usize;
+            let selected=state.menu==Some(id)||state.hover==Some(id);
+            self.fill_rounded_rect_alpha(tx,ty,tile.width as usize,base,base/2,174,204,238,if selected {68}else{24});
+            self.launcher_icon(tx+tile.width as usize/2,ty+base/2,shelf::icon(id),base*3/5);
+            self.fill_rounded_rect_alpha(tx+tile.width as usize-8,ty+base-10,5,5,2,63,221,174,255);
+        }
+        if expansion>180 && state.hover.is_some() && state.menu.is_none() {
+            let opacity=((expansion-180)*255/75) as u8;
+            let spine=12;
+            self.fill_rounded_rect_alpha(x+w-spine-5,y+12,spine,h.saturating_sub(24),spine/2,237,244,252,opacity);
+            let first=g.action_rect(0);
+            let pitch=g.action_rect(1).y-first.y;
+            if state.row.is_some() {
+                let sy=first.y+(shelf::presentation().1*pitch/256);
+                self.fill_rounded_rect_alpha(first.x.max(0)as usize,sy.max(0)as usize,first.width as usize,first.height as usize,first.height as usize/2,237,244,252,opacity);
+            }
+            for (index,label) in shelf::ACTION_LABELS.iter().enumerate() {
+                let a=g.action_rect(index);
+                let selected=state.row==Some(index);
+                if !selected {self.fill_rounded_rect_alpha(a.x.max(0)as usize,a.y.max(0)as usize,a.width as usize-12,a.height as usize,a.height as usize/2,174,204,238,24);}
+                let icon_size=(a.height as usize*3/5).min(48);
+                let ix=a.x.max(0)as usize+base/2;
+                let iy=a.y.max(0)as usize+a.height as usize/2;
+                if index<4 {self.window_control(ix-icon_size/2,iy-icon_size/2,icon_size,if index>=2 {2}else{1},index==0);}
+                else {self.launcher_icon(ix,iy,19,icon_size);}
+                self.ui_text(a.x.max(0)as usize+base,a.y.max(0)as usize+(a.height as usize).saturating_sub(if index==4 {40}else{20})/2,if index==4 {b"Show in"}else{label},
+                    if selected {21}else{224},if selected {43}else{237},if selected {65}else{252},1);
+                if index==4 {self.ui_text(a.x.max(0)as usize+base,a.y.max(0)as usize+(a.height as usize).saturating_sub(40)/2+20,b"Task Browser",if selected {21}else{224},if selected {43}else{237},if selected {65}else{252},1);}
             }
         }
+
         if state.count() > g.capacity {
             self.ui_text_centered(x, w, y + h - 25, b"v", 123, 209, 251, 1);
         }
-        if let Some(id) = state.menu.or(state.hover) {
+        if let Some(id) = state.menu {
             let m = g.menu;
             let mx = m.x.max(0) as usize;
             let my = m.y.max(0) as usize;
@@ -176,13 +169,7 @@ impl DisplayDevice {
                 return;
             }
             self.fill_rect(mx + 12, my + row - 1, mw.saturating_sub(24), 1, 37, 82, 110);
-            for (index, label) in [
-                b"Restore".as_slice(),
-                b"Maximize".as_slice(),
-                b"Close".as_slice(),
-            ]
-            .iter()
-            .enumerate()
+            for (index, label) in shelf::ACTION_LABELS.iter().enumerate()
             {
                 let ry = my + (index + 1) * row;
                 if state.row == Some(index) {

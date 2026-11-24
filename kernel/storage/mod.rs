@@ -2260,3 +2260,15 @@ pub(crate) fn aikit_memory_checkpoint(owner:[u8;16],session:[u8;16],save:Option<
     if !aikit_memory_authorized(owner,session){return Err(object::ObjectError::Unauthorized);}
     with_store(|store|aikit_memory::checkpoint(store,owner,save,out))
 }
+
+// ------------------------=
+// FUNC: biometric_enrollments_present
+// DESC: Checks for both private enrollment records without decoding templates; authentication still validates each vault and proof.
+// ------------------=
+pub(crate) fn biometric_enrollments_present(owner: [u8;16]) -> bool {
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    { with_store(|store| Ok(store.resolve(&face_identity_path(owner)).is_ok()
+        && store.resolve(&voice_identity_path(owner)).is_ok())).unwrap_or(false) }
+    #[cfg(target_arch="x86")]
+    { let _ = owner; false }
+}

@@ -380,6 +380,7 @@ fn shelf_partial_frames_match_complete_frames() {
             }
             if step == 5 {
                 state.hover = Some(shelf::EDITOR);
+                state.row = Some(2);
             }
             if step == 6 {
                 for id in 0..shelf::COUNT {
@@ -400,8 +401,11 @@ fn shelf_partial_frames_match_complete_frames() {
             if step == 10 {
                 state.drag = Some((600, 300, 10, 10));
             }
+            state.expanded = state.menu.is_some() || state.hover.is_some();
             shelf::publish(state);
+            shelf::animate(step as u64 * 300, true);
             if let Some(damage) = shelf::take_damage(width, height) {
+                let damage=damage.union(Geometry::new(width,height,state).animation_damage(state));
                 let clip = Region {
                     left: damage.x.max(0) as usize,
                     top: damage.y.max(0) as usize,
@@ -420,14 +424,16 @@ fn shelf_partial_frames_match_complete_frames() {
             let mut reference = display;
             reference.buffer = expected.as_mut_ptr();
             reference.minimized_app_shelf();
+            if pixels != expected { let diffs:Vec<_>=pixels.iter().zip(&expected).enumerate().filter(|(_, (a,b))|a!=b).map(|(i,_)|(i%width,i/width)).collect(); eprintln!("diff bounds {:?} {:?} count {}",diffs.first(),diffs.last(),diffs.len()); }
             assert!(
                 pixels == expected,
                 "incremental pixels differ at {width}x{height} step {step}"
             );
-            if width == 1440 && matches!(step, 2 | 8 | 9) {
+            if width == 1440 && matches!(step, 2 | 5 | 8 | 9) {
                 use std::io::Write;
                 let mut file = std::io::BufWriter::new(
                     std::fs::File::create(match step {
+                        5 => "build/minimized-shelf-actions.ppm",
                         8 => "build/minimized-shelf-left.ppm",
                         9 => "build/minimized-shelf-floating.ppm",
                         _ => "build/minimized-shelf-render.ppm",
