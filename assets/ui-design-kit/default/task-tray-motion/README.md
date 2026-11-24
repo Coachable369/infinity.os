@@ -77,3 +77,7 @@ Selection and spine use shared pale glass at 190/255 alpha, preserving the
 underlying canvas. Native preview: `builds/validation/task-tray-bubble/app-icon-glass.gif`.
 49 behavioral checks and both targeted production-painter checks pass.
 Repaint reduction is verified structurally; installed-VM frame rate is not measured.
+
+Open-menu responsiveness: start hover timing on pointer delivery, settle the hover
+lens in 140 ms, and repaint only the action-row band once rail expansion is
+complete. Selection travel and rail expansion retain their accepted durations.

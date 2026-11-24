@@ -158,6 +158,9 @@ impl ConsoleRuntime {
                     state.row=Some(action);
                     if clicked {state.selected_row=action;}
                     shelf::publish(state);
+                    // Start the hover clock on pointer delivery, not a later decoration tick.
+                    shelf::animate(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,
+                        self.spatial.state.reduced_motion);
                     if clicked {self.shelf_action(id,shelf::ACTIONS[action]);}
                     if clicked || state!=old {self.redraw();}
                     return true;

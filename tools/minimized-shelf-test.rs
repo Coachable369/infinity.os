@@ -281,7 +281,7 @@ fn hover_bubble_grows_and_reverses_continuously() {
     state.row=Some(3);publish(state);animate(100,false);animate(210,false);
     let (hover,tail)=bubble_state();assert!(hover[3]>0 && hover[3]<255);assert_eq!(presentation().1,0);assert_eq!(tail,0);
     let before=hover[3];state.row=Some(1);publish(state);animate(210,false);assert_eq!(bubble_state().0[3],before);
-    animate(600,false);assert_eq!(bubble_state().0[1],255);assert_eq!(bubble_state().0[3],0);
+    animate(350,false);assert_eq!(bubble_state().0[1],255);assert_eq!(bubble_state().0[3],0);
     state.row=Some(4);state.selected_row=4;publish(state);animate(601,true);assert_eq!(bubble_state().0[4],255);assert_eq!(bubble_state().1,1024);
     publish(State::new());animate(602,true);
 }
@@ -301,4 +301,19 @@ fn hover_damage_excludes_closed_context_menu() {
     let menu=g.damage(state);
     assert!(menu.width>=hover.width);
     assert!(menu.contains(Point{x:g.menu.x,y:g.menu.y}));
+}
+
+#[test]
+// ------------------------=
+// FUNC: settled_hover_damage_is_bounded_to_actions
+// DESC: Open-tray hover does not repaint its static header or full-height spine.
+// ------------------=
+fn settled_hover_damage_is_bounded_to_actions() {
+    let mut s=State::new();s.set(EDITOR,true);s.hover=Some(EDITOR);s.expanded=true;
+    publish(s);animate(0,true);
+    let g=Geometry::new(1440,900,s);let r=g.animation_damage(s);
+    assert!(r.y>g.rail.y);
+    assert!(r.height<g.rail.height);
+    for i in 0..ACTIONS.len() {let a=g.action_rect(i);assert!(r.contains(Point{x:a.x,y:a.y}));assert!(r.contains(Point{x:a.right()-1,y:a.bottom()-1}));}
+    publish(State::new());animate(0,true);
 }

@@ -278,6 +278,13 @@ impl Geometry {
     // DESC: Clears the entire expansion envelope on every motion frame, including the collapsed endpoint.
     // ------------------=
     pub fn animation_damage(self, state:State)->Rect {
+        if presentation().0 == 255 && state.expanded && state.menu.is_none() && state.drag.is_none() {
+            let first=self.action_rect(0);
+            let last=self.action_rect(ACTIONS.len()-1);
+            let shoulder=(self.base*18/100).max(6) as i32+2;
+            return Rect {x:self.rail.x,y:first.y-shoulder,width:self.rail.width,
+                height:(last.bottom()-first.y+shoulder*2) as u32};
+        }
         self.damage(state).union(Rect {x:if state.left || state.floating[0]>0 || state.drag.is_some() {self.rail.x-12}else{self.rail.right()-(self.base*3)as i32-12}, y:self.rail.y-12,width:self.base*3+24,height:self.rail.height+24})
     }
     // ------------------------=
@@ -370,8 +377,9 @@ pub fn take_damage(width: usize, height: usize) -> Option<Rect> {
         (old != new).then(|| {
             let previous=Geometry::new(width,height,old);
             let next=Geometry::new(width,height,new);
-            let old_damage=if old.expanded {previous.animation_damage(old)} else {previous.damage(old)};
-            let new_damage=if new.expanded {next.animation_damage(new)} else {next.damage(new)};
+            let stable_header=old.hover==new.hover && old.count()==new.count();
+            let old_damage=if old.expanded && stable_header {previous.animation_damage(old)} else {previous.damage(old)};
+            let new_damage=if new.expanded && stable_header {next.animation_damage(new)} else {next.damage(new)};
             old_damage.union(new_damage)
         })
     }
@@ -443,7 +451,7 @@ pub fn animate(now: u64, reduced: bool) -> bool {
         for i in 0..5 {
             let destination=if s.expanded && s.row==Some(i) {255}else{0};
             if (*(&raw const HOVER_TARGETS))[i]!=destination || reduced {
-                (*(&raw mut HOVER))[i].retarget(destination,now,220,reduced);
+                (*(&raw mut HOVER))[i].retarget(destination,now,140,reduced);
                 (*(&raw mut HOVER_TARGETS))[i]=destination;
             }
             let value=(*(&raw const HOVER))[i].value(now);
