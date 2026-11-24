@@ -23,3 +23,18 @@ or installed-VM interaction claim.
   contract phase; it is not reported as a completed test run.
 
 Build manifests are under `builds/manifests/`.
+
+## ARM publication
+
+`builds/InfinityOS-aarch64.iso` passed kernel freshness, live/installed payload
+parity and checksum verification. Release manifest:
+`20261123T212535769393Z-23064.json`.
+SHA-256: `c0ac8693cd381208fd9ff27de581593662d7959ae3b7527e35ff7be5b60ba2cd`.
+The previously approved dependency-reuse path was used; the broad release
+regression suite was deferred. The installed VM still requires user testing.
+
+## x86 publication
+
+`builds/InfinityOS-x86_64.iso` passed the same packaging and checksum gates,
+after ARM publication. Release manifest: `20261123T213746966980Z-27225.json`.
+SHA-256: `82958c1710427069a93e7691b0c66fe4a3258ec32b75ad2d115863b48c4b36a4`.
