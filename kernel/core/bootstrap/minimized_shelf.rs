@@ -85,8 +85,10 @@ impl DisplayDevice {
         if shelf::presentation().0 > 180 && state.menu.is_none() {
             if let Some(id) = state.hover {
                 let size = (g.base as usize * 2 / 5).max(24);
-                self.launcher_icon(x + w / 2, y + g.base as usize * 2 / 3,
-                    shelf::icon(id), size);
+                let cx=x+w/2;let cy=y+g.base as usize*2/3;
+                if self.clipped_render_region(cx.saturating_sub(size/2),cy.saturating_sub(size/2),size,size).is_some() {
+                    self.launcher_icon(cx,cy,shelf::icon(id),size);
+                }
             }
         }
         if count>g.capacity {
@@ -114,7 +116,7 @@ impl DisplayDevice {
             if let Some(old)=previous_clip {clip.left=clip.left.max(old.left);clip.top=clip.top.max(old.top);clip.right=clip.right.min(old.right);clip.bottom=clip.bottom.min(old.bottom);}
             self.render_clip=Some(clip);
             let opacity=((expansion-40)*255/215) as u8;
-            let glass_opacity=(opacity as u16*190/255) as u8;
+            let glass_opacity=(opacity as u16*112/255) as u8;
             let spine=(base*62/100).max(18);
             let spine_x=x+w-spine-5;
             self.fill_rounded_rect_alpha(spine_x,y+5,spine,h.saturating_sub(10),spine/2,248,250,255,glass_opacity);

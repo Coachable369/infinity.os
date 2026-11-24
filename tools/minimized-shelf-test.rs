@@ -311,7 +311,11 @@ fn hover_damage_excludes_closed_context_menu() {
 fn settled_hover_damage_is_bounded_to_actions() {
     let mut s=State::new();s.set(EDITOR,true);s.hover=Some(EDITOR);s.expanded=true;
     publish(s);animate(0,true);
-    let g=Geometry::new(1440,900,s);let r=g.animation_damage(s);
+    let g=Geometry::new(1440,900,s);
+    let endpoint=g.animation_damage(s);
+    assert!(endpoint.y<=g.rail.y && endpoint.bottom()>=g.rail.bottom());
+    let _=take_damage(1440,900);
+    let r=g.animation_damage(s);
     assert!(r.y>g.rail.y);
     assert!(r.height<g.rail.height);
     for i in 0..ACTIONS.len() {let a=g.action_rect(i);assert!(r.contains(Point{x:a.x,y:a.y}));assert!(r.contains(Point{x:a.right()-1,y:a.bottom()-1}));}

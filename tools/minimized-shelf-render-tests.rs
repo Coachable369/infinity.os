@@ -485,3 +485,33 @@ fn shelf_bubble_animation_frames() {
         for y in r.y as usize..r.bottom()as usize {for x in r.x as usize..r.right()as usize {let p=pixels[y*width+x];file.write_all(&[(p&255)as u8,((p>>8)&255)as u8,((p>>16)&255)as u8]).unwrap();}}
     }
 }
+
+#[test]
+// ------------------------=
+// FUNC: shelf_expansion_endpoint_repaints_complete_spine
+// DESC: Compares timed expansion and rapid hover partial frames with full production composition.
+// ------------------=
+fn shelf_expansion_endpoint_repaints_complete_spine() {
+    let (width,height)=(1440,900);
+    let background=vec![0x302010u32;width*height];
+    let mut pixels=background.clone();
+    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,
+        render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    let mut state=State::new();state.set(shelf::EDITOR,true);
+    shelf::publish(state);shelf::animate(0,true);let _=shelf::take_damage(width,height);
+    d.minimized_app_shelf();
+    state.hover=Some(shelf::EDITOR);state.expanded=true;shelf::publish(state);
+    for time in (0..=480).step_by(16) {
+        if time>=256 {state.row=Some((time/16)%5);shelf::publish(state);}
+        shelf::animate(time as u64,false);
+        let g=Geometry::new(width,height,state);
+        let mut damage=g.animation_damage(state);
+        if let Some(other)=shelf::take_damage(width,height) {damage=damage.union(other);}
+        let clip=Region{left:damage.x.max(0)as usize,top:damage.y.max(0)as usize,
+            right:(damage.right().max(0)as usize).min(width),bottom:(damage.bottom().max(0)as usize).min(height)};
+        for y in clip.top..clip.bottom {let r=y*width+clip.left..y*width+clip.right;pixels[r.clone()].copy_from_slice(&background[r]);}
+        d.render_clip=Some(clip);d.minimized_app_shelf();d.render_clip=None;
+        let mut expected=background.clone();let mut full=d;full.buffer=expected.as_mut_ptr();full.minimized_app_shelf();
+        assert_eq!(pixels,expected,"partial expansion/hover frame at {time}ms");
+    }
+}

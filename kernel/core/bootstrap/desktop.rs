@@ -7507,7 +7507,11 @@ pub fn system_ui_present(
                 let metric_damage=crate::ui::widget_keyframes::take(3).then(||widgets.rect(0,console.display.width,console.display.height,layout.scale(),false));
                 let weather_damage=crate::ui::widget_keyframes::take(4).then(||widgets.rect(2,console.display.width,console.display.height,layout.scale(),false));
                 let shelf_damage=crate::ui::widget_keyframes::take(8).then(||{use crate::ui::app_launcher::minimized_shelf as shelf;shelf::Geometry::new(console.display.width,console.display.height,shelf::current()).animation_damage(shelf::current())});
-                for damage in [metric_damage,weather_damage,shelf_damage,dock_damage,crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                let shelf_state_damage=crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width,console.display.height);
+                let shelf_damage=match (shelf_damage,shelf_state_damage) {
+                    (Some(a),Some(b))=>Some(a.union(b)),(a,b)=>a.or(b),
+                };
+                for damage in [metric_damage,weather_damage,shelf_damage,dock_damage,crate::ui::desktop_drag::take_damage(console.display.width,console.display.height),native_damage,control_damage[0],control_damage[1],crate::ui::file_preview::desktop_damage(console.display.width,console.display.height),crate::ui::file_preview::take_damage(),crate::console::clipboard_menu::take_damage(),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),crate::ui::drop_compass::take_damage(),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {

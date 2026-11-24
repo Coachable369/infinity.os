@@ -278,7 +278,7 @@ impl Geometry {
     // DESC: Clears the entire expansion envelope on every motion frame, including the collapsed endpoint.
     // ------------------=
     pub fn animation_damage(self, state:State)->Rect {
-        if presentation().0 == 255 && state.expanded && state.menu.is_none() && state.drag.is_none() {
+        if presentation().0 == 255 && !unsafe { EXPANSION_DAMAGE } && state.expanded && state.menu.is_none() && state.drag.is_none() {
             let first=self.action_rect(0);
             let last=self.action_rect(ACTIONS.len()-1);
             let shoulder=(self.base*18/100).max(6) as i32+2;
@@ -340,6 +340,8 @@ pub fn icon(id: usize) -> usize {
 
 static mut STATE: State = State::new();
 static mut PAINTED: State = State::new();
+// Retain full geometry damage until the compositor consumes the final expansion frame.
+static mut EXPANSION_DAMAGE: bool = false;
 // ------------------------=
 // FUNC: current
 // DESC: Copies the immutable UI-thread presentation snapshot.
@@ -374,14 +376,16 @@ pub fn take_damage(width: usize, height: usize) -> Option<Rect> {
         let old = *(&raw const PAINTED);
         let new = current();
         *(&raw mut PAINTED) = new;
-        (old != new).then(|| {
+        let damage = (old != new || EXPANSION_DAMAGE).then(|| {
             let previous=Geometry::new(width,height,old);
             let next=Geometry::new(width,height,new);
             let stable_header=old.hover==new.hover && old.count()==new.count();
             let old_damage=if old.expanded && stable_header {previous.animation_damage(old)} else {previous.damage(old)};
             let new_damage=if new.expanded && stable_header {next.animation_damage(new)} else {next.damage(new)};
             old_damage.union(new_damage)
-        })
+        });
+        EXPANSION_DAMAGE = false;
+        damage
     }
 }
 
@@ -445,6 +449,7 @@ pub fn animate(now: u64, reduced: bool) -> bool {
         if target.1 != MOTION_TARGET.1 || reduced { (*(&raw mut SELECTION)).retarget(target.1, now, 220, reduced); (*(&raw mut SELECTION_TAIL)).retarget(target.1,now,320,reduced); }
         MOTION_TARGET = target;
         let next = ((*(&raw const EXPANSION)).value(now), (*(&raw const SELECTION)).value(now));
+        EXPANSION_DAMAGE |= next.0 != PRESENTATION.0;
         let mut changed = next != PRESENTATION;
         let tail=(*(&raw const SELECTION_TAIL)).value(now);
         changed |= tail!=TAIL_VALUE; TAIL_VALUE=tail;

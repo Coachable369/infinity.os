@@ -73,7 +73,7 @@ app name, at two-thirds of the base header height, sized two-fifths of that heig
 Do not repaint an invisible context menu during hover. The expansion damage
 envelope follows the actual three-base rail width, including edge padding.
 
-Selection and spine use shared pale glass at 190/255 alpha, preserving the
+Selection and spine use shared pale glass at 112/255 alpha, preserving the
 underlying canvas. Native preview: `builds/validation/task-tray-bubble/app-icon-glass.gif`.
 49 behavioral checks and both targeted production-painter checks pass.
 Repaint reduction is verified structurally; installed-VM frame rate is not measured.
@@ -81,3 +81,17 @@ Repaint reduction is verified structurally; installed-VM frame rate is not measu
 Open-menu responsiveness: start hover timing on pointer delivery, settle the hover
 lens in 140 ms, and repaint only the action-row band once rail expansion is
 complete. Selection travel and rail expansion retain their accepted durations.
+
+## Expansion endpoint and hover repaint correction
+
+Full-height expansion damage persists until composition consumes its last frame;
+only subsequent stationary-rail hover frames use the action band. This prevents
+spine seams at the band's upper and lower boundaries. State and animation damage
+are merged before composition, avoiding two paints of the same tray per frame.
+Header artwork outside the damage clip is skipped. The selected panel material
+is unchanged; selection glass uses 112/255 pale coverage.
+
+The timed production-painter regression compares each 16 ms expansion/rapid-hover
+frame against complete composition. Endpoint, partial-frame and motion checks pass.
+Reference render: `builds/validation/task-tray-bubble/endpoint-fixed.png`.
+Installed-VM latency has not been measured by these host renderer checks.
