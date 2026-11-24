@@ -165,7 +165,7 @@ impl Geometry {
         let w = (width * 6 / 100).max(72).min(width / 4) as u32;
         let h = (height * 58 / 100) as u32;
         let expansion = presentation().0 as u32;
-        let extra = w * 3 * expansion / 255;
+        let extra = w * 2 * expansion / 255;
         let rail = Rect {
             x: state
                 .drag
@@ -249,8 +249,8 @@ impl Geometry {
     // DESC: Places the selected app action rows beside the fixed icon rail.
     // ------------------=
     pub fn action_rect(self, index:usize) -> Rect {
-        let height=(self.rail.height.saturating_sub(self.base)/5).min(self.base);
-        Rect {x:self.rail.x+(self.base/10)as i32,y:self.rail.y+(self.base/2)as i32+(index as u32*(height+4))as i32,width:self.rail.width.saturating_sub(self.base/10+12),height:height.saturating_sub(4)}
+        let height=(self.base*46/100).max(28);
+        Rect {x:self.rail.x+(self.base/10)as i32,y:self.rail.y+self.base as i32+(index as u32*(height+8))as i32,width:self.rail.width.saturating_sub(self.base/10+self.base*62/100+6),height}
     }
     // ------------------------=
     // FUNC: action_hit
@@ -378,6 +378,11 @@ pub fn take_damage(width: usize, height: usize) -> Option<Rect> {
 
 static mut EXPANSION: crate::ui::app_launcher::motion::Motion = crate::ui::app_launcher::motion::Motion::settled(0);
 static mut SELECTION: crate::ui::app_launcher::motion::Motion = crate::ui::app_launcher::motion::Motion::settled(0);
+static mut SELECTION_TAIL: crate::ui::app_launcher::motion::Motion = crate::ui::app_launcher::motion::Motion::settled(0);
+static mut HOVER: [crate::ui::app_launcher::motion::Motion; 5] = [crate::ui::app_launcher::motion::Motion::settled(0); 5];
+static mut HOVER_TARGETS: [i32;5] = [0;5];
+static mut HOVER_VALUES: [i32; 5] = [0; 5];
+static mut TAIL_VALUE: i32 = 0;
 static mut PRESENTATION: (i32, i32) = (0, 0);
 static mut MOTION_TARGET: (i32, i32) = (0, 0);
 // ------------------------=
@@ -385,6 +390,38 @@ static mut MOTION_TARGET: (i32, i32) = (0, 0);
 // DESC: Reads prepared expansion and selection keyframes without changing animation during paint.
 // ------------------=
 pub fn presentation() -> (i32, i32) { unsafe { *(&raw const PRESENTATION) } }
+// ------------------------=
+// FUNC: bubble_state
+// DESC: Supplies continuous hover growth and the trailing selection edge to the shared painter.
+// ------------------=
+pub fn bubble_state() -> ([i32;5],i32) { unsafe {(*(&raw const HOVER_VALUES),TAIL_VALUE)} }
+// ------------------------=
+// FUNC: circle_extent
+// DESC: Computes a rounded scanline extent without floating point or allocation.
+// ------------------=
+pub fn circle_extent(radius:i32, offset:i32)->i32 {
+    let n=(radius*radius-offset*offset).max(0);
+    let (mut lo,mut hi)=(0,radius.max(0)+1);
+    while hi-lo>1 {let mid=(lo+hi)/2;if mid*mid<=n {lo=mid;}else{hi=mid;}}
+    lo
+}
+// ------------------------=
+// FUNC: bubble_span
+// DESC: Joins the rounded selection cap to its spine with concave tangent shoulders.
+// ------------------=
+pub fn bubble_span(y:i32,top:i32,bottom:i32,left:i32,spine:i32,shoulder:i32)->Option<(i32,i32)> {
+    let radius=((bottom-top)/2).max(1);
+    if y>=top && y<bottom {
+        let dy=if y<top+radius {top+radius-y}else{y-(bottom-radius)};
+        Some((left+radius-circle_extent(radius,dy.max(0)),spine+1))
+    } else if y>=top-shoulder && y<top {
+        let dy=y-(top-shoulder);
+        Some((spine-shoulder+circle_extent(shoulder,dy),spine+1))
+    } else if y>=bottom && y<bottom+shoulder {
+        let dy=bottom+shoulder-1-y;
+        Some((spine-shoulder+circle_extent(shoulder,dy),spine+1))
+    } else {None}
+}
 // ------------------------=
 // FUNC: animate
 // DESC: Retargets the expanding rail and sliding selection from current positions; reduced motion settles immediately.
@@ -395,10 +432,22 @@ pub fn animate(now: u64, reduced: bool) -> bool {
     unsafe {
         let target = (if s.visible() && s.drag.is_none() && (s.expanded || s.menu.is_some()) {255} else {0}, row.unwrap_or(MOTION_TARGET.1));
         if target.0 != MOTION_TARGET.0 || reduced { (*(&raw mut EXPANSION)).retarget(target.0, now, 240, reduced); }
-        if target.1 != MOTION_TARGET.1 || reduced { (*(&raw mut SELECTION)).retarget(target.1, now, 180, reduced); }
+        if target.1 != MOTION_TARGET.1 || reduced { (*(&raw mut SELECTION)).retarget(target.1, now, 220, reduced); (*(&raw mut SELECTION_TAIL)).retarget(target.1,now,320,reduced); }
         MOTION_TARGET = target;
         let next = ((*(&raw const EXPANSION)).value(now), (*(&raw const SELECTION)).value(now));
-        let changed = next != PRESENTATION;
+        let mut changed = next != PRESENTATION;
+        let tail=(*(&raw const SELECTION_TAIL)).value(now);
+        changed |= tail!=TAIL_VALUE; TAIL_VALUE=tail;
+        for i in 0..5 {
+            let destination=if s.expanded && s.row==Some(i) {255}else{0};
+            if (*(&raw const HOVER_TARGETS))[i]!=destination || reduced {
+                (*(&raw mut HOVER))[i].retarget(destination,now,220,reduced);
+                (*(&raw mut HOVER_TARGETS))[i]=destination;
+            }
+            let value=(*(&raw const HOVER))[i].value(now);
+            changed |= value!=(*(&raw const HOVER_VALUES))[i];
+            (*(&raw mut HOVER_VALUES))[i]=value;
+        }
         PRESENTATION = next;
         if changed { crate::ui::widget_keyframes::invalidate(3); }
         changed

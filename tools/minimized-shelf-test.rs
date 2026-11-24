@@ -253,6 +253,35 @@ fn expanded_motion_preserves_rows_and_reverses_without_jumps() {
     s.expanded=true;publish(s);animate(500,true);assert_eq!(presentation().0,255);
     let full=Geometry::new(1440,900,s);
     for i in 0..ACTIONS.len() {let r=full.action_rect(i);let p=Point{x:r.x+1,y:r.y+1};assert_eq!(full.action_hit(p),Some(i));assert_eq!(full.hit(s,p),None);}
-    s.row=Some(1);publish(s);animate(600,false);animate(690,false);assert!(presentation().1>0 && presentation().1<256);animate(780,false);assert_eq!(presentation().1,256);
-    publish(State::new());animate(800,true);
+    s.row=Some(1);publish(s);animate(600,false);animate(690,false);assert!(presentation().1>0 && presentation().1<256);animate(920,false);assert_eq!(presentation().1,256);
+    publish(State::new());animate(940,true);
+}
+
+#[test]
+// ------------------------=
+// FUNC: connected_bubble_has_concave_shoulders
+// DESC: Verifies the selection flows into the spine without gaps and tapers tangentially outside the row.
+// ------------------=
+fn connected_bubble_has_concave_shoulders() {
+    assert_eq!(bubble_span(80,100,140,10,200,20),Some((200,201)));
+    assert_eq!(bubble_span(99,100,140,10,200,20),Some((186,201)));
+    assert_eq!(bubble_span(120,100,140,10,200,20),Some((10,201)));
+    assert_eq!(bubble_span(160,100,140,10,200,20),None);
+    for y in 80..160 {let (l,r)=bubble_span(y,100,140,10,200,20).unwrap();assert!(l<=200 && r==201);}
+}
+
+#[test]
+// ------------------------=
+// FUNC: hover_bubble_grows_and_reverses_continuously
+// DESC: Verifies intermediate hover growth, independently moving selection edges, reversal and reduced-motion settling.
+// ------------------=
+fn hover_bubble_grows_and_reverses_continuously() {
+    let mut state=State::new();state.set(EDITOR,true);state.hover=Some(EDITOR);state.expanded=true;state.row=Some(0);
+    publish(state);animate(0,true);
+    state.row=Some(3);publish(state);animate(100,false);animate(210,false);
+    let (hover,tail)=bubble_state();assert!(hover[3]>0 && hover[3]<255);assert!(presentation().1>tail);
+    let before=hover[3];state.row=Some(1);publish(state);animate(210,false);assert_eq!(bubble_state().0[3],before);
+    animate(600,false);assert_eq!(bubble_state().0[1],255);assert_eq!(bubble_state().0[3],0);
+    state.row=Some(4);publish(state);animate(601,true);assert_eq!(bubble_state().0[4],255);assert_eq!(bubble_state().1,1024);
+    publish(State::new());animate(602,true);
 }

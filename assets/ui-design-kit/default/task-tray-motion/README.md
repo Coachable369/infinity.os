@@ -8,8 +8,8 @@ opacity, texture or blur. Existing theme icons and fonts remain authoritative.
 - Pointer entry expands inward over 240 ms; exit collapses over 240 ms.
 - Compact app icons retain their size and vertical position during expansion; the expanded action menu replaces the compact list.
 - App icons identify minimized apps in the collapsed rail; expansion reveals the selected app name and its action menu. Expanded labeled rows are actions for the selected app: Show, Maximize, Close, Force Kill, Show in Task Browser.
-- A pale selection capsule travels between rows in 180 ms, joined to the trailing
-  pale action spine with rounded shoulders as in the clip.
+- A pale selection capsule travels between rows with 220 ms leading and 320 ms trailing motion, joined to the trailing
+  pale action spine with concave shoulders as in the clip.
 - Close uses the existing unsaved-work guard. Force Kill uses the exact registered task and bypasses that guard deliberately. Show in Task Browser selects that task. Right-click and keyboard menus expose the same actions.
 - Rapid reversals retarget from the displayed position, never restart from zero.
 - Reduced motion commits endpoints immediately. Repaint old and new coverage,
@@ -23,7 +23,30 @@ scroll overflow, reduced motion and incremental/full-frame pixel equivalence.
 
 Production renderer: `builds/validation/task-tray-reference/actions.png`.
 The panel uses the unchanged selected Panel recipe; action selection adds the
-pale spine and sliding capsule. Geometry/motion checks: 46 passed. The production
+pale spine and sliding capsule. Geometry/motion checks: 48 passed. The production
 partial-frame harness matches complete redraw pixels across its resolution and
 docking cases. These checks do not constitute installed-VM acceptance or an ISO
 publication claim.
+
+## Reference correction: connected bubble (2026-11-23)
+
+Failed comparison: the first implementation used a detached pill, a 12px spine,
+late abrupt action-list reveal, and no expanding per-row hover bubble. Those are
+not the supplied motion. The reusable correction uses a 0.62-base-width white
+spine, 0.46-base-height rows, concave 0.18-base shoulders joining the selection
+to the spine, and a pale ice-blue hover lens growing across the row over 220ms.
+The selection stretches during travel with independently eased leading/trailing
+edges. White is #F8FAFF; hover lens is #D6E9FF with translucent coverage; selected
+labels are #152B41. Panel canvas sampling remains exactly the selected UIKit
+material. Normal rows have a soft glass highlight and no separate outline.
+The same component is rendered at intermediate times, reversal, and rest; not
+just endpoint screenshots. Reference motion crops are extracted from the supplied
+video rather than replaced with newly imagined artwork.
+
+Correction evidence: `builds/validation/task-tray-bubble/reference-hover.png`
+and `rendered-motion.png` compare source-video frames with the production painter.
+The 11-frame transition test and partial/full damage equivalence checks pass.
+Labels use size-controlled native font rendering and are recolored only where
+covered by the selection. These are native-renderer checks, not installed-VM
+or literal pixel identity claims: action copy/icons and the user-selected panel
+material intentionally remain InfinityOS components.

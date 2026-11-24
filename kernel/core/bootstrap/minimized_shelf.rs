@@ -90,7 +90,7 @@ impl DisplayDevice {
         let expansion = shelf::presentation().0 as usize;
         let base = g.base as usize;
         // The compact rail yields to the selected application action menu.
-        for index in 0..if expansion<=180 {g.capacity}else{0} {
+        for index in 0..if expansion<=40 {g.capacity}else{0} {
             let Some(id)=state.item(state.offset+index) else {break;};
             let tile=g.tile_rect(index);
             let tx=tile.x.max(0) as usize;
@@ -100,29 +100,70 @@ impl DisplayDevice {
             self.launcher_icon(tx+tile.width as usize/2,ty+base/2,shelf::icon(id),base*3/5);
             self.fill_rounded_rect_alpha(tx+tile.width as usize-8,ty+base-10,5,5,2,63,221,174,255);
         }
-        if expansion>180 && state.hover.is_some() && state.menu.is_none() {
-            let opacity=((expansion-180)*255/75) as u8;
-            let spine=12;
-            self.fill_rounded_rect_alpha(x+w-spine-5,y+12,spine,h.saturating_sub(24),spine/2,237,244,252,opacity);
+        if expansion>40 && state.hover.is_some() && state.menu.is_none() {
+            let previous_clip=self.render_clip;
+            let mut clip=Region {left:x,top:y,right:(x+w).min(self.width),bottom:(y+h).min(self.height)};
+            if let Some(old)=previous_clip {clip.left=clip.left.max(old.left);clip.top=clip.top.max(old.top);clip.right=clip.right.min(old.right);clip.bottom=clip.bottom.min(old.bottom);}
+            self.render_clip=Some(clip);
+            let opacity=((expansion-40)*255/215) as u8;
+            let spine=(base*62/100).max(18);
+            let spine_x=x+w-spine-5;
+            self.fill_rounded_rect_alpha(spine_x,y+5,spine,h.saturating_sub(10),spine/2,248,250,255,opacity);
+            let (hover,tail)=shelf::bubble_state();
             let first=g.action_rect(0);
             let pitch=g.action_rect(1).y-first.y;
+            let lead=shelf::presentation().1;
+            let top=first.y+lead.min(tail)*pitch/256;
+            let bottom=first.y+lead.max(tail)*pitch/256+first.height as i32;
+            // Paint the glass lenses below the moving white selection surface.
+            for index in 0..shelf::ACTION_LABELS.len() {
+                let a=g.action_rect(index);
+                let ax=a.x.max(0)as usize;
+                let ay=a.y.max(0)as usize;
+                let aw=a.width as usize;
+                let ah=a.height as usize;
+                self.fill_rounded_rect_alpha(ax,ay,aw,ah,ah/2,174,204,238,(u16::from(opacity)*28/255)as u8);
+                let growth=hover[index].max(0)as usize;
+                let lens=(ah+(aw.saturating_sub(ah))*growth/255).min(aw);
+                self.fill_rounded_rect_alpha(ax,ay,lens,ah,ah/2,214,233,255,(growth*opacity as usize*64/(255*255))as u8);
+            }
             if state.row.is_some() {
-                let sy=first.y+(shelf::presentation().1*pitch/256);
-                self.fill_rounded_rect_alpha(first.x.max(0)as usize,sy.max(0)as usize,first.width as usize,first.height as usize,first.height as usize/2,237,244,252,opacity);
+                let shoulder=(base*18/100).max(6) as i32;
+                for py in top-shoulder..bottom+shoulder {
+                    if let Some((left,_))=shelf::bubble_span(py*4+2,top*4,bottom*4,first.x*4,spine_x as i32*4,shoulder*4) {
+                        let start=(left+3)/4;
+                        self.fill_rect_alpha(start.max(0)as usize,py.max(0)as usize,(spine_x as i32-start).max(0)as usize,1,248,250,255,opacity);
+                        let coverage=(start*4-left).clamp(0,4);
+                        if coverage>0 {self.fill_rect_alpha((start-1).max(0)as usize,py.max(0)as usize,1,1,248,250,255,(opacity as i32*coverage/4)as u8);}
+                    }
+                }
             }
             for (index,label) in shelf::ACTION_LABELS.iter().enumerate() {
                 let a=g.action_rect(index);
-                let selected=state.row==Some(index);
-                if !selected {self.fill_rounded_rect_alpha(a.x.max(0)as usize,a.y.max(0)as usize,a.width as usize-12,a.height as usize,a.height as usize/2,174,204,238,24);}
-                let icon_size=(a.height as usize*3/5).min(48);
-                let ix=a.x.max(0)as usize+base/2;
-                let iy=a.y.max(0)as usize+a.height as usize/2;
+                let ax=a.x.max(0)as usize;
+                let ay=a.y.max(0)as usize;
+                let ah=a.height as usize;
+                let icon_size=(ah*3/5).min(32);
+                let ix=ax+ah/2;
+                let iy=ay+ah/2;
                 if index<4 {self.window_control(ix-icon_size/2,iy-icon_size/2,icon_size,if index>=2 {2}else{1},index==0);}
                 else {self.launcher_icon(ix,iy,19,icon_size);}
-                self.ui_text(a.x.max(0)as usize+base,a.y.max(0)as usize+(a.height as usize).saturating_sub(if index==4 {40}else{20})/2,if index==4 {b"Show in"}else{label},
-                    if selected {21}else{224},if selected {43}else{237},if selected {65}else{252},1);
-                if index==4 {self.ui_text(a.x.max(0)as usize+base,a.y.max(0)as usize+(a.height as usize).saturating_sub(40)/2+20,b"Task Browser",if selected {21}else{224},if selected {43}else{237},if selected {65}else{252},1);}
+                let text=if index==4 {b"Task Browser" as &[u8]}else{label};
+                let font=(base*18/100).max(14);
+                let text_y=ay+ah.saturating_sub(font)/2;
+                self.template_text(ax+ah,text_y,text,224,237,252,opacity,font,false);
+                // Recolor only pixels covered by the moving selection, rather than
+                // switching the whole label when its center crosses the bubble.
+                if state.row.is_some() {
+                    let text_clip=Region {left:clip.left,top:clip.top.max(top.max(0)as usize),right:clip.right,bottom:clip.bottom.min(bottom.max(0)as usize)};
+                    if text_clip.top<text_clip.bottom {
+                        self.render_clip=Some(text_clip);
+                        self.template_text(ax+ah,text_y,text,21,43,65,opacity,font,false);
+                        self.render_clip=Some(clip);
+                    }
+                }
             }
+            self.render_clip=previous_clip;
         }
 
         if state.count() > g.capacity {

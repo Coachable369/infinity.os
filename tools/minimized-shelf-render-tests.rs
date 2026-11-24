@@ -453,3 +453,34 @@ fn shelf_partial_frames_match_complete_frames() {
         }
     }
 }
+
+#[test]
+// ------------------------=
+// FUNC: shelf_bubble_animation_frames
+// DESC: Renders production bubble keyframes and proves partial redraw equals complete composition throughout travel.
+// ------------------=
+fn shelf_bubble_animation_frames() {
+    use std::io::Write;
+    let (width,height)=(1440,900);
+    let mut pixels=vec![0u32;width*height];
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,template_typography:[0;3],recording_surface:false};
+    display.paint_bitmap_cover_box(include_bytes!("../assets/desktop/infinity-default-dark-wallpaper-v2.bmp"),0,0,width,height);
+    let background=pixels.clone();
+    let mut state=State::new();state.set(shelf::EDITOR,true);state.hover=Some(shelf::EDITOR);state.expanded=true;state.row=Some(0);
+    shelf::publish(state);shelf::animate(0,true);display.minimized_app_shelf();
+    state.row=Some(3);shelf::publish(state);shelf::animate(100,false);
+    for (frame,time) in [100,130,160,190,220,250,280,310,340,380,420].into_iter().enumerate() {
+        shelf::animate(time,false);
+        let g=Geometry::new(width,height,state);
+        let damage=g.animation_damage(state);
+        let clip=Region {left:damage.x.max(0)as usize,top:damage.y.max(0)as usize,right:(damage.right().max(0)as usize).min(width),bottom:(damage.bottom().max(0)as usize).min(height)};
+        for y in clip.top..clip.bottom {let range=y*width+clip.left..y*width+clip.right;pixels[range.clone()].copy_from_slice(&background[range]);}
+        display.render_clip=Some(clip);display.minimized_app_shelf();display.render_clip=None;
+        let mut expected=background.clone();let mut reference=display;reference.buffer=expected.as_mut_ptr();reference.minimized_app_shelf();
+        assert_eq!(pixels,expected,"partial repaint at frame {frame}");
+        let r=g.rail;
+        let mut file=std::io::BufWriter::new(std::fs::File::create(format!("build/task-tray-bubble-{frame:02}.ppm")).unwrap());
+        write!(file,"P6\n{} {}\n255\n",r.width,r.height).unwrap();
+        for y in r.y as usize..r.bottom()as usize {for x in r.x as usize..r.right()as usize {let p=pixels[y*width+x];file.write_all(&[(p&255)as u8,((p>>8)&255)as u8,((p>>16)&255)as u8]).unwrap();}}
+    }
+}
