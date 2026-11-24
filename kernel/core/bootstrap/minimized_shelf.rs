@@ -102,7 +102,7 @@ impl DisplayDevice {
         }
         if expansion>40 && state.hover.is_some() && state.menu.is_none() {
             let previous_clip=self.render_clip;
-            let mut clip=Region {left:x,top:y,right:(x+w).min(self.width),bottom:(y+h).min(self.height)};
+            let mut clip=PresentRegion {left:x,top:y,right:(x+w).min(self.width),bottom:(y+h).min(self.height)};
             if let Some(old)=previous_clip {clip.left=clip.left.max(old.left);clip.top=clip.top.max(old.top);clip.right=clip.right.min(old.right);clip.bottom=clip.bottom.min(old.bottom);}
             self.render_clip=Some(clip);
             let opacity=((expansion-40)*255/215) as u8;
@@ -155,7 +155,7 @@ impl DisplayDevice {
                 // Recolor only pixels covered by the moving selection, rather than
                 // switching the whole label when its center crosses the bubble.
                 if state.row.is_some() {
-                    let text_clip=Region {left:clip.left,top:clip.top.max(top.max(0)as usize),right:clip.right,bottom:clip.bottom.min(bottom.max(0)as usize)};
+                    let text_clip=PresentRegion {left:clip.left,top:clip.top.max(top.max(0)as usize),right:clip.right,bottom:clip.bottom.min(bottom.max(0)as usize)};
                     if text_clip.top<text_clip.bottom {
                         self.render_clip=Some(text_clip);
                         self.template_text(ax+ah,text_y,text,21,43,65,opacity,font,false);
