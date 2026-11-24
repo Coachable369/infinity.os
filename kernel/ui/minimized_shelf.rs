@@ -32,6 +32,7 @@ pub struct State {
     pub menu: Option<usize>,
     pub hover: Option<usize>,
     pub row: Option<usize>,
+    pub selected_row: usize,
 }
 impl State {
     // ------------------------=
@@ -87,6 +88,7 @@ impl State {
             menu: None,
             hover: None,
             row: None,
+            selected_row: 0,
         }
     }
     // ------------------------=
@@ -428,7 +430,7 @@ pub fn bubble_span(y:i32,top:i32,bottom:i32,left:i32,spine:i32,shoulder:i32)->Op
 // ------------------=
 pub fn animate(now: u64, reduced: bool) -> bool {
     let s = current();
-    let row = s.row.map(|row|row as i32*256);
+    let row = Some(s.selected_row.min(4) as i32*256);
     unsafe {
         let target = (if s.visible() && s.drag.is_none() && (s.expanded || s.menu.is_some()) {255} else {0}, row.unwrap_or(MOTION_TARGET.1));
         if target.0 != MOTION_TARGET.0 || reduced { (*(&raw mut EXPANSION)).retarget(target.0, now, 240, reduced); }

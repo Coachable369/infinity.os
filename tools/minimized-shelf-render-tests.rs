@@ -469,7 +469,8 @@ fn shelf_bubble_animation_frames() {
     let mut state=State::new();state.set(shelf::EDITOR,true);state.hover=Some(shelf::EDITOR);state.expanded=true;state.row=Some(0);
     shelf::publish(state);shelf::animate(0,true);display.minimized_app_shelf();
     state.row=Some(3);shelf::publish(state);shelf::animate(100,false);
-    for (frame,time) in [100,130,160,190,220,250,280,310,340,380,420].into_iter().enumerate() {
+    for (frame,time) in [100,130,160,190,220,250,280,340,410,500,570].into_iter().enumerate() {
+        if time==250 {state.selected_row=3;shelf::publish(state);}
         shelf::animate(time,false);
         let g=Geometry::new(width,height,state);
         let damage=g.animation_damage(state);

@@ -155,13 +155,16 @@ impl ConsoleRuntime {
         if state.menu.is_none() {
             if let Some(action)=g.action_hit(point) {
                 if let Some(id)=state.hover {
-                    state.row=Some(action); shelf::publish(state);
+                    state.row=Some(action);
+                    if clicked {state.selected_row=action;}
+                    shelf::publish(state);
                     if clicked {self.shelf_action(id,shelf::ACTIONS[action]);}
                     if clicked || state!=old {self.redraw();}
                     return true;
                 }
             }
         }
+        if state.menu.is_none() {state.row=None;}
         let icon_hit = g.hit(state, point);
         state.hover = if consumed && old.expanded && old.hover.is_some() {old.hover} else {icon_hit};
         if let Some(id) = state.hover {

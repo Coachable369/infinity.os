@@ -253,7 +253,7 @@ fn expanded_motion_preserves_rows_and_reverses_without_jumps() {
     s.expanded=true;publish(s);animate(500,true);assert_eq!(presentation().0,255);
     let full=Geometry::new(1440,900,s);
     for i in 0..ACTIONS.len() {let r=full.action_rect(i);let p=Point{x:r.x+1,y:r.y+1};assert_eq!(full.action_hit(p),Some(i));assert_eq!(full.hit(s,p),None);}
-    s.row=Some(1);publish(s);animate(600,false);animate(690,false);assert!(presentation().1>0 && presentation().1<256);animate(920,false);assert_eq!(presentation().1,256);
+    s.row=Some(1);s.selected_row=1;publish(s);animate(600,false);animate(690,false);assert!(presentation().1>0 && presentation().1<256);animate(920,false);assert_eq!(presentation().1,256);
     publish(State::new());animate(940,true);
 }
 
@@ -279,9 +279,9 @@ fn hover_bubble_grows_and_reverses_continuously() {
     let mut state=State::new();state.set(EDITOR,true);state.hover=Some(EDITOR);state.expanded=true;state.row=Some(0);
     publish(state);animate(0,true);
     state.row=Some(3);publish(state);animate(100,false);animate(210,false);
-    let (hover,tail)=bubble_state();assert!(hover[3]>0 && hover[3]<255);assert!(presentation().1>tail);
+    let (hover,tail)=bubble_state();assert!(hover[3]>0 && hover[3]<255);assert_eq!(presentation().1,0);assert_eq!(tail,0);
     let before=hover[3];state.row=Some(1);publish(state);animate(210,false);assert_eq!(bubble_state().0[3],before);
     animate(600,false);assert_eq!(bubble_state().0[1],255);assert_eq!(bubble_state().0[3],0);
-    state.row=Some(4);publish(state);animate(601,true);assert_eq!(bubble_state().0[4],255);assert_eq!(bubble_state().1,1024);
+    state.row=Some(4);state.selected_row=4;publish(state);animate(601,true);assert_eq!(bubble_state().0[4],255);assert_eq!(bubble_state().1,1024);
     publish(State::new());animate(602,true);
 }

@@ -122,12 +122,19 @@ impl DisplayDevice {
                 let ay=a.y.max(0)as usize;
                 let aw=a.width as usize;
                 let ah=a.height as usize;
-                self.fill_rounded_rect_alpha(ax,ay,aw,ah,ah/2,174,204,238,(u16::from(opacity)*28/255)as u8);
+                // The clip has a raised, softly shaded glass row, not a flat pill.
+                for line in 0..ah {
+                    let radius=ah/2;
+                    let dy=if line<radius {radius-line}else{line-(ah-radius)};
+                    let inset=radius-shelf::circle_extent(radius as i32,dy as i32)as usize;
+                    let alpha=(44usize.saturating_sub(line*24/ah))*opacity as usize/255;
+                    self.fill_rect_alpha(ax+inset,ay+line,aw.saturating_sub(inset*2),1,174,204,238,alpha as u8);
+                }
                 let growth=hover[index].max(0)as usize;
                 let lens=(ah+(aw.saturating_sub(ah))*growth/255).min(aw);
                 self.fill_rounded_rect_alpha(ax,ay,lens,ah,ah/2,214,233,255,(growth*opacity as usize*64/(255*255))as u8);
             }
-            if state.row.is_some() {
+            if state.hover.is_some() {
                 let shoulder=(base*18/100).max(6) as i32;
                 for py in top-shoulder..bottom+shoulder {
                     if let Some((left,_))=shelf::bubble_span(py*4+2,top*4,bottom*4,first.x*4,spine_x as i32*4,shoulder*4) {
@@ -154,7 +161,7 @@ impl DisplayDevice {
                 self.template_text(ax+ah,text_y,text,224,237,252,opacity,font,false);
                 // Recolor only pixels covered by the moving selection, rather than
                 // switching the whole label when its center crosses the bubble.
-                if state.row.is_some() {
+                if state.hover.is_some() {
                     let text_clip=PresentRegion {left:clip.left,top:clip.top.max(top.max(0)as usize),right:clip.right,bottom:clip.bottom.min(bottom.max(0)as usize)};
                     if text_clip.top<text_clip.bottom {
                         self.render_clip=Some(text_clip);

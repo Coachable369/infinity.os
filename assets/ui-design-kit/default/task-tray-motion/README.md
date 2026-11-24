@@ -1,4 +1,4 @@
-# Task tray — sliding selection
+# Task tray — glass hover and sliding selection
 
 Reference: supplied 9.36-second Glassy Sidebar clip, contact sheet `reference.png`.
 Reuse the selected UIKit Panel recipe unchanged: no substituted canvas, tint,
@@ -50,3 +50,18 @@ Labels use size-controlled native font rendering and are recolored only where
 covered by the selection. These are native-renderer checks, not installed-VM
 or literal pixel identity claims: action copy/icons and the user-selected panel
 material intentionally remain InfinityOS components.
+
+## Hover/selection separation correction
+
+The reference keeps its white selection stationary during pointer hover. Hover
+expands a separate translucent glass lens; a click changes the selected row.
+The controller and painter now maintain these as independent states. Normal
+rows use vertical glass shading instead of a flat fill. Pointer movement into
+row gaps clears the hover lens without clearing selection.
+
+Verification: 48 behavioral checks passed, including stationary selection during
+hover and reduced-motion endpoints. Both native animation-frame and partial/full
+repaint comparisons passed. Updated comparison artifacts are in
+`builds/validation/task-tray-bubble/`. Visual acceptance remains open: the current
+icon treatment and glass shading are not an exact reference match. No updated
+ISO is claimed for this correction.
