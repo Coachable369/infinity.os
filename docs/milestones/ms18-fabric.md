@@ -35,6 +35,18 @@ runtime-only: reboot persistence and lost-result response replay remain open.
 - Cancellation ordering, epoch, consumer isolation and window rollover: 1 passed;
   `builds/manifests/20261125T181058574169Z-79727.json`.
 
+Concurrent consumers can now use identical task numbers. Provider execution slots
+choose unoccupied regions and endpoints rather than deriving them from a remote
+task number. Epoch matching and cancellation remain scoped to the authenticated
+consumer; cancelling one job leaves the other running with independent accounting.
+
+- Red reproduction: `builds/manifests/20261125T182100897397Z-80498.json`.
+- Full host retest: 250 passed, 0 failed, 1 ignored, 46.28 seconds;
+  `builds/manifests/20261125T182147254631Z-80596.json`.
+- Prior two fixes compiled in live and installed ARM kernels:
+  `builds/manifests/20261125T181204322003Z-79885.json`.
+  The latest concurrent-consumer fix still requires native compilation.
+
 Remaining: durable provider replay history, real Python/native remote
 execution and output streaming, physical remote-memory allocation, operational
 GPU/inference providers, complete native management clients, and independent
@@ -59,7 +71,7 @@ installed-node verification. No ISO containing this QA fix has been published.
 - Preserve legacy v1 storage/compute/memory/accelerator advertisements; add v2 device-category encoding. New categories do not imply available drivers or remotely usable devices.
 - Reject advertisements that would turn offline resources into online ones during encoding, and reject unknown capability bits.
 - Make boot-local compute identity retirement atomic when any resource remains reserved.
-- Bind provider execution contexts to the authenticated requesting node. Another node cannot resume or cancel an active colliding task identifier.
+- Bind provider execution contexts to the authenticated requesting node. Another node cannot resume or cancel a context owned by a different consumer; identical task numbers have independent namespaces.
 - Enforce provider aggregate memory, scheduler-weight and concurrent-context ceilings. CPU units are scheduler weights, **not physical cores or a demonstrated CPU percentage quota**.
 - Require a current ResourcePolicyModify capability and expected revision to alter provider limits. Disabling contributions reclaims live contexts.
 - Reclaim remote contexts on consumer disconnect or expiry of a provider-owned 60-time-unit inactivity lease, even if a consumer supplied no deadline.

@@ -2257,3 +2257,41 @@ fn provider_replay_window_handles_reordering_and_rollover() {
     assert_eq!(provider.allocation(), (0, 0, 0));
     assert_eq!(execution.count(), 0);
 }
+
+#[test]
+// ------------------------=
+// FUNC: independent_consumers_can_share_task_numbers
+// DESC: Runs identical task numbers concurrently with separate regions, accounting and peer-scoped cancellation.
+// ------------------=
+fn independent_consumers_can_share_task_numbers() {
+    use crate::runtime::compute::{ComputeState, RemoteComputeExecutor};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([44; 32]);
+    let a = NodeId([45; 32]);
+    let b = NodeId([46; 32]);
+    let mut execution = ExecutionManager::new();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut request = compute_payload(local);
+    request.deadline = 0;
+    request.work_units = 128;
+    provider.execute(request, &mut execution, local, a, 1).unwrap();
+    provider.execute(request, &mut execution, local, b, 2).unwrap();
+    assert_eq!(execution.count(), 2);
+    let first = execution.nth(0).unwrap();
+    let second = execution.nth(1).unwrap();
+    assert_ne!(first.memory.base, second.memory.base);
+    assert_ne!(first.endpoint, second.endpoint);
+    assert_ne!(first.security_identity, second.security_identity);
+    assert_eq!(provider.allocation(), (request.memory_bytes * 2, request.cpu_units as u64 * 2, 2));
+    let mut cancel = request;
+    cancel.operation = OperationId::ComputeCancel as u32;
+    provider.execute(cancel, &mut execution, local, a, 3).unwrap();
+    assert_eq!(execution.count(), 1);
+    let mut continuation = request;
+    continuation.used_ticks = 64;
+    continuation.work_units = 64;
+    let result = provider.execute(continuation, &mut execution, local, b, 4).unwrap();
+    assert_eq!(result.state, ComputeState::Completed as u8);
+    assert_eq!(provider.allocation(), (0, 0, 0));
+    assert_eq!(execution.count(), 0);
+}

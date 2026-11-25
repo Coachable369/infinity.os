@@ -349,17 +349,17 @@ impl RemoteComputeExecutor {
         if dispatch.target_node != local || peer.0 == [0; 32] {
             return Err(ComputeError::AccessDenied);
         }
-        if self.active.iter().flatten().any(|active| {
-            active.task_id == dispatch.task_id && active.peer != peer
-        }) {
-            return Err(ComputeError::AccessDenied);
-        }
         let matching = self.active.iter().position(|slot| {
             slot.is_some_and(|active| {
                 active.peer == peer && active.task_id == dispatch.task_id && active.epoch == dispatch.epoch
             })
         });
         if dispatch.operation == super::iop::OperationId::ComputeCancel as u32 {
+            if matching.is_none() && self.active.iter().flatten().any(|active| {
+                active.task_id == dispatch.task_id && active.peer != peer
+            }) {
+                return Err(ComputeError::AccessDenied);
+            }
             // A cancellation can arrive before the initial request. Fence that epoch too.
             match self.next_replay_window(peer, dispatch.task_id, dispatch.epoch) {
                 Ok((index, window)) => self.replay[index] = Some(window),
@@ -397,7 +397,7 @@ impl RemoteComputeExecutor {
                 .active
                 .iter()
                 .flatten()
-                .any(|active| active.task_id == dispatch.task_id)
+                .any(|active| active.peer == peer && active.task_id == dispatch.task_id)
             {
                 return Err(ComputeError::StaleResult);
             }
@@ -501,15 +501,26 @@ fn create_remote_context(
     dispatch: ComputeDispatchV1,
     execution: &mut ExecutionManager,
 ) -> Result<ContextHandle, ComputeError> {
+    // Consumer task numbers are not provider address-space identities. Find an
+    // unoccupied provider slot, also respecting locally executing contexts.
+    let slot = (0..MAX_COMPUTE_TASKS).find(|slot| {
+        let base = context_base(*slot as u64);
+        let end = base + dispatch.memory_bytes;
+        let endpoint = 0x6d00u16 + *slot as u16;
+        execution.slots().all(|(_, context)| {
+            context.endpoint != endpoint &&
+                (end <= context.memory.base || base >= context.memory.base + context.memory.length)
+        })
+    }).ok_or(ComputeError::Full)?;
     let handle = execution
         .create(
             0x1100,
             workload_image(dispatch.workload_kind),
             MemoryRegion {
-                base: context_base(dispatch.task_id),
+                base: context_base(slot as u64),
                 length: dispatch.memory_bytes,
             },
-            0x6d00u16.saturating_add((dispatch.task_id % 64) as u16),
+            0x6d00u16 + slot as u16,
             priority(dispatch.priority),
             ResourceBudget {
                 memory_limit: dispatch.memory_bytes,
