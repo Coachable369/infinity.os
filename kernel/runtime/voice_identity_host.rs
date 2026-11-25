@@ -91,7 +91,7 @@ fn fail(h:&mut Host,error:Failure){
  let stamp=super::ai::clock::SYSTEM.utc_nanoseconds(now()).map(|n|n/1_000_000_000);
  let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"enrollment-or-login",format_args!("failure={} samples={} captured_samples={} device={:?}",error as u8,h.enrollment.count(),h.length,crate::drivers::audio::capture_status()));
  if h.login||!matches!(error,Failure::Mismatch|Failure::Quiet|Failure::Clipped|Failure::Timeout|Failure::AnalysisTimeout){stop_capture(h);}
- h.pcm.fill(0);h.length=0;h.pending=None;h.waiting_face=false;h.result=None;h.template.fill(0);h.stage=Stage::Failed(error);}
+ h.pcm.fill(0);h.length=0;h.pending=None;h.proof=None;h.waiting_face=false;h.result=None;h.template.fill(0);h.stage=Stage::Failed(error);}
 // ------------------------=
 // FUNC: cancel
 // DESC: Cancels account/page transitions; worker memory is scrubbed cooperatively by the next poll.
@@ -158,7 +158,7 @@ pub fn accept_face(account:StableId,face:super::face_login::Proof)->bool{unsafe{
  let h=&mut *core::ptr::addr_of_mut!(HOST);
  if !h.waiting_face||h.account!=Some(account){return false;}
  h.proof=h.pending.take().and_then(|p|p.complete(account,face,now()/1_000_000));h.waiting_face=false;
- if h.proof.is_some(){h.stage=Stage::Verified;true}else{fail(h,Failure::Unauthorized);false}
+ if h.proof.is_some(){h.stage=Stage::Verified;true}else{fail(h,Failure::Mismatch);false}
 }}
 // ------------------------=
 // FUNC: save
@@ -297,6 +297,14 @@ pub fn retryable_login()->bool{unsafe{
  h.login&&h.task.is_none()&&h.terminal.is_none()&&matches!(h.stage,Stage::Failed(Failure::Mismatch|Failure::Quiet|Failure::Clipped|Failure::Timeout|Failure::AnalysisTimeout|Failure::Unavailable|Failure::Worker))
 }}
 // ------------------------=
+// FUNC: session_rejected
+// DESC: Clears consumed biometric authority and rearms a failed session transition instead of stranding the login UI in Verified.
+// ------------------=
+pub fn session_rejected(){unsafe{
+ let h=&mut *core::ptr::addr_of_mut!(HOST);
+ if h.login{fail(h,Failure::Unavailable);}
+}}
+// ------------------------=
 // FUNC: take_proof
 // DESC: Delivers a completed combined proof only once to the kernel login controller.
 // ------------------=
@@ -317,7 +325,7 @@ fn finish(h:&mut Host,state:State,alive:bool,clock:u64){
          h.face_started=true;
          if super::face_setup_host::start_login(account){h.waiting_face=true;h.stage=Stage::Verified;}
          else{fail(h,Failure::Unavailable);}
-        }else{fail(h,Failure::Unauthorized);}}
+        }else{fail(h,Failure::Timeout);}}
        else{
         let stamp=super::ai::clock::SYSTEM.utc_nanoseconds(now()).map(|n|n/1_000_000_000);
         let _=crate::storage::app_errors::record(b"VoiceIdentity",stamp,"speaker-comparison",format_args!("agreement_and_centroid={scores:?} combined_threshold=0.50 face_required=true"));

@@ -1,6 +1,7 @@
 //! Behavioral checks for the combined login proof and encrypted speaker vault.
 mod identity {#[derive(Clone,Copy,PartialEq,Eq)] pub struct StableId(pub [u8;16]);}
 #[path="../kernel/runtime/face_login.rs"] mod face_login;
+#[path="../kernel/runtime/biometric_autostart.rs"] mod biometric_autostart;
 #[path="../kernel/runtime/voice_identity_login.rs"] mod voice_identity_login;
 #[path="../kernel/runtime/crypto.rs"] mod crypto;
 #[path="../kernel/runtime/voice_identity_vault.rs"] mod voice_identity_vault;
@@ -82,4 +83,37 @@ fn greeting_and_speaker_must_share_fresh_capture(){
  }
  let mut p=Pending::begin(a,100);assert!(p.accept_greeting(a,101,102,b"Infinity Hello"));
  assert!(p.complete(a,face_login::Proof::new(a,104),105).is_none());
+}
+
+// ------------------------=
+// FUNC: failed_face_attempt_restarts_with_fresh_factors
+// DESC: Exercises failed and expired voice-first attempts through the real retry gate, requiring new voice and face evidence after each cooldown.
+// ------------------=
+#[test]
+fn failed_face_attempt_restarts_with_fresh_factors(){
+ use identity::StableId;use voice_identity_login::Pending;
+ let a=StableId([1;16]);let other=StableId([2;16]);
+ let mut gate=biometric_autostart::Gate::new();
+ assert!(!gate.poll(Some(a),true,false,0));
+ assert!(gate.poll(Some(a),true,false,750));
+ let mut start=750;
+ for expired in [false,true,false,true]{
+  let mut pending=Pending::begin(a,start);
+  assert!(pending.accept_greeting(a,start+1,start+2,b"Hello Infinity"));
+  assert!(pending.accept_voice(a,start+1,start+3));
+  let end=if expired{start+90_000}else{start+5};
+  assert!(pending.complete(a,face_login::Proof::new(other,end),end).is_none());
+  gate.retry(end);
+  for tick in [end+1,end+500,end+1999]{
+   gate.retry(tick);
+   assert!(!gate.poll(Some(a),true,false,tick));
+  }
+  start=end+2000;
+  assert!(gate.poll(Some(a),true,false,start));
+ }
+ let mut fresh=Pending::begin(a,start);
+ assert!(!fresh.accept_voice(a,start-1,start+1));
+ assert!(fresh.accept_greeting(a,start+1,start+2,b"Infinity Hello"));
+ assert!(fresh.accept_voice(a,start+1,start+3));
+ assert!(fresh.complete(a,face_login::Proof::new(a,start+4),start+5).unwrap().consume(a,start+6));
 }

@@ -14929,7 +14929,13 @@ fn poll_native_ai_inner() {
                 if let Some(Ok(session))=crate::runtime::with_runtime(|r|r.identity.complete_voice_login(account,locked,proof,now)){
                     runtime.current_user=account;runtime.current_session=session.id;runtime.reset_input();
                     runtime.begin_authentication_success(locked.is_some());
+                }else{
+                    crate::runtime::voice_identity_host::session_rejected();
+                    runtime.redraw();
                 }
+            }else{
+                crate::runtime::voice_identity_host::cancel();
+                runtime.redraw();
             }
         }
         if was_busy!=crate::runtime::face_setup_host::login_busy() {
