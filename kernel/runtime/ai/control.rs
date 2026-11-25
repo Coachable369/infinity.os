@@ -108,6 +108,14 @@ mod native_control_tests {
         }
         assert_eq!(Command::decode(b"OS_LAUNCH:app:Infinity Code"), expected);
         assert_eq!(Command::decode(b"OS_OPEN:infinity_code"), expected);
+        let fabric = crate::ui::app_launcher::LAUNCHER_APPS.iter()
+            .position(|entry| entry.action == crate::ui::app_launcher::LauncherAction::InfinityFabric)
+            .map(Command::LaunchEntry);
+        assert!(fabric.is_some());
+        for phrase in [b"open Infinity Fabric".as_slice(), b"launch infinityfabric"] {
+            assert_eq!(Command::explicit(phrase), fabric);
+        }
+        assert_eq!(Command::decode(b"OS_OPEN:infinityfabric"), fabric);
         }
         assert!(catalog_name_matches(b"InfinityCode", b"Infinity Code"));
         assert!(!catalog_name_matches(b"InfinityCode", b"InfinityCode; terminal"));

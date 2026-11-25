@@ -231,6 +231,27 @@ impl Directory {
     }
 
     // ------------------------=
+    // FUNC: node_capacity
+    // DESC: Projects one node using the same authoritative availability and reservation rules as cluster totals.
+    // ------------------=
+    pub fn node_capacity(&self, kind: ResourceKind, owner: NodeId, now: u64) -> Result<CapacityTotals, ResourceError> {
+        if owner.0 == [0; 32] { return Err(ResourceError::Invalid); }
+        let mut totals = CapacityTotals::default();
+        for (index, resource) in self.entries.iter().enumerate().filter_map(|(i, r)| r.map(|r| (i, r))) {
+            if resource.kind != kind || resource.owner != owner { continue; }
+            totals.known_resources += 1;
+            if !resource.online || resource.expires <= now || resource.health != Health::Healthy
+                || resource.capabilities & 1 == 0 { continue; }
+            totals.usable_resources += 1;
+            totals.capacity = totals.capacity.checked_add(resource.capacity).ok_or(ResourceError::Capacity)?;
+            totals.available = totals.available.checked_add(self.usable_kind(index, kind, now)).ok_or(ResourceError::Capacity)?;
+            totals.provider_reserved = totals.provider_reserved.checked_add(resource.reserved).ok_or(ResourceError::Capacity)?;
+            totals.consumer_reserved = totals.consumer_reserved.checked_add(self.reserved[index]).ok_or(ResourceError::Capacity)?;
+        }
+        Ok(totals)
+    }
+
+    // ------------------------=
     // FUNC: retire_local_compute_identity
     // DESC: Removes only unreserved boot-local compute and memory observations owned by a superseded node identity.
     // ------------------=

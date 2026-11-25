@@ -122,6 +122,7 @@ pub enum LauncherAction {
     TextEditor,
     InfinityCode,
     InfinityMemory,
+    InfinityFabric,
     MediaPlayer,
     CommandWindow,
     TaskManager,
@@ -221,7 +222,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
     },
 ];
 
-pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize + 3 * cfg!(feature = "native-python") as usize] = [
+pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") as usize + 4 * cfg!(feature = "native-python") as usize] = [
     LauncherEntry {
         label: b"File Navigator",
         icon_role: 3,
@@ -323,6 +324,8 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature = "native-browser") a
     LauncherEntry { label: b"Media Files", icon_role: 4, action: LauncherAction::Home(6) },
     #[cfg(feature = "native-python")]
     LauncherEntry { label: b"Infinity Memory", icon_role: 61, action: LauncherAction::InfinityMemory },
+    #[cfg(feature = "native-python")]
+    LauncherEntry { label: b"Infinity Fabric", icon_role: 9, action: LauncherAction::InfinityFabric },
 ];
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

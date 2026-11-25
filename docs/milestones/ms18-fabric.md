@@ -294,3 +294,63 @@ execution acceptance.
 - Additional grant/session substitution and reclamation checks: 1 passed;
   `builds/manifests/20261125T211302583708Z-18847.json`.
 - Not yet included in a published ISO. x86 remains deferred until full acceptance.
+
+### Fabric Manager integration in progress
+
+The native launcher now exposes Infinity Fabric. Its immutable packaged Python
+application reads an authenticated, atomic cluster/node resource snapshot and
+edits revision-checked local contribution limits through the existing management
+authority. A node disappearing clears its detail view; a failed service read
+disables mutation controls. Launch and runtime failures use per-application logs.
+The runtime install tree includes the application in fresh-install payloads.
+
+The app deliberately labels advertised memory as an allowance. Neither its totals
+nor the bounded compute harness prove general remote Python/native execution,
+physical provider RAM use, or GPU execution. Those acceptance items remain open.
+
+- Real host Tk interaction checks passed: fixed menu height across resize,
+  preserved node selection and dirty edits, revision conflict rejection/reload,
+  contribution mutation, removed-node cleanup, and non-administrator controls.
+  Manifest: `builds/manifests/20261125T214222147954Z-21454.json`.
+- ARM live and installed kernels compiled in
+  `builds/manifests/20261125T213442521962Z-19769.json`; subsequent small UI/error
+  handling edits require another incremental compile.
+- Native installed UI rendering, reference parity, application/window controls,
+  and current payload extraction parity remain pending. No publication claim.
+- Design reference and specification: `assets/ui-design-kit/default/fabric-manager-reference.png`
+  and `assets/ui-design-kit/default/fabric-manager.md`.
+
+### Management cancellation and installed runtime checkpoint
+
+The manager now exposes per-node identity, trust, reachability, capacity and
+reservations, plus authoritative job inventory. Cancellation requires an active
+administrator session and the selected execution epoch. Stale selections cannot
+cancel a replacement job. Each cancellation retires its temporary capability;
+repeated cancellation does not leak capability entries. Service loss clears stale
+observations and disables mutation controls until the service recovers.
+
+- Fabric behavioral suite: 261 passed, 0 failed, 1 ignored;
+  `builds/manifests/20261125T224621012462Z-28310.json`.
+- ARM diagnostic installed kernel compiled:
+  `builds/manifests/20261125T225014984024Z-28493.json`.
+- Host manager interactions, including disconnected-service cleanup and recovery,
+  passed: `builds/manifests/20261125T225907042936Z-29368.json`.
+- Updated ARM diagnostic kernel compiled:
+  `builds/manifests/20261125T225619344960Z-29028.json`.
+- Installed ARM cold boot, authenticated desktop, launch, maximize and restore
+  passed: `builds/manifests/20261125T225916784465Z-29377.json`.
+  Launch took 1.194 seconds. Restore recovered the original 960x604 geometry
+  after maximizing to 1024x604. Receipt and captured production pixels are in
+  `build/validation/fabric-manager-installed/`.
+- Render review confirms the inherited white menu/table borders are removed.
+  Visual acceptance still fails toggle treatment, shared button edge artifacts,
+  and card/navigation composition. Installed launch/resize evidence is distinct
+  from policy/cancellation behavior and from reference visual acceptance.
+
+General remote execution remains unimplemented: the provider currently evaluates
+built-in workload fixtures under the runtime lock. Native task startup and polling
+must be deferred outside that lock before integrating the native process service.
+The memory accounting contexts do not allocate provider pages. GPU execution has
+no supported native provider/driver in this environment. These are open acceptance
+items, not capabilities supplied by the manager or its aggregate resource display.
+No new canonical ISO is claimed by this checkpoint; x86 remains deferred.

@@ -111,8 +111,23 @@ static PyObject *memory_request(PyObject *self, PyObject *args) {
     }
     return PyBytes_FromStringAndSize(result, rc);
 }
+// ------------------------=
+// FUNC: fabric_request
+// DESC: Calls authenticated Fabric management with numeric limits and a bounded process-owned result buffer.
+// ------------------=
+static PyObject *fabric_request(PyObject *self, PyObject *args) {
+    unsigned long long action, revision=0, enabled=0, memory=0, packed=0;
+    char result[16384]; (void)self;
+    if (!PyArg_ParseTuple(args, "K|KKKK", &action, &revision, &enabled, &memory, &packed)) return NULL;
+    int64_t rc = infinity_system_call(0x12f9, action, revision, enabled, memory, packed, (uintptr_t)result);
+    if (rc < 0 || rc > sizeof(result)) {
+        PyErr_Format(PyExc_OSError, "Fabric operation failed (%lld)", (long long)rc); return NULL;
+    }
+    return PyBytes_FromStringAndSize(result, rc);
+}
 static PyMethodDef methods[]={
     {"memory_request",memory_request,METH_VARARGS,NULL},
+    {"fabric_request",fabric_request,METH_VARARGS,NULL},
     {"window",window,METH_VARARGS,NULL},{"element",element,METH_VARARGS,NULL},
     {"state",state,METH_VARARGS,NULL},{"choice",choice,METH_VARARGS,NULL},
     {"text_action",text_action,METH_VARARGS,NULL},{"publish",publish,METH_NOARGS,NULL},

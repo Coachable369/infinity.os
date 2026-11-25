@@ -183,3 +183,111 @@ pub(crate) fn advertised_provider_resource(
     }
     resource
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodeSnapshot {
+    pub id: crate::runtime::node::types::NodeId,
+    pub local: bool,
+    pub reachability: crate::runtime::node::types::Reachability,
+    pub trust: crate::runtime::node::types::TrustState,
+    pub last_seen: u64,
+    pub categories: [super::resources::CapacityTotals; 11],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClusterSnapshot {
+    pub capacity: CapacitySnapshot,
+    pub nodes: [Option<NodeSnapshot>; crate::runtime::node::types::MAX_DISCOVERED_NODES + 1],
+}
+
+// ------------------------=
+// FUNC: inspect_cluster
+// DESC: Reads cluster and per-node projections atomically through the same authenticated management authority.
+// ------------------=
+pub fn inspect_cluster(user: StableId, session: StableId) -> Result<ClusterSnapshot, ResourceError> {
+    crate::runtime::with_runtime(|runtime| {
+        let now = runtime.node_clock.ok_or(ResourceError::Stale)?;
+        inspect_cluster_from(runtime, user, session, now)
+    }).ok_or(ResourceError::NotFound)?
+}
+
+// ------------------------=
+// FUNC: inspect_cluster_from
+// DESC: Joins discovered node identities with resource observations without granting remote access or mutating state.
+// ------------------=
+pub(crate) fn inspect_cluster_from(runtime: &InfinityRuntime, user: StableId, session: StableId, now: u64)
+    -> Result<ClusterSnapshot, ResourceError> {
+    use crate::runtime::node::types::{Reachability, TrustState};
+    let capacity = inspect_capacity_from(runtime, user, session, now)?;
+    let local = runtime.nodes.local_id().ok_or(ResourceError::NotFound)?;
+    let mut result = ClusterSnapshot { capacity, nodes: [None; crate::runtime::node::types::MAX_DISCOVERED_NODES + 1] };
+    result.nodes[0] = Some(NodeSnapshot { id: local, local: true,
+        reachability: Reachability::Online, trust: TrustState::Trusted, last_seen: now,
+        categories: [super::resources::CapacityTotals::default(); 11] });
+    let mut next = 1;
+    for node in runtime.nodes.discovered_nodes().iter().flatten() {
+        if node.id == local { continue; }
+        result.nodes[next] = Some(NodeSnapshot { id: node.id, local: false,
+            reachability: node.reachability, trust: node.trust, last_seen: node.last_seen,
+            categories: [super::resources::CapacityTotals::default(); 11] });
+        next += 1;
+    }
+    for node in result.nodes.iter_mut().flatten() {
+        for (index, kind) in RESOURCE_KINDS.iter().enumerate() {
+            node.categories[index] = runtime.fabric_resources.node_capacity(*kind, node.id, now)?;
+        }
+    }
+    Ok(result)
+}
+
+// ------------------------=
+// FUNC: inspect_jobs
+// DESC: Exposes the bounded authoritative job inventory only to an active administrator; no client-side job records are invented.
+// ------------------=
+pub fn inspect_jobs(user: StableId, session: StableId)
+    -> Result<[Option<crate::runtime::compute::ComputeSnapshot>; crate::runtime::compute::MAX_COMPUTE_TASKS * 2], ResourceError> {
+    crate::runtime::with_runtime(|runtime| inspect_jobs_from(runtime, user, session))
+        .ok_or(ResourceError::NotFound)?
+}
+
+// ------------------------=
+// FUNC: inspect_jobs_from
+// DESC: Checks operator authority before projecting active and retained job states from the compute service.
+// ------------------=
+pub(crate) fn inspect_jobs_from(runtime: &InfinityRuntime, user: StableId, session: StableId)
+    -> Result<[Option<crate::runtime::compute::ComputeSnapshot>; crate::runtime::compute::MAX_COMPUTE_TASKS * 2], ResourceError> {
+    if !provider_authorized(runtime, user, session) { return Err(ResourceError::AccessDenied); }
+    Ok(core::array::from_fn(|index| runtime.compute.task_nth(index)))
+}
+
+// ------------------------=
+// FUNC: cancel_job
+// DESC: Cancels the selected execution epoch through the shared authority used by management clients.
+// ------------------=
+pub fn cancel_job(user: StableId, session: StableId, task: u64, epoch: u32)
+    -> Result<(), crate::runtime::compute::ComputeError> {
+    use crate::runtime::compute::ComputeError;
+    crate::runtime::with_runtime(|runtime| {
+        let now = runtime.node_clock.ok_or(ComputeError::InvalidState)?;
+        cancel_job_from(runtime, user, session, task, epoch, now)
+    }).ok_or(ComputeError::InvalidState)?
+}
+
+// ------------------------=
+// FUNC: cancel_job_from
+// DESC: Rejects stale selections and unauthorized sessions, then retires the single-use cancellation capability on every outcome.
+// ------------------=
+pub(crate) fn cancel_job_from(runtime: &mut InfinityRuntime, user: StableId, session: StableId,
+    task: u64, epoch: u32, now: u64) -> Result<(), crate::runtime::compute::ComputeError> {
+    use crate::runtime::{compute::ComputeError, capability::CapabilityType};
+    if !provider_authorized(runtime, user, session) { return Err(ComputeError::AccessDenied); }
+    if runtime.compute.inspect(task)?.epoch != epoch { return Err(ComputeError::StaleResult); }
+    let caller = runtime.service_identity(crate::runtime::SERVICE_CONSOLE).ok_or(ComputeError::AccessDenied)?;
+    let expiry = now.checked_add(1).ok_or(ComputeError::InvalidState)?;
+    let capability = runtime.capabilities.grant(CapabilityType::ComputeCancel, task, 1, 0,
+        caller, caller, Some(expiry), 0).map_err(|_| ComputeError::AccessDenied)?;
+    let result = runtime.compute.cancel(task, caller, capability, &runtime.capabilities,
+        &mut runtime.execution, &mut runtime.fabric_resources, now);
+    runtime.capabilities.retire_leaf(capability, caller).map_err(|_| ComputeError::InvalidState)?;
+    result
+}

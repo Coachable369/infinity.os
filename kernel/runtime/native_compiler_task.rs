@@ -152,7 +152,7 @@ impl Task {
     ) -> Result<Self, MemoryError> {
         let label=args.get(1).filter(|p|!p.starts_with(b"-")).or(args.first()).copied().unwrap_or(b"Native process");
         let label=label.rsplit(|b|*b==b'/').next().unwrap_or(label);
-        let label=match label {b"infinity-memory.py"=>b"Infinity Memory".as_slice(),b"InfinityCode.py"=>b"InfinityCode".as_slice(),b"media-player.py"=>b"Media Player".as_slice(),_=>label};
+        let label=match label {b"infinity-memory.py"=>b"Infinity Memory".as_slice(),b"infinity-fabric.py"=>b"Infinity Fabric".as_slice(),b"InfinityCode.py"=>b"InfinityCode".as_slice(),b"media-player.py"=>b"Media Player".as_slice(),_=>label};
         let args = super::native_arguments::Arguments::new(args).ok_or(MemoryError::InvalidAddress)?;
         let image =
             Image::parse_compiler(bytes, cpu::MACHINE).map_err(|_| MemoryError::InvalidAddress)?;
@@ -416,7 +416,7 @@ impl Task {
                 unsafe{let p=core::ptr::addr_of_mut!(INFINITY_NATIVE_PROCESS_PROGRESS).cast::<u64>();core::ptr::write_volatile(p.add(4),operation);core::ptr::write_volatile(p.add(5),a[0]);}
                 // Only explicitly bound application, console, filesystem and HTTPS operations
                 // may be delegated; memory, entropy and process authority stay native.
-                if matches!(operation, 0x1100..=0x110a | 0x1110..=0x1112 | 0x1120..=0x1124 | 0x1140..=0x1142 | 0x1150..=0x1156 | 0x1206..=0x1208 | 0x120b..=0x121a | 0x121b | 0x121d | 0x1233..=0x1237 | 0x1240..=0x1243 | 0x1251..=0x1254 | 0x1270..=0x1274 | 0x1280..=0x1283 | 0x1290 | 0x12e0..=0x12e7 | 0x12f8) {
+                if matches!(operation, 0x1100..=0x110a | 0x1110..=0x1112 | 0x1120..=0x1124 | 0x1140..=0x1142 | 0x1150..=0x1156 | 0x1206..=0x1208 | 0x120b..=0x121a | 0x121b | 0x121d | 0x1233..=0x1237 | 0x1240..=0x1243 | 0x1251..=0x1254 | 0x1270..=0x1274 | 0x1280..=0x1283 | 0x1290 | 0x12e0..=0x12e7 | 0x12f8 | 0x12f9) {
                     if let Some(result) = filesystem(memory, tables, operation, a) { return result; }
                 }
                 match operation {

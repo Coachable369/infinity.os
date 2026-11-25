@@ -9,6 +9,7 @@ mod workflow;
 #[path = "../runtime/generated_app_recovery.rs"]
 mod recovery;
 #[path="console_memory_browser.rs"] mod memory_browser;
+#[path="console_fabric_manager.rs"] mod fabric_manager;
 use super::native_network as network;
 #[path = "console_python_extensions.rs"]
 mod extensions;
@@ -303,12 +304,16 @@ unsafe fn start_snapshot(console:&ConsoleRuntime,path:&[u8],arguments:&[&[u8]],e
     if !active(console) { return Err(b"python: an authenticated session is required."); }
     let bundled_ide=candidate.is_none() && path.ends_with(b"/documents/InfinityCode.py") &&
         expected_source==Some(include_bytes!("../../sdk/python/examples/infinitycode.py").as_slice()) && arguments.len()==2 && arguments[1]==path;
-    prepare_packages(console, job, false,bundled_ide || (path==memory_browser::PATH && expected_source.is_some() && candidate.is_none()))?;
+    prepare_packages(console, job, false,bundled_ide || path==fabric_manager::PATH || (path==memory_browser::PATH && expected_source.is_some() && candidate.is_none()))?;
     if path==memory_browser::PATH && expected_source==Some(include_bytes!("../../runtime/install/System/infinity-memory.py").as_slice()) && candidate.is_none() {
         // Launch the signed-in system app from this kernel's immutable generation.
         // An older installed ObjectStore script cannot acquire its private syscall.
         let source=include_bytes!("../../runtime/install/System/infinity-memory.py");
         let dest=&mut job.files[0];
+        dest.bytes[..source.len()].copy_from_slice(source);dest.len=source.len();
+        dest.path[..path.len()].copy_from_slice(path);dest.path_len=path.len();dest.object=[0;16];dest.version=0;
+    } else if path==fabric_manager::PATH && expected_source==Some(fabric_manager::SOURCE) && candidate.is_none() {
+        let dest=&mut job.files[0]; let source=fabric_manager::SOURCE;
         dest.bytes[..source.len()].copy_from_slice(source);dest.len=source.len();
         dest.path[..path.len()].copy_from_slice(path);dest.path_len=path.len();dest.object=[0;16];dest.version=0;
     } else {snapshot(&mut job.files[0], path, console.current_user.0)?;}
@@ -371,7 +376,7 @@ unsafe fn start_system_tool(console:&ConsoleRuntime,job:&mut Job,path:&[u8],argu
     let mut names=[ByteText::<96>::empty();32];let mut argv=[b"".as_slice();32];
     if arguments.len()>argv.len(){return Err(b"Too many arguments.");}
     argv[..arguments.len()].copy_from_slice(arguments);
-    if path==memory_browser::PATH { return start_task(console,job,arguments); }
+    if path==memory_browser::PATH || path==fabric_manager::PATH { return start_task(console,job,arguments); }
     if path==media::PLAYER {
         let cover=b"/System/media-cover.png";
         let (_,n)=crate::storage::object_read_path(cover,None,&mut job.archive).map_err(|_|b"Player artwork unavailable.".as_slice())?;
@@ -508,7 +513,7 @@ unsafe fn start_task(console: &ConsoleRuntime, job: &mut Job, arguments: &[&[u8]
     let path=if job.pip {b"pip".as_slice()}else if job.count>0{&job.files[0].path[..job.files[0].path_len]}else{b"Python"};
     job.memory_browser = path == memory_browser::PATH && arguments.len()==2 && job.generated.is_none()
         && &job.files[0].bytes[..job.files[0].len] == include_bytes!("../../runtime/install/System/infinity-memory.py");
-    job.memory_launching=job.memory_browser || bundled_ide;
+    job.memory_launching=job.memory_browser || bundled_ide || path==fabric_manager::PATH;
     job.startup_deadline=if job.memory_launching{now.saturating_add(30_000_000_000)}else{0};
     MONITOR_RESUME_NS=0;
     job.monitor=job.task.as_ref().and_then(Task::monitor_handle);
@@ -1017,6 +1022,10 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
                 .or_else(||{let result=memory_browser::dispatch(gui_allowed && job.memory_browser,
                     console.current_user.0, console.current_session.0, tables, operation, arguments);
                     result})
+                .or_else(||fabric_manager::dispatch(gui_allowed && job.count>0
+                    && &job.files[0].path[..job.files[0].path_len]==fabric_manager::PATH
+                    && &job.files[0].bytes[..job.files[0].len]==fabric_manager::SOURCE,
+                    console.current_user.0, console.current_session.0, tables, operation, arguments))
                 .or_else(||media::dispatch(gui_allowed && ((operation==0x12e6 && job.memory_browser) || (job.count>0 && &job.files[0].path[..job.files[0].path_len]==media::PLAYER)),console.current_user.0,console.current_session.0,&mut job.archive,&mut job.media_open,tables,operation,arguments))
                 .or_else(||exception_call(&mut job.exception,job.generated,&job.files[0],tables,operation,arguments))
                 .or_else(|| application_call(&mut job.application,job.pip,console.current_user.0,console.current_session.0,tables,operation,arguments))
@@ -1104,11 +1113,12 @@ pub(super) fn poll(console: &mut ConsoleRuntime) { unsafe {
         });
         let saved = crate::storage::app_errors::record(path,super::certificate_time(console.system.firmware_runtime_services),
             "execution",format_args!("{result:?} process={execution:?} exception={} line={line:?}",core::str::from_utf8(class).unwrap_or("unknown")));
-        if job.memory_browser || path.ends_with(b"/documents/InfinityCode.py") || path==media::PLAYER {
+        if job.memory_browser || path.ends_with(b"/documents/InfinityCode.py") || path==media::PLAYER || path==fabric_manager::PATH {
             console.open_app_launcher();
             crate::ui::app_launcher::set_launch_notice(if saved.is_err() { b"App stopped (APP-EXIT). Error log unavailable." }
                 else if job.memory_browser { b"Infinity Memory stopped (APP-EXIT). See /Logs/infinity-memory.log" }
                 else if path==media::PLAYER { b"Media Player stopped (APP-EXIT). See /Logs/media-player.log" }
+                else if path==fabric_manager::PATH { b"Infinity Fabric stopped (APP-EXIT). See /Logs/infinity-fabric.log" }
                 else { b"InfinityCode stopped (APP-EXIT). See /Logs/InfinityCode.log" });
         }
     }
@@ -1378,4 +1388,16 @@ pub(super) fn gui_control(console: &ConsoleRuntime, name: Option<&[u8]>, action:
 // ------------------=
 pub(super) fn gui_task_handle(owner:crate::ui::window::ContextId)->Option<crate::runtime::execution::ContextHandle> {
     unsafe {let job=&*(&raw const JOB);job.task.as_ref().filter(|task|task.context_id()==owner.0).and_then(Task::monitor_handle)}
+}
+
+// ------------------------=
+// FUNC: launch_fabric
+// DESC: Focuses Fabric Manager or launches its immutable generation with the current signed-in authority.
+// ------------------=
+pub(super) fn launch_fabric(console:&mut ConsoleRuntime)->Result<(),&'static [u8]> {
+    if gui_control(console,Some(b"Infinity Fabric"),crate::ui::window::WindowControl::Focus)==Some(true) { return Ok(()); }
+    if unsafe { let job=&*(&raw const JOB); job.task.is_some() && job.owner.0==console.current_session.0
+        && job.count>0 && &job.files[0].path[..job.files[0].path_len]==fabric_manager::PATH } { return Ok(()); }
+    let argv=[b"/system/python".as_slice(),fabric_manager::PATH];
+    unsafe { start(console,fabric_manager::PATH,&argv,Some(fabric_manager::SOURCE)) }
 }

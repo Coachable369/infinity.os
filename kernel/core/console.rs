@@ -6121,6 +6121,13 @@ impl ConsoleRuntime {
             }
             LauncherAction::Settings(section) => self.open_settings(section),
             LauncherAction::TextEditor => self.open_text_editor(),
+            LauncherAction::InfinityFabric => {
+                #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
+                match python_commands::launch_fabric(self) {
+                    Ok(())=>self.close_app_launcher(),
+                    Err(message)=>self.report_launch_error(b"InfinityFabric",message),
+                }
+            }
             LauncherAction::InfinityMemory => {
                 #[cfg(all(feature="native-python",target_os="none",any(target_arch="aarch64",target_arch="x86_64")))]
                 match python_commands::launch_memory(self) {

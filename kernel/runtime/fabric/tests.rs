@@ -698,10 +698,74 @@ fn capacity_management_requires_active_owned_session() {
     runtime.identity.create_password(user, b"Fixture901", 0).unwrap();
     let session = runtime.identity.create_session(user, b"Fixture901", 1).unwrap().id;
     assert!(inspect_capacity_from(&runtime, user, session, 10).is_ok());
+    assert!(super::management::inspect_jobs_from(&runtime, user, session).unwrap().iter().all(Option::is_none));
+    assert_eq!(super::management::inspect_jobs_from(&runtime, StableId([0;16]), session), Err(ResourceError::AccessDenied));
+
+    let cluster = super::management::inspect_cluster_from(&runtime, user, session, 10).unwrap();
+    assert_eq!(cluster.nodes.iter().flatten().count(), 1);
+    assert_eq!(cluster.nodes[0].unwrap().id, runtime.nodes.local_id().unwrap());
+    assert!(cluster.nodes[0].unwrap().local);
+    assert_eq!(super::management::inspect_cluster_from(&runtime, StableId([0;16]), session, 10), Err(ResourceError::AccessDenied));
     assert_eq!(inspect_capacity_from(&runtime, StableId([0;16]), session, 10), Err(ResourceError::AccessDenied));
     assert_eq!(inspect_capacity_from(&runtime, user, StableId([0;16]), 10), Err(ResourceError::AccessDenied));
     runtime.identity.lock_session(session, user).unwrap();
+    assert_eq!(super::management::inspect_jobs_from(&runtime, user, session), Err(ResourceError::AccessDenied));
+
     assert_eq!(inspect_capacity_from(&runtime, user, session, 10), Err(ResourceError::AccessDenied));
+}
+
+// ------------------------=
+// FUNC: management_job_inventory_tracks_execution_and_cancellation
+// DESC: Verifies nonempty job snapshots, terminal state and reservation release through the management authority.
+// ------------------=
+#[test]
+fn management_job_inventory_tracks_execution_and_cancellation() {
+    use crate::runtime::{InfinityRuntime, capability::CapabilityType,
+        compute::{ComputeRequestV1, ComputeLocality, ComputeDurability, WorkloadKind,
+            NodeComputeObservation, ComputeState, COMPUTE_SCHEMA_VERSION, COMPUTE_RESULT_CONTRACT_V1}};
+    let mut runtime = InfinityRuntime::new(false);
+    runtime.define_bootstrap().unwrap(); runtime.start_all(0);
+    runtime.nodes.initialize(&[71;32], true).unwrap();
+    runtime.identity.create_machine(b"job-inspection",64,1,0).unwrap();
+    let user=runtime.identity.create_user(b"admin",b"Administrator",0).unwrap().id;
+    runtime.identity.create_password(user,b"Fixture901",0).unwrap();
+    let session=runtime.identity.create_session(user,b"Fixture901",1).unwrap().id;
+    let local=runtime.nodes.local_id().unwrap(); let peer=NodeId([82;32]);
+    for (marker,kind,capacity) in [(1,ResourceKind::Compute,8),(2,ResourceKind::Memory,65536)] {
+        runtime.fabric_resources.observe_local(Resource { id:ResourceId([marker;16]),owner:peer,
+            kind,device:[marker;16],capacity,available:capacity,reserved:0,health:Health::Healthy,
+            online:true,capabilities:1,generation:1,sequence:1,expires:1000 },peer,1).unwrap();
+    }
+    runtime.compute.observe_node(&runtime.fabric_resources,NodeComputeObservation {node:peer,
+        trust_domain:4,latency_us:100,latency_known:true,load_percent:0,generation:1}).unwrap();
+    let caller=runtime.service_identity(crate::runtime::SERVICE_CONSOLE).unwrap();
+    let capability=runtime.capabilities.grant(CapabilityType::ComputeUse,u64::from_le_bytes([7;8]),
+        1,0,caller,caller,Some(1000),0).unwrap();
+    let task=runtime.compute.request(ComputeRequestV1 {schema_version:COMPUTE_SCHEMA_VERSION,
+        workload_kind:WorkloadKind::CpuBoundedCounter,locality:ComputeLocality::RequireRemote,
+        durability:ComputeDurability::Restartable,priority:128,privacy_local_only:false,
+        workload_id:[7;16],input_refs:[[8;16],[9;16]],allowed_nodes:[peer,NodeId([0;32])],
+        allowed_node_count:1,allowed_domains:[4,0],allowed_domain_count:1,memory_bytes:4096,
+        deadline:900,correlation_id:99,capability_ref:capability,affinity:0,anti_affinity:0,
+        work_units:128,cpu_units:2,restart_eligible:true,result_contract:COMPUTE_RESULT_CONTRACT_V1},
+        caller,&runtime.capabilities,&mut runtime.fabric_resources,local,2).unwrap();
+    let inventory=super::management::inspect_jobs_from(&runtime,user,session).unwrap();
+    assert_eq!(inventory.iter().flatten().count(),1);
+    assert_eq!(inventory[0],Some(runtime.compute.inspect(task).unwrap()));
+    assert_eq!(inventory[0].unwrap().accounting.reserved_memory_bytes,4096);
+    let epoch=inventory[0].unwrap().epoch;
+    let capabilities=runtime.capabilities.count();
+    use crate::runtime::{compute::ComputeError, identity::StableId};
+    assert_eq!(super::management::cancel_job_from(&mut runtime,StableId([0;16]),session,task,epoch,3),Err(ComputeError::AccessDenied));
+    assert_eq!(super::management::cancel_job_from(&mut runtime,user,session,task,epoch+1,3),Err(ComputeError::StaleResult));
+    assert_eq!(runtime.compute.inspect(task).unwrap().accounting.reserved_memory_bytes,4096);
+    super::management::cancel_job_from(&mut runtime,user,session,task,epoch,3).unwrap();
+    assert_eq!(runtime.capabilities.count(),capabilities);
+    assert!(super::management::cancel_job_from(&mut runtime,user,session,task,epoch,3).is_err());
+    assert_eq!(runtime.capabilities.count(),capabilities);
+    let inventory=super::management::inspect_jobs_from(&runtime,user,session).unwrap();
+    assert_eq!(inventory[0].unwrap().state,ComputeState::Cancelled);
+    assert_eq!(runtime.fabric_resources.capacity(ResourceKind::Memory,local,3).unwrap().remote.consumer_reserved,0);
 }
 
 // ------------------------=
@@ -807,4 +871,36 @@ fn provider_advertisement_respects_limits_and_active_allocations() {
     assert_eq!(advertised_provider_resource(compute, limits, (0, 8, 0)).available, 0);
     let scarce = Resource { kind: ResourceKind::Memory, available: 10, ..original };
     assert_eq!(advertised_provider_resource(scarce, limits, (0, 0, 0)).available, 10);
+}
+
+// ------------------------=
+// FUNC: node_capacity_preserves_cluster_accounting
+// DESC: Verifies drill-down sums, consumer reservations, expiry and owner isolation against cluster capacity.
+// ------------------=
+#[test]
+fn node_capacity_preserves_cluster_accounting() {
+    let mut directory = Directory::new();
+    let local = NodeId([1; 32]);
+    let peer = NodeId([2; 32]);
+    for (id, owner) in [(1, local), (2, peer), (3, peer)] {
+        let mut entry = resource(id, owner);
+        entry.kind = ResourceKind::Memory;
+        entry.capacity = 4096;
+        entry.available = 4096;
+        entry.reserved = 0;
+        entry.expires = 20;
+        directory.apply(entry, 1).unwrap();
+    }
+    directory.reserve_kind(ResourceId([2; 16]), 1, ResourceKind::Memory, 1024, 2).unwrap();
+    let cluster = directory.capacity(ResourceKind::Memory, local, 2).unwrap();
+    assert_eq!(directory.node_capacity(ResourceKind::Memory, local, 2), Ok(cluster.local));
+    assert_eq!(directory.node_capacity(ResourceKind::Memory, peer, 2), Ok(cluster.remote));
+    assert_eq!(cluster.remote.available, 7168);
+    assert_eq!(cluster.remote.consumer_reserved, 1024);
+    let expired = directory.node_capacity(ResourceKind::Memory, peer, 20).unwrap();
+    assert_eq!(expired.known_resources, 2);
+    assert_eq!(expired.usable_resources, 0);
+    assert_eq!(expired.available, 0);
+    assert_eq!(directory.node_capacity(ResourceKind::Compute, peer, 2).unwrap().known_resources, 0);
+    assert_eq!(directory.node_capacity(ResourceKind::Memory, NodeId([0;32]), 2), Err(ResourceError::Invalid));
 }
