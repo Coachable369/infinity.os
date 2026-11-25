@@ -574,6 +574,62 @@ fn authenticated_compute_executes_real_bounded_context_and_rechecks_revocation()
     }
 }
 
+// ------------------------=
+// FUNC: admitted_compute_reclaims_resources_when_authority_changes
+// DESC: Revokes an admitted job through each authority boundary and verifies immediate cleanup without another consumer request.
+// ------------------=
+#[test]
+fn admitted_compute_reclaims_resources_when_authority_changes() {
+    use crate::runtime::{compute::{RemoteComputeExecutor, ComputeError}, execution::ExecutionManager};
+    for boundary in 0..4 {
+        let mut f = Fixture::new();
+        let local = f.nodes.local_id().unwrap();
+        let grant = f.nodes.grant_remote(f.peer, OperationId::ComputeRequest as u32,
+            0, 1, 100, 5, 1).unwrap();
+        let reference = f.nodes.sessions().iter().flatten()
+            .find(|session| session.id == f.session).unwrap().protocol_reference;
+        let mut payload = compute_payload(local);
+        payload.work_units = 256;
+        payload.deadline = 200;
+        let request = AuthenticatedComputeRequest { local, peer: f.peer,
+            session_reference: reference, grant, request_id: 61, correlation: 62,
+            causation: 63, payload };
+        let mut executor = RemoteComputeExecutor::new();
+        let mut execution = ExecutionManager::new();
+        executor.execute_authenticated(request, &mut execution, 6, &mut |_| true).unwrap();
+        assert_eq!(executor.allocation(), (4096, 4, 1));
+        executor.reconcile_authority(&f.nodes, &mut execution, 7);
+        assert_eq!(execution.count(), 1);
+        // A valid job cannot silently migrate to another grant or session.
+        let mut substituted = request;
+        substituted.grant = grant + 1;
+        assert_eq!(executor.execute_authenticated(substituted, &mut execution, 7, &mut |_| true),
+            Err(ComputeError::AccessDenied));
+        substituted = request;
+        substituted.session_reference[0] ^= 1;
+        assert_eq!(executor.execute_authenticated(substituted, &mut execution, 7, &mut |_| true),
+            Err(ComputeError::AccessDenied));
+        assert_eq!(executor.allocation(), (4096, 4, 1));
+        match boundary {
+            0 => { f.nodes.revoke_remote(grant, 8, 1).unwrap(); },
+            1 => { f.nodes.close_session(f.session, 8, 1).unwrap(); },
+            2 => {
+                let mut policy = f.nodes.discovered_nodes()[0].unwrap().policy;
+                policy.categories[2] = PolicyDecision::Deny;
+                f.nodes.update_policy(f.peer, policy, 8, 1).unwrap();
+            },
+            _ => {},
+        }
+        let now = if boundary == 3 { 100 } else { 8 };
+        executor.reconcile_authority(&f.nodes, &mut execution, now);
+        assert_eq!(executor.allocation(), (0, 0, 0));
+        assert_eq!(execution.count(), 0);
+        // Reclamation invalidates cached running replies and retains the epoch fence.
+        assert_eq!(executor.execute(payload, &mut execution, local, f.peer, 9),
+            Err(ComputeError::StaleResult));
+    }
+}
+
 #[test]
 // ------------------------=
 // FUNC: compute_policy_does_not_inherit_storage_read_authority

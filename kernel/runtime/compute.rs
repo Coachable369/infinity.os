@@ -146,6 +146,7 @@ pub struct ComputeDispatchV1 {
 
 #[derive(Clone, Copy)]
 struct RemoteExecution {
+    authority: Option<super::iop::remote::AuthenticatedComputeRequest>,
     peer: NodeId,
     lease_expires: u64,
     task_id: u64,
@@ -472,6 +473,55 @@ impl RemoteComputeExecutor {
     }
 
     // ------------------------=
+    // FUNC: execute_authenticated
+    // DESC: Retains admission authority for ongoing jobs and prevents session or grant substitution.
+    // ------------------=
+    pub fn execute_authenticated(
+        &mut self, request: super::iop::remote::AuthenticatedComputeRequest,
+        execution: &mut ExecutionManager, now: u64, commit: &mut impl FnMut(&[u8]) -> bool,
+    ) -> Result<ComputeDispatchV1, ComputeError> {
+        let payload = request.payload;
+        if payload.operation != super::iop::OperationId::ComputeCancel as u32 {
+            if let Some(authority) = self.active.iter().flatten()
+                .find(|job| job.peer == request.peer && job.task_id == payload.task_id
+                    && job.epoch == payload.epoch).and_then(|job| job.authority) {
+                if authority.session_reference != request.session_reference || authority.grant != request.grant {
+                    return Err(ComputeError::AccessDenied);
+                }
+            }
+        }
+        let result = self.execute_durable(payload, execution, request.local, request.peer, now, commit)?;
+        if let Some(job) = self.active.iter_mut().flatten()
+            .find(|job| job.peer == request.peer && job.task_id == payload.task_id && job.epoch == payload.epoch) {
+            if job.authority.is_none() { job.authority = Some(request); }
+        }
+        Ok(result)
+    }
+
+    // ------------------------=
+    // FUNC: reconcile_authority
+    // DESC: Reclaims admitted jobs immediately when their session, trust, grant, or compute policy is no longer valid.
+    // ------------------=
+    pub fn reconcile_authority(&mut self, nodes: &super::node::NodeRuntime,
+        execution: &mut ExecutionManager, now: u64) {
+        for slot in &mut self.active {
+            let invalid = slot.and_then(|job| job.authority)
+                .is_some_and(|authority| super::iop::remote::validate_compute_authority(nodes, authority, now).is_err());
+            if invalid {
+                if let Some(job) = slot.take() {
+                    let _ = execution.destroy(job.context);
+                    for cached in &mut self.responses {
+                        if cached.is_some_and(|entry| entry.peer == job.peer
+                            && entry.request.task_id == job.task_id && entry.request.epoch == job.epoch) {
+                            *cached = None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ------------------------=
     // FUNC: execute_durable
     // DESC: Fences each newly admitted epoch durably before any execution or cancellation acknowledgement.
     // ------------------=
@@ -564,6 +614,7 @@ impl RemoteComputeExecutor {
                 return Err(error);
             }
             self.active[index] = Some(RemoteExecution {
+                authority: None,
                 peer,
                 lease_expires: now.saturating_add(60),
                 task_id: dispatch.task_id,

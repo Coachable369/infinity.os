@@ -1014,6 +1014,20 @@ fn validate_session(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), Re
     Ok(())
 }
 // ------------------------=
+// FUNC: validate_compute_authority
+// DESC: Applies the admission authorization rules to an ongoing provider job without extending its authority.
+// ------------------=
+pub(crate) fn validate_compute_authority(nodes: &NodeRuntime, request: AuthenticatedComputeRequest,
+    now: u64) -> Result<(), RemoteError> {
+    if nodes.local_id() != Some(request.local) { return Err(RemoteError::CapabilityScopeDenied); }
+    validate_authority(nodes, &Request {
+        peer: request.peer, reference: request.session_reference, expires: u64::MAX,
+        message: Envelope { kind: 1, error: 0, id: request.request_id,
+            correlation: request.correlation, causation: request.causation,
+            grant: request.grant, lease: 1, payload: Payload::Compute(request.payload) },
+    }, now)
+}
+// ------------------------=
 // FUNC: validate_authority
 // DESC: Rechecks authority after dequeue, including self-scoped subject binding and deny-by-default node policy.
 // ------------------=

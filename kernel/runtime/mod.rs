@@ -2492,11 +2492,11 @@ pub fn poll_node_transport(now: u64) {
         let nodes = &mut runtime.nodes;
         let execution = &mut runtime.execution;
         runtime.remote_compute.expire(execution, now);
+        runtime.remote_compute.reconcile_authority(nodes, execution, now);
         let remote_compute = &mut runtime.remote_compute;
         iop.execute_remote_compute(nodes, now, |request| {
             remote_compute
-                .execute_durable(request.payload, execution, request.local, request.peer, now,
-                    &mut persist_provider_state)
+                .execute_authenticated(request, execution, now, &mut persist_provider_state)
                 .map_err(|error| match error {
                     compute::ComputeError::AccessDenied => iop::remote::RemoteError::AccessDenied,
                     compute::ComputeError::DeadlineExceeded => {

@@ -278,3 +278,19 @@ allocation remains live; the cancelled epoch remains fenced across checkpoint re
 Cancellation regression suite: 257 passed, 0 failed, 1 ignored, 46.82 seconds;
 manifest `builds/manifests/20261125T210159478639Z-17959.json`. This latest
 fix is host-verified and not yet in the installed-node test media or published ISO.
+
+### Ongoing provider authorization
+
+Admitted jobs retain their authenticated session and grant binding. The regular
+provider poll rechecks the original IOP authorization rules and destroys contexts
+when a grant expires or is revoked, the session closes, trust is lost, or compute
+policy denies access. Cached running responses are removed; durable epoch fences
+remain. Continuations cannot substitute a different grant or session. This is
+resource reclamation for the bounded execution foundation, not native application
+execution acceptance.
+
+- Host behavioral suite: 258 passed, 0 failed, 1 ignored;
+  `builds/manifests/20261125T211139015227Z-18741.json`.
+- Additional grant/session substitution and reclamation checks: 1 passed;
+  `builds/manifests/20261125T211302583708Z-18847.json`.
+- Not yet included in a published ISO. x86 remains deferred until full acceptance.
