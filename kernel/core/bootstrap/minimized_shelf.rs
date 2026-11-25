@@ -20,12 +20,12 @@ impl DisplayDevice {
         // Reuse the kit's frosted surface recipe with the Eclipse blue/silver
         // tokens; do not introduce an independently rasterized glass layer.
         let edge = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        self.precision_surface(r, crate::ui::panel_recipe::Surface::Panel,
+        self.precision_surface_styled(r, crate::ui::panel_recipe::Surface::Panel,
             crate::ui::panel_recipe::Material {
                 fill: self.active_accent_surface(crate::ui::skin::AccentSurface::Widget),
                 edge, opacity: 208, edge_opacity: 175, focus: 0,
                 pressed: false, scale: self.ui_scale(),
-            });
+            }, crate::ui::panel_recipe::task_tray_style());
         let snap = state.drag.and_then(|(px, _, _, _)| {
             if px <= 35 {
                 Some(true)

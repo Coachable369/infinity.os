@@ -127,6 +127,12 @@ fn main() {
     gate.retry(100_100); // Repeated failed-state polls must not postpone retry.
     assert!(!gate.poll(Some(owner.id),true,false,101_999));
     assert!(gate.poll(Some(owner.id),true,false,102_000));
+    for attempt in 0..50 {
+        let now=104_000+attempt*2000;
+        gate.retry(now);
+        assert!(!gate.poll(Some(owner.id),true,false,now+1999));
+        assert!(gate.poll(Some(owner.id),true,false,now+2000));
+    }
     assert!(!gate.poll(None,true,false,100_001));
     assert!(!gate.poll(Some(owner.id),true,true,100_002));
     gate.retry(100_002);

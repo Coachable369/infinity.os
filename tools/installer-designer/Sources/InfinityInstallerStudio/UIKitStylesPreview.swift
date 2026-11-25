@@ -474,3 +474,52 @@ private struct InteractiveButtonThemeSample: View {
         }.frame(width: 250, height: 52).contentShape(Rectangle()).onHover { hovering = $0 }
     }
 }
+
+/// Independent task-manager rail material; action geometry and motion remain shared.
+struct GlobalTaskTrayStylePicker: View {
+    @ObservedObject var store: UIKitStore
+    @State private var expanded = false
+    private let choices: [GlassButtonPreset] = [.sapphire, .smoked, .ice, .satin, .graphite, .minimal]
+    var body: some View {
+        Button { expanded.toggle() } label: {
+            Label("Task Tray", systemImage: "sidebar.left")
+        }
+        .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+        .accessibilityIdentifier("studio.global.task-tray-style")
+        .help("Style the desktop task manager independently of other panels")
+        .popover(isPresented: $expanded, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Task manager appearance").font(.headline)
+                Text("Desktop task tray · shared panel materials")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Use global panel style") { store.setSurfaceStyle(6, style: UIKitSurfaceStyle()) }
+                    .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(choices) { preset in
+                            Button { store.setSurfaceStyle(6, style: preset.style) } label: {
+                                HStack(spacing: 14) {
+                                    if let preview = UIKitStylePreviewImage.image(store: store, kind: .panel,
+                                        width: 120, height: 90, material: PrecisionMaterial(style: preset.style)) {
+                                        Image(decorative: preview, scale: 1).resizable().frame(width: 120, height: 90)
+                                    }
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(preset.rawValue).font(.headline)
+                                        Text(preset.detail).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if store.document.styles[6] == preset.style {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(InfinityUIKit.Palette.nativeAccent)
+                                    }
+                                }.padding(10)
+                            }.buttonStyle(UIKitPreviewInteractionStyle())
+                        }
+                    }
+                }.frame(maxHeight: 440)
+                Text("Preserves task actions, hover animation and placement. Save & Update ISO applies the selected material to the OS.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Done") { expanded = false }.buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
+            }.padding(16).frame(width: 480).background(InfinityUIKit.Palette.nativePanel)
+        }
+    }
+}

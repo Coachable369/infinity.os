@@ -103,3 +103,13 @@ decoration deferral gate. Expansion, row exit, and row entry clocks start on
 pointer delivery. Hover settles in 90 ms (previously 140 ms), reaches half strength
 within 45 ms, and reverses continuously. Rail geometry, glass material, selection
 travel, and reduced-motion endpoints remain unchanged.
+
+## Independent Studio material selection
+
+Studio's **Task Tray** toolbar chooser stores a seventh UIKit surface recipe.
+Existing six-recipe documents inherit their global Panel material without changes.
+Choices reuse Sapphire Glass, Smoked Glass, Frosted Ice, Satin Blue, Graphite Matte,
+and Minimal Blue from the existing kit, with rendered panel previews. This changes
+only the rail substrate; task actions, glyphs, geometry, translucent hover bubble,
+and the 90 ms response contract stay unchanged. Reset restores global Panel inheritance.
+The recipe is packaged in the existing UIKit style payload for both live and installed boots.

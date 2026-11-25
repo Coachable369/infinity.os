@@ -52,7 +52,7 @@ pub fn start_login(account:StableId)->bool {unsafe {
     if let Err(error)=(&mut *core::ptr::addr_of_mut!(LOGIN_JOB)).start_login(WORKER,[DETECTOR,RECOGNIZER],SecurityIdentity(owner),generation,account,digest,now,
         super::native_memory::memory_mut(),controller) {LOGIN_START_ERROR=Some(error);return false;}
     // Rate-limit real comparisons, not camera/device/startup failures.
-    LOGIN_AFTER=now.saturating_add(15_000_000_000);
+    LOGIN_AFTER=now.saturating_add(2_000_000_000);
     LOGIN_ACCOUNT=Some(account);LOGIN_FAILED=false;true
 }}
 // ------------------------=

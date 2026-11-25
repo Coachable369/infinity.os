@@ -43,6 +43,7 @@ pub fn caption()->Option<&'static[u8]>{unsafe{let h=&*core::ptr::addr_of!(HOST);
  Stage::Failed(Failure::NoEnrollment)=>b"Voice not enrolled - use your password",
  Stage::Failed(Failure::Mismatch)=>b"Voice not matched - retry sign-in",
  Stage::Failed(Failure::Quiet|Failure::Timeout)=>b"No clear voice captured - retry sign-in",
+ Stage::Failed(Failure::Unavailable|Failure::Worker|Failure::AnalysisTimeout|Failure::Clipped)=>b"Voice check interrupted - retrying",
  Stage::Failed(_)=>b"Voice check unavailable - use your password",
  _=>return None,
 })}}
@@ -245,7 +246,7 @@ pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
  if h.greeting_pending{poll_greeting(h,clock);}
  if let Some(mut task)=h.task.take(){
   if let Some(state)=h.terminal{
-   if schedule::batch(now,|_|task.scrub_private(&mut h.scrubbed).then_some(())).is_some(){
+   if schedule::reclaim(now,|_|task.scrub_private(&mut h.scrubbed).then_some(())).is_some(){
     if task.release(super::native_memory::memory_mut()).is_ok(){finish(h,state,valid&&h.stage==Stage::Comparing,now()/1_000_000);}
     else{fail(h,Failure::Worker);}
     h.terminal=None;
@@ -293,7 +294,7 @@ pub fn poll(enrollment:Option<StableId>,selected:Option<StableId>)->bool{unsafe{
 // ------------------=
 pub fn retryable_login()->bool{unsafe{
  let h=&*core::ptr::addr_of!(HOST);
- h.login&&h.task.is_none()&&h.terminal.is_none()&&matches!(h.stage,Stage::Failed(Failure::Mismatch|Failure::Quiet|Failure::Clipped|Failure::Timeout|Failure::AnalysisTimeout))
+ h.login&&h.task.is_none()&&h.terminal.is_none()&&matches!(h.stage,Stage::Failed(Failure::Mismatch|Failure::Quiet|Failure::Clipped|Failure::Timeout|Failure::AnalysisTimeout|Failure::Unavailable|Failure::Worker))
 }}
 // ------------------------=
 // FUNC: take_proof

@@ -99,6 +99,7 @@ private struct StudioToolbar: View {
             Divider().frame(height: 28)
             GlobalButtonStylePicker(store: kit)
             GlobalWindowFrameEditor(store: kit)
+            GlobalTaskTrayStylePicker(store: kit)
             if !store.editingUIKit && !store.editingMenu && store.selectedCollection == .desktop {
                 Button(action: store.editInfinityMenu) {
                     Label("Infinity System Menu", systemImage: "list.bullet.indent")

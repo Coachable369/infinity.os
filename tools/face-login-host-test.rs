@@ -110,7 +110,7 @@ fn click_dispatch_retry_and_account_cancellation() {
     assert!(face_setup_host::poll_login(None).is_none());
     assert!(!face_setup_host::login_busy());
     assert!(!face_setup_host::start_login(account));
-    NOW.store(16_000_000_000,Ordering::Relaxed);
+    NOW.store(2_001_000_000,Ordering::Relaxed);
     assert!(face_setup_host::start_login(account));
     assert_eq!(STARTS.load(Ordering::Relaxed),3);
 }

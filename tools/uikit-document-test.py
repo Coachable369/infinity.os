@@ -70,7 +70,7 @@ class UIKitDocumentTests(unittest.TestCase):
     # ------------------=
     def test_surface_style_binary(self):
         defaults = COMPILER.style_bytes({})
-        self.assertEqual(defaults, b"IUISTY01" + struct.pack("<HH", 1, 6) + bytes(72))
+        self.assertEqual(defaults, b"IUISTY01" + struct.pack("<HH", 1, 7) + bytes(84))
         styles = [dict(material=0, corners=0, radius=0) for _ in range(6)]
         styles[2] = dict(material=2, corners=2, radius=24, fill=0x80123456, border=0xffabcdef)
         data = COMPILER.style_bytes(dict(styles=styles))

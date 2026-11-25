@@ -27,10 +27,10 @@ fn button_cloud(width:usize,height:usize,x:usize,y:usize)->Rgb {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface { Frame, WindowFill, Panel, Primary, Secondary, Field, Current, Inactive }
 
-pub const STYLE_COUNT: usize = 6;
+pub const STYLE_COUNT: usize = 7;
 pub const STYLE_BYTES: usize = 12 + STYLE_COUNT * 12;
 #[used]
-static STYLE_PAYLOAD: [u8; STYLE_BYTES] = *include_bytes!("../../assets/ui-design-kit/default/uikit-styles.bin");
+static STYLE_PAYLOAD: &[u8] = include_bytes!("../../assets/ui-design-kit/default/uikit-styles.bin");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SurfaceStyle {
@@ -50,14 +50,15 @@ impl SurfaceStyle {
 // DESC: Rejects malformed surface records atomically before exposing geometry, material or optional tint overrides.
 // ------------------=
 pub const fn decode_styles(bytes: &[u8]) -> Option<[SurfaceStyle; STYLE_COUNT]> {
-    if bytes.len() != STYLE_BYTES { return None; }
+    if bytes.len() != 84 && bytes.len() != STYLE_BYTES { return None; }
     let magic = b"IUISTY01";
     let mut i = 0;
     while i < 8 { if bytes[i] != magic[i] { return None; } i += 1; }
-    if bytes[8] != 1 || bytes[9] != 0 || bytes[10] != 6 || bytes[11] != 0 { return None; }
+    if bytes[8] != 1 || bytes[9] != 0 || (bytes[10] != 6 && bytes[10] != 7) || bytes[11] != 0 { return None; }
     let mut result = [SurfaceStyle::AUTHORED; STYLE_COUNT];
     i = 0;
-    while i < STYLE_COUNT {
+    if bytes.len() != 12 + bytes[10] as usize * 12 { return None; }
+    while i < bytes[10] as usize {
         let at = 12 + i * 12;
         if bytes[at] > 28 || bytes[at+1] > 2 || bytes[at+2] > 40 || bytes[at+3] & !3 != 0 { return None; }
         let fill = u32::from_le_bytes([bytes[at+4], bytes[at+5], bytes[at+6], bytes[at+7]]);
@@ -88,6 +89,19 @@ pub fn surface_style(kind: Surface) -> SurfaceStyle {
         style.radius = styles[0].radius;
     }
     style
+}
+
+// ------------------------=
+// FUNC: task_tray_style
+// DESC: Uses the independent Studio tray recipe, inheriting the selected panel until explicitly customized.
+// ------------------=
+pub fn task_tray_style() -> SurfaceStyle {
+    #[cfg(studio_native_preview)]
+    let bytes=crate::studio_native_render::asset_override(b"uikit-styles.bin").unwrap_or(STYLE_PAYLOAD);
+    #[cfg(not(studio_native_preview))]
+    let bytes=STYLE_PAYLOAD;
+    let style=decode_styles(bytes).map(|styles|styles[6]).unwrap_or(SurfaceStyle::AUTHORED);
+    if style==SurfaceStyle::AUTHORED {surface_style(Surface::Panel)} else {style}
 }
 
 // ------------------------=

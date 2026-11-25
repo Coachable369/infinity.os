@@ -70,7 +70,7 @@ impl Job {
     pub fn poll(&mut self, authorized:bool,now_ns:u64,memory:&mut NativeMemory)->Result<(),MemoryError> {
         let Some(mut task)=self.task.take() else {return Ok(());};
         if self.terminal.is_some() {
-            if task.scrub_private(&mut self.scrubbed) {task.release(memory)?;}else{self.task=Some(task);}
+            if schedule::reclaim(super::ai::qwen::workers::clock_ns, |_|task.scrub_private(&mut self.scrubbed).then_some(())).is_some() {task.release(memory)?;}else{self.task=Some(task);}
             return Ok(());
         }
         let alive=authorized && (if self.login {crate::drivers::camera::face_login_authorized(self.owner,self.account)} else {crate::drivers::camera::setup_authorized(self.owner,self.account)})

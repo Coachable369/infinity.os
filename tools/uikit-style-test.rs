@@ -22,7 +22,7 @@ fn main() {
     }
     let mut bytes=[0u8;panel_recipe::STYLE_BYTES];
     bytes[..8].copy_from_slice(b"IUISTY01");
-    bytes[8]=1;bytes[10]=6;
+    bytes[8]=1;bytes[10]=panel_recipe::STYLE_COUNT as u8;
     let slot=12+2*12;
     bytes[slot..slot+4].copy_from_slice(&[2,2,24,3]);
     bytes[slot+4..slot+8].copy_from_slice(&0x80112233u32.to_le_bytes());
