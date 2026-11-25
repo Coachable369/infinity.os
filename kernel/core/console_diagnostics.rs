@@ -511,7 +511,7 @@ pub(super) fn publish(console: &ConsoleRuntime) {
                 crate::runtime::fabric::resources::ResourceKind::Compute => { compute[10] += 1; compute[12] = compute[12].saturating_add(reserved); }
                 crate::runtime::fabric::resources::ResourceKind::Memory => { compute[11] += 1; compute[13] = compute[13].saturating_add(reserved); }
                 crate::runtime::fabric::resources::ResourceKind::Accelerator => compute[14] += 1,
-                crate::runtime::fabric::resources::ResourceKind::Storage => (),
+                _ => (),
             }
         }
         for index in 0..runtime.compute.task_count().min(6) {

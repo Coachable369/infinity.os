@@ -2495,7 +2495,7 @@ pub fn poll_node_transport(now: u64) {
         let remote_compute = &mut runtime.remote_compute;
         iop.execute_remote_compute(nodes, now, |request| {
             remote_compute
-                .execute(request.payload, execution, request.local, now)
+                .execute(request.payload, execution, request.local, request.peer, now)
                 .map_err(|error| match error {
                     compute::ComputeError::AccessDenied => iop::remote::RemoteError::AccessDenied,
                     compute::ComputeError::DeadlineExceeded => {
@@ -2652,6 +2652,7 @@ pub fn poll_node_transport(now: u64) {
         Some(node::transport::DiscoveryChange::Offline(peer)) => {
             with_runtime(|runtime| {
                 runtime.fabric_resources.mark_peer_offline(peer);
+                runtime.remote_compute.disconnect(peer, &mut runtime.execution);
                 if let Some(local) = runtime.nodes.local_id() {
                     runtime
                         .compute

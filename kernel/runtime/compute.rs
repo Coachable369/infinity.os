@@ -146,6 +146,8 @@ pub struct ComputeDispatchV1 {
 
 #[derive(Clone, Copy)]
 struct RemoteExecution {
+    peer: NodeId,
+    lease_expires: u64,
     task_id: u64,
     epoch: u32,
     deadline: u64,
@@ -162,8 +164,22 @@ struct RemoteExecution {
     context: ContextHandle,
 }
 
+/// Provider-side aggregate ceilings, independent of consumer advertisements.
+/// CPU units are scheduler weights, not physical core counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProviderComputeLimits {
+    pub enabled: bool,
+    pub memory_bytes: u64,
+    pub cpu_units: u16,
+    pub concurrent_tasks: u16,
+}
+
+pub const PROVIDER_COMPUTE_POLICY_TARGET: u64 = 0x46414252;
+
 pub struct RemoteComputeExecutor {
     active: [Option<RemoteExecution>; MAX_REMOTE_EXECUTIONS],
+    limits: ProviderComputeLimits,
+    revision: u64,
 }
 
 impl RemoteComputeExecutor {
@@ -174,7 +190,69 @@ impl RemoteComputeExecutor {
     pub const fn new() -> Self {
         Self {
             active: [None; MAX_REMOTE_EXECUTIONS],
+            limits: ProviderComputeLimits {
+                enabled: true,
+                memory_bytes: MAX_COMPUTE_MEMORY,
+                cpu_units: 128,
+                concurrent_tasks: MAX_REMOTE_EXECUTIONS as u16,
+            },
+            revision: 1,
         }
+    }
+
+    // ------------------------=
+    // FUNC: limits
+    // DESC: Returns provider-enforced ceilings and their revision for all management clients.
+    // ------------------=
+    pub fn limits(&self) -> (ProviderComputeLimits, u64) {
+        (self.limits, self.revision)
+    }
+
+    // ------------------------=
+    // FUNC: allocation
+    // DESC: Reports aggregate reserved memory and scheduler weights from actual live provider contexts.
+    // ------------------=
+    pub fn allocation(&self) -> (u64, u64, usize) {
+        self.active.iter().flatten().fold((0, 0, 0), |(memory, cpu, count), task| {
+            (memory + task.memory_bytes, cpu + task.cpu_units as u64, count + 1)
+        })
+    }
+
+    // ------------------------=
+    // FUNC: set_limits
+    // DESC: Atomically updates provider ceilings with revision and capability checks; disabling terminates all remote contexts.
+    // ------------------=
+    pub fn set_limits(
+        &mut self, limits: ProviderComputeLimits, expected_revision: u64,
+        caller: super::execution::SecurityIdentity, capability: CapabilityId,
+        capabilities: &CapabilityManager, execution: &mut ExecutionManager, now: u64,
+    ) -> Result<u64, ComputeError> {
+        capabilities.validate(capability, caller, CapabilityType::ResourcePolicyModify,
+            PROVIDER_COMPUTE_POLICY_TARGET, 1, 0, now)
+            .map_err(|_| ComputeError::AccessDenied)?;
+        if expected_revision != self.revision {
+            return Err(ComputeError::StaleResult);
+        }
+        if limits.memory_bytes > MAX_COMPUTE_MEMORY || limits.cpu_units > 128
+            || limits.concurrent_tasks as usize > MAX_REMOTE_EXECUTIONS
+            || (limits.enabled && (limits.memory_bytes == 0 || limits.cpu_units == 0
+                || limits.concurrent_tasks == 0)) {
+            return Err(ComputeError::InvalidRequest);
+        }
+        let (memory, cpu, count) = self.allocation();
+        if limits.enabled && (memory > limits.memory_bytes || cpu > limits.cpu_units as u64
+            || count > limits.concurrent_tasks as usize) {
+            return Err(ComputeError::ResourceUnavailable);
+        }
+        let revision = self.revision.checked_add(1).ok_or(ComputeError::InvalidState)?;
+        if !limits.enabled {
+            for slot in &mut self.active {
+                if let Some(task) = slot.take() { let _ = execution.destroy(task.context); }
+            }
+        }
+        self.limits = limits;
+        self.revision = revision;
+        Ok(revision)
     }
 
     // ------------------------=
@@ -191,10 +269,22 @@ impl RemoteComputeExecutor {
     // ------------------=
     pub fn expire(&mut self, execution: &mut ExecutionManager, now: u64) {
         for slot in &mut self.active {
-            if slot.is_some_and(|active| active.deadline != 0 && now >= active.deadline) {
+            if slot.is_some_and(|active| now >= active.lease_expires || (active.deadline != 0 && now >= active.deadline)) {
                 if let Some(active) = slot.take() {
                     let _ = execution.destroy(active.context);
                 }
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: disconnect
+    // DESC: Reclaims only contexts owned by a disconnected authenticated consumer.
+    // ------------------=
+    pub fn disconnect(&mut self, peer: NodeId, execution: &mut ExecutionManager) {
+        for slot in &mut self.active {
+            if slot.is_some_and(|task| task.peer == peer) {
+                if let Some(task) = slot.take() { let _ = execution.destroy(task.context); }
             }
         }
     }
@@ -208,15 +298,22 @@ impl RemoteComputeExecutor {
         mut dispatch: ComputeDispatchV1,
         execution: &mut ExecutionManager,
         local: NodeId,
+        peer: NodeId,
         now: u64,
     ) -> Result<ComputeDispatchV1, ComputeError> {
         ComputeDispatchV1::decode(&dispatch.encode())?;
-        if dispatch.target_node != local {
+        self.expire(execution, now);
+        if dispatch.target_node != local || peer.0 == [0; 32] {
+            return Err(ComputeError::AccessDenied);
+        }
+        if self.active.iter().flatten().any(|active| {
+            active.task_id == dispatch.task_id && active.peer != peer
+        }) {
             return Err(ComputeError::AccessDenied);
         }
         let matching = self.active.iter().position(|slot| {
             slot.is_some_and(|active| {
-                active.task_id == dispatch.task_id && active.epoch == dispatch.epoch
+                active.peer == peer && active.task_id == dispatch.task_id && active.epoch == dispatch.epoch
             })
         });
         if dispatch.operation == super::iop::OperationId::ComputeCancel as u32 {
@@ -257,8 +354,17 @@ impl RemoteComputeExecutor {
                 .iter()
                 .position(Option::is_none)
                 .ok_or(ComputeError::Full)?;
+            let (memory, cpu, count) = self.allocation();
+            if !self.limits.enabled
+                || memory.saturating_add(dispatch.memory_bytes) > self.limits.memory_bytes
+                || cpu.saturating_add(dispatch.cpu_units as u64) > self.limits.cpu_units as u64
+                || count >= self.limits.concurrent_tasks as usize {
+                return Err(ComputeError::ResourceUnavailable);
+            }
             let handle = create_remote_context(dispatch, execution)?;
             self.active[index] = Some(RemoteExecution {
+                peer,
+                lease_expires: now.saturating_add(60),
                 task_id: dispatch.task_id,
                 epoch: dispatch.epoch,
                 deadline: dispatch.deadline,
@@ -302,6 +408,7 @@ impl RemoteComputeExecutor {
             dispatch.state = ComputeState::Completed as u8;
         } else {
             let active = self.active[index].as_mut().unwrap();
+            active.lease_expires = now.saturating_add(60);
             active.remaining = dispatch.work_units;
             active.used_ticks = dispatch.used_ticks;
             dispatch.state = ComputeState::Running as u8;

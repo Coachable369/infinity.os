@@ -828,6 +828,7 @@ fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations(
             envelope.payload.compute().unwrap(),
             &mut remote_execution,
             f.peer,
+            f.nodes.local_id().unwrap(),
             7,
         )
         .unwrap();
@@ -919,6 +920,7 @@ fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations(
             long_envelope.payload.compute().unwrap(),
             &mut remote_execution,
             f.peer,
+            f.nodes.local_id().unwrap(),
             11,
         )
         .unwrap();
@@ -1003,6 +1005,7 @@ fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations(
             cancel_envelope.payload.compute().unwrap(),
             &mut remote_execution,
             f.peer,
+            f.nodes.local_id().unwrap(),
             15,
         )
         .unwrap();
@@ -1313,6 +1316,7 @@ fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations(
             envelope_c.payload.compute().unwrap(),
             &mut remote_execution,
             peer_c,
+            f.nodes.local_id().unwrap(),
             38,
         )
         .unwrap();
@@ -1348,6 +1352,7 @@ fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations(
             stale_envelope.payload.compute().unwrap(),
             &mut remote_execution,
             f.peer,
+            f.nodes.local_id().unwrap(),
             40,
         )
         .unwrap();
@@ -1371,7 +1376,7 @@ fn remote_executor_retains_and_cancels_live_bounded_contexts() {
     let mut remote = RemoteComputeExecutor::new();
     let mut request = compute_payload(node);
     request.work_units = 128;
-    let first = remote.execute(request, &mut execution, node, 8).unwrap();
+    let first = remote.execute(request, &mut execution, node, NodeId([45; 32]), 8).unwrap();
     assert_eq!(
         (
             first.state,
@@ -1386,18 +1391,21 @@ fn remote_executor_retains_and_cancels_live_bounded_contexts() {
     altered.used_ticks = 64;
     altered.memory_bytes = 8192;
     assert_eq!(
-        remote.execute(altered, &mut execution, node, 9),
+        remote.execute(altered, &mut execution, node, NodeId([45; 32]), 9),
         Err(super::super::super::compute::ComputeError::InvalidRequest)
     );
     assert_eq!((remote.active_count(), execution.count()), (1, 1));
     let mut cancel = request;
     cancel.operation = OperationId::ComputeCancel as u32;
-    let cancelled = remote.execute(cancel, &mut execution, node, 10).unwrap();
+    assert_eq!(remote.execute(cancel, &mut execution, node, NodeId([46; 32]), 9),
+        Err(super::super::super::compute::ComputeError::AccessDenied));
+    assert_eq!((remote.active_count(), execution.count()), (1, 1));
+    let cancelled = remote.execute(cancel, &mut execution, node, NodeId([45; 32]), 10).unwrap();
     assert_eq!(
         (cancelled.state, remote.active_count(), execution.count()),
         (ComputeState::Cancelled as u8, 0, 0)
     );
-    let _ = remote.execute(request, &mut execution, node, 11).unwrap();
+    let _ = remote.execute(request, &mut execution, node, NodeId([45; 32]), 11).unwrap();
     assert_eq!(remote.active_count(), 1);
     remote.expire(&mut execution, request.deadline);
     assert_eq!((remote.active_count(), execution.count()), (0, 0));
@@ -2022,4 +2030,79 @@ fn policy_read_returns_every_committed_field_within_wire_bounds() {
         };
         assert_eq!(actual, expected.categories[i]);
     }
+}
+
+// ------------------------=
+// FUNC: provider_limits_enforce_aggregate_capacity_and_authorized_revocation
+// DESC: Concurrent remote requests cannot overspend provider memory, stale administrators cannot overwrite policy, and disable reclaims contexts.
+// ------------------=
+#[test]
+fn provider_limits_enforce_aggregate_capacity_and_authorized_revocation() {
+    use crate::runtime::compute::{RemoteComputeExecutor, ComputeError, ProviderComputeLimits,
+        PROVIDER_COMPUTE_POLICY_TARGET};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([44; 32]);
+    let peer = NodeId([45; 32]);
+    let caller = SecurityIdentity([46; 16]);
+    let mut caps = CapabilityManager::new();
+    let cap = caps.grant(CapabilityType::ResourcePolicyModify, PROVIDER_COMPUTE_POLICY_TARGET,
+        1, 0, caller, caller, Some(100), 0).unwrap();
+    let mut execution = ExecutionManager::new();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut request = compute_payload(local);
+    request.work_units = 128;
+    let limits = ProviderComputeLimits { enabled: true, memory_bytes: request.memory_bytes,
+        cpu_units: request.cpu_units, concurrent_tasks: 2 };
+    assert_eq!(provider.set_limits(limits, 1, SecurityIdentity([47; 16]), cap,
+        &caps, &mut execution, 1), Err(ComputeError::AccessDenied));
+    assert_eq!(provider.limits().1, 1);
+    assert_eq!(provider.set_limits(limits, 1, caller, cap, &caps, &mut execution, 1), Ok(2));
+    provider.execute(request, &mut execution, local, peer, 8).unwrap();
+    assert_eq!(provider.allocation(), (request.memory_bytes, request.cpu_units as u64, 1));
+    let mut second = request;
+    second.task_id += 1;
+    assert_eq!(provider.execute(second, &mut execution, local, peer, 8),
+        Err(ComputeError::ResourceUnavailable));
+    assert_eq!(execution.count(), 1);
+    let disabled = ProviderComputeLimits { enabled: false, ..limits };
+    assert_eq!(provider.set_limits(disabled, 1, caller, cap, &caps, &mut execution, 9),
+        Err(ComputeError::StaleResult));
+    assert_eq!(execution.count(), 1);
+    assert_eq!(provider.set_limits(disabled, 2, caller, cap, &caps, &mut execution, 9), Ok(3));
+    assert_eq!(provider.allocation(), (0, 0, 0));
+    assert_eq!(execution.count(), 0);
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 10),
+        Err(ComputeError::ResourceUnavailable));
+    caps.revoke(cap).unwrap();
+    assert_eq!(provider.set_limits(limits, 3, caller, cap, &caps, &mut execution, 10),
+        Err(ComputeError::AccessDenied));
+}
+
+// ------------------------=
+// FUNC: provider_reclaims_disconnected_and_abandoned_consumers
+// DESC: Provider-owned leases bound abandoned work even without consumer deadlines and node loss immediately releases its own contexts.
+// ------------------=
+#[test]
+fn provider_reclaims_disconnected_and_abandoned_consumers() {
+    use crate::runtime::compute::RemoteComputeExecutor;
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([44; 32]);
+    let peer = NodeId([45; 32]);
+    let mut execution = ExecutionManager::new();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut request = compute_payload(local);
+    request.deadline = 0;
+    request.work_units = 128;
+    provider.execute(request, &mut execution, local, peer, 8).unwrap();
+    provider.disconnect(NodeId([46; 32]), &mut execution);
+    assert_eq!(execution.count(), 1);
+    provider.expire(&mut execution, 67);
+    assert_eq!(execution.count(), 1);
+    provider.expire(&mut execution, 68);
+    assert_eq!(execution.count(), 0);
+    assert_eq!(provider.allocation(), (0, 0, 0));
+    provider.execute(request, &mut execution, local, peer, 69).unwrap();
+    provider.disconnect(peer, &mut execution);
+    assert_eq!(execution.count(), 0);
+    assert_eq!(provider.active_count(), 0);
 }

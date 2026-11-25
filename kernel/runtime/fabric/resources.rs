@@ -14,6 +14,13 @@ pub enum ResourceKind {
     Compute,
     Memory,
     Accelerator,
+    Usb,
+    Bluetooth,
+    Camera,
+    Audio,
+    Network,
+    Sensor,
+    Other,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Health {
@@ -175,15 +182,22 @@ impl Directory {
         &mut self,
         owner: NodeId,
     ) -> Result<usize, ResourceError> {
+        // Validate the entire transition before changing any inventory entries.
+        if self.entries.iter().enumerate().any(|(index, entry)| {
+            entry.is_some_and(|resource| {
+                resource.owner == owner
+                    && matches!(resource.kind, ResourceKind::Compute | ResourceKind::Memory)
+                    && self.reserved[index] != 0
+            })
+        }) {
+            return Err(ResourceError::Conflict);
+        }
         let mut retired = 0;
         for index in 0..self.entries.len() {
             if self.entries[index].is_some_and(|resource| {
                 resource.owner == owner
                     && matches!(resource.kind, ResourceKind::Compute | ResourceKind::Memory)
             }) {
-                if self.reserved[index] != 0 {
-                    return Err(ResourceError::Conflict);
-                }
                 self.entries[index] = None;
                 self.offline_notices &= !(1u32 << index);
                 retired += 1;

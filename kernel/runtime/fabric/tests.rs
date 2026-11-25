@@ -576,3 +576,62 @@ fn corrupt_and_replaced_replicas_never_publish() {
     assert_eq!(transfer.inspect().copied, 0);
     assert!(!store.published);
 }
+
+// ------------------------=
+// FUNC: identity_retirement_is_atomic_with_active_memory_reservation
+// DESC: A busy later resource must not remove an earlier idle resource during identity migration.
+// ------------------=
+#[test]
+fn identity_retirement_is_atomic_with_active_memory_reservation() {
+    let owner = NodeId([7; 32]);
+    let mut directory = Directory::new();
+    for (id, kind) in [(1, ResourceKind::Compute), (2, ResourceKind::Memory)] {
+        let mut entry = resource(id, owner);
+        entry.kind = kind;
+        directory.observe_local(entry, owner, 1).unwrap();
+    }
+    directory.reserve_kind(ResourceId([2; 16]), 1, ResourceKind::Memory, 1024, 2).unwrap();
+    let before = *directory.entries();
+    assert_eq!(directory.retire_local_compute_identity(owner), Err(ResourceError::Conflict));
+    assert_eq!(*directory.entries(), before);
+    assert_eq!(directory.reserved_for(ResourceId([2; 16]), 1), Some(1024));
+    directory.release(ResourceId([2; 16]), 1, 1024).unwrap();
+    assert_eq!(directory.retire_local_compute_identity(owner), Ok(2));
+}
+
+// ------------------------=
+// FUNC: unified_resource_wire_categories_preserve_legacy_and_isolation
+// DESC: Round-trips all device categories and rejects invalid version and capability combinations without admitting devices as storage.
+// ------------------=
+#[test]
+fn unified_resource_wire_categories_preserve_legacy_and_isolation() {
+    use super::resource_protocol::{decode, encode};
+    let owner = NodeId([7; 32]);
+    for (index, kind) in [ResourceKind::Storage, ResourceKind::Compute,
+        ResourceKind::Memory, ResourceKind::Accelerator, ResourceKind::Usb,
+        ResourceKind::Bluetooth, ResourceKind::Camera, ResourceKind::Audio,
+        ResourceKind::Network, ResourceKind::Sensor, ResourceKind::Other].into_iter().enumerate() {
+        let mut entry = resource((index + 1) as u8, owner);
+        entry.kind = kind;
+        entry.expires = 61;
+        let wire = encode(entry, 60).unwrap();
+        assert_eq!(wire.data[45], (index + 1) as u8);
+        assert_eq!(wire.data[46], if index < 4 { 1 } else { 2 });
+        assert_eq!(decode(wire, owner, 1), Ok(entry));
+        let mut directory = Directory::new();
+        directory.apply(decode(wire, owner, 1).unwrap(), 1).unwrap();
+        if kind != ResourceKind::Storage {
+            assert_eq!(select(&directory, &[], &[], 1, 2), None);
+        }
+        if index >= 4 {
+            let mut old = wire;
+            old.data[46] = 1;
+            assert_eq!(decode(old, owner, 1), Err(ResourceError::Invalid));
+        }
+        entry.online = false;
+        assert_eq!(encode(entry, 60), Err(ResourceError::Invalid));
+        entry.online = true;
+        entry.capabilities = 2;
+        assert_eq!(encode(entry, 60), Err(ResourceError::Invalid));
+    }
+}

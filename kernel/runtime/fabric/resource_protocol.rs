@@ -18,7 +18,7 @@ pub(crate) fn decode(
     if p.encode().is_err()
         || p.operation != Operation::ResourceAdvertise
         || p.length != 48
-        || p.data[46..48] != 1u16.to_le_bytes()
+        || !matches!(u16::from_le_bytes([p.data[46], p.data[47]]), 1 | 2)
         || p.object != p.data[..16]
         || !(1..=60).contains(&p.value)
         || owner.0 == [0; 32]
@@ -40,6 +40,13 @@ pub(crate) fn decode(
         2 => ResourceKind::Compute,
         3 => ResourceKind::Memory,
         4 => ResourceKind::Accelerator,
+        5 if p.data[46] == 2 => ResourceKind::Usb,
+        6 if p.data[46] == 2 => ResourceKind::Bluetooth,
+        7 if p.data[46] == 2 => ResourceKind::Camera,
+        8 if p.data[46] == 2 => ResourceKind::Audio,
+        9 if p.data[46] == 2 => ResourceKind::Network,
+        10 if p.data[46] == 2 => ResourceKind::Sensor,
+        11 if p.data[46] == 2 => ResourceKind::Other,
         _ => return Err(ResourceError::Invalid),
     };
     Ok(Resource {
@@ -65,6 +72,9 @@ pub(crate) fn decode(
 // ------------------=
 pub(crate) fn encode(resource: Resource, lease: u64) -> Result<StorageOperationV1, ResourceError> {
     if resource.id.0 == [0; 16]
+        || resource.owner.0 == [0; 32]
+        || resource.capabilities & !1 != 0
+        || resource.online != (resource.health != Health::Failed)
         || resource.device == [0; 16]
         || resource.capacity == 0
         || resource.available > resource.capacity
@@ -90,8 +100,18 @@ pub(crate) fn encode(resource: Resource, lease: u64) -> Result<StorageOperationV
         ResourceKind::Compute => 2,
         ResourceKind::Memory => 3,
         ResourceKind::Accelerator => 4,
+        ResourceKind::Usb => 5,
+        ResourceKind::Bluetooth => 6,
+        ResourceKind::Camera => 7,
+        ResourceKind::Audio => 8,
+        ResourceKind::Network => 9,
+        ResourceKind::Sensor => 10,
+        ResourceKind::Other => 11,
     };
-    data[46..48].copy_from_slice(&1u16.to_le_bytes());
+    // Preserve v1 bytes for deployed storage/compute peers. Device categories
+    // require v2, so older peers reject rather than misinterpret them.
+    let version: u16 = if data[45] <= 4 { 1 } else { 2 };
+    data[46..48].copy_from_slice(&version.to_le_bytes());
     Ok(StorageOperationV1 {
         operation: Operation::ResourceAdvertise,
         object: resource.id.0,
