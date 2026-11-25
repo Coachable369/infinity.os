@@ -1347,7 +1347,8 @@ fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations(
         ),
         (ComputeState::Completed, peer_c, 2, 1)
     );
-    let stale_b = remote_runtime
+    // Each provider has independent replay history, including the lost provider.
+    let stale_b = RemoteComputeExecutor::new()
         .execute(
             stale_envelope.payload.compute().unwrap(),
             &mut remote_execution,
@@ -1405,6 +1406,7 @@ fn remote_executor_retains_and_cancels_live_bounded_contexts() {
         (cancelled.state, remote.active_count(), execution.count()),
         (ComputeState::Cancelled as u8, 0, 0)
     );
+    request.epoch += 1;
     let _ = remote.execute(request, &mut execution, node, NodeId([45; 32]), 11).unwrap();
     assert_eq!(remote.active_count(), 1);
     remote.expire(&mut execution, request.deadline);
@@ -2101,6 +2103,7 @@ fn provider_reclaims_disconnected_and_abandoned_consumers() {
     provider.expire(&mut execution, 68);
     assert_eq!(execution.count(), 0);
     assert_eq!(provider.allocation(), (0, 0, 0));
+    request.epoch += 1;
     provider.execute(request, &mut execution, local, peer, 69).unwrap();
     provider.disconnect(peer, &mut execution);
     assert_eq!(execution.count(), 0);
@@ -2176,5 +2179,81 @@ fn restarted_remote_work_preserves_total_accounting() {
     assert_eq!(final_state.epoch, 2);
     assert_eq!(final_state.accounting.used_cpu_ticks, 192);
     assert_eq!(provider.active_count(), 0);
+    assert_eq!(execution.count(), 0);
+}
+
+// ------------------------=
+// FUNC: terminated_provider_epochs_cannot_be_resurrected
+// DESC: Rejects delayed requests after completion, cancellation, lease expiry, or disconnect without allocating another context.
+// ------------------=
+#[test]
+fn terminated_provider_epochs_cannot_be_resurrected() {
+    use crate::runtime::compute::{ComputeError, RemoteComputeExecutor};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([44; 32]);
+    let peer = NodeId([45; 32]);
+    for termination in 0..4 {
+        let mut execution = ExecutionManager::new();
+        let mut provider = RemoteComputeExecutor::new();
+        let mut request = compute_payload(local);
+        request.deadline = 0;
+        request.work_units = 128;
+        provider.execute(request, &mut execution, local, peer, 1).unwrap();
+        match termination {
+            0 => {
+                let mut continuation = request;
+                continuation.work_units = 64;
+                continuation.used_ticks = 64;
+                provider.execute(continuation, &mut execution, local, peer, 2).unwrap();
+            },
+            1 => {
+                let mut cancel = request;
+                cancel.operation = OperationId::ComputeCancel as u32;
+                provider.execute(cancel, &mut execution, local, peer, 2).unwrap();
+            },
+            2 => provider.expire(&mut execution, 61),
+            _ => provider.disconnect(peer, &mut execution),
+        }
+        assert_eq!(execution.count(), 0);
+        assert_eq!(provider.execute(request, &mut execution, local, peer, 62),
+            Err(ComputeError::StaleResult));
+        assert_eq!(provider.allocation(), (0, 0, 0));
+        assert_eq!(execution.count(), 0);
+    }
+}
+
+#[test]
+// ------------------------=
+// FUNC: provider_replay_window_handles_reordering_and_rollover
+// DESC: Fences cancellation before admission and retired epochs while accepting unseen out-of-order work and newer epochs.
+// ------------------=
+fn provider_replay_window_handles_reordering_and_rollover() {
+    use crate::runtime::compute::{ComputeError, RemoteComputeExecutor};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([44; 32]);
+    let peer = NodeId([45; 32]);
+    let mut execution = ExecutionManager::new();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut request = compute_payload(local);
+    request.deadline = 0;
+    request.work_units = 1;
+    request.task_id = 100;
+    let mut cancel = request;
+    cancel.operation = OperationId::ComputeCancel as u32;
+    provider.execute(cancel, &mut execution, local, peer, 1).unwrap();
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 2), Err(ComputeError::StaleResult));
+    request.epoch += 1;
+    provider.execute(request, &mut execution, local, peer, 3).unwrap();
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 4), Err(ComputeError::StaleResult));
+    request.task_id = 99;
+    provider.execute(request, &mut execution, local, peer, 5).unwrap();
+    request.task_id = 164;
+    provider.execute(request, &mut execution, local, peer, 6).unwrap();
+    request.task_id = 100;
+    request.epoch += 1;
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 7), Err(ComputeError::StaleResult));
+    // The same task identifier from an independent authenticated consumer is valid.
+    provider.execute(request, &mut execution, local, NodeId([46; 32]), 8).unwrap();
+    assert_eq!(provider.allocation(), (0, 0, 0));
     assert_eq!(execution.count(), 0);
 }

@@ -176,8 +176,19 @@ pub struct ProviderComputeLimits {
 
 pub const PROVIDER_COMPUTE_POLICY_TARGET: u64 = 0x46414252;
 
+const PROVIDER_REPLAY_PEERS: usize = 32;
+const PROVIDER_REPLAY_TASKS: usize = 64;
+
+#[derive(Clone, Copy)]
+struct ProviderReplayWindow {
+    peer: NodeId,
+    highest_task: u64,
+    epochs: [u32; PROVIDER_REPLAY_TASKS],
+}
+
 pub struct RemoteComputeExecutor {
     active: [Option<RemoteExecution>; MAX_REMOTE_EXECUTIONS],
+    replay: [Option<ProviderReplayWindow>; PROVIDER_REPLAY_PEERS],
     limits: ProviderComputeLimits,
     revision: u64,
 }
@@ -190,6 +201,7 @@ impl RemoteComputeExecutor {
     pub const fn new() -> Self {
         Self {
             active: [None; MAX_REMOTE_EXECUTIONS],
+            replay: [None; PROVIDER_REPLAY_PEERS],
             limits: ProviderComputeLimits {
                 enabled: true,
                 memory_bytes: MAX_COMPUTE_MEMORY,
@@ -264,6 +276,37 @@ impl RemoteComputeExecutor {
     }
 
     // ------------------------=
+    // FUNC: next_replay_window
+    // DESC: Plans bounded per-consumer epoch admission without mutating state; retired or aged-out task epochs fail closed.
+    // ------------------=
+    fn next_replay_window(&self, peer: NodeId, task: u64, epoch: u32)
+        -> Result<(usize, ProviderReplayWindow), ComputeError> {
+        let index = self.replay.iter().position(|entry| entry.is_some_and(|entry| entry.peer == peer))
+            .or_else(|| self.replay.iter().position(Option::is_none)).ok_or(ComputeError::Full)?;
+        let mut window = self.replay[index].unwrap_or(ProviderReplayWindow {
+            peer, highest_task: 0, epochs: [0; PROVIDER_REPLAY_TASKS],
+        });
+        if window.highest_task.saturating_sub(task) >= PROVIDER_REPLAY_TASKS as u64 {
+            return Err(ComputeError::StaleResult);
+        }
+        if task > window.highest_task {
+            let advance = task - window.highest_task;
+            if advance >= PROVIDER_REPLAY_TASKS as u64 {
+                window.epochs = [0; PROVIDER_REPLAY_TASKS];
+            } else {
+                for offset in 1..=advance {
+                    window.epochs[((window.highest_task + offset) % PROVIDER_REPLAY_TASKS as u64) as usize] = 0;
+                }
+            }
+            window.highest_task = task;
+        }
+        let slot = (task % PROVIDER_REPLAY_TASKS as u64) as usize;
+        if epoch <= window.epochs[slot] { return Err(ComputeError::StaleResult); }
+        window.epochs[slot] = epoch;
+        Ok((index, window))
+    }
+
+    // ------------------------=
     // FUNC: expire
     // DESC: Terminates remote contexts whose declared deadline has elapsed even when no further request arrives.
     // ------------------=
@@ -317,6 +360,12 @@ impl RemoteComputeExecutor {
             })
         });
         if dispatch.operation == super::iop::OperationId::ComputeCancel as u32 {
+            // A cancellation can arrive before the initial request. Fence that epoch too.
+            match self.next_replay_window(peer, dispatch.task_id, dispatch.epoch) {
+                Ok((index, window)) => self.replay[index] = Some(window),
+                Err(ComputeError::StaleResult) => {},
+                Err(error) => return Err(error),
+            }
             if let Some(index) = matching {
                 if let Some(active) = self.active[index].take() {
                     let _ = execution.destroy(active.context);
@@ -338,9 +387,12 @@ impl RemoteComputeExecutor {
             }
             return Err(ComputeError::DeadlineExceeded);
         }
+        if !self.limits.enabled { return Err(ComputeError::ResourceUnavailable); }
         let index = if let Some(index) = matching {
             index
         } else {
+            if dispatch.used_ticks != 0 { return Err(ComputeError::StaleResult); }
+            let (replay_index, replay_window) = self.next_replay_window(peer, dispatch.task_id, dispatch.epoch)?;
             if self
                 .active
                 .iter()
@@ -362,6 +414,7 @@ impl RemoteComputeExecutor {
                 return Err(ComputeError::ResourceUnavailable);
             }
             let handle = create_remote_context(dispatch, execution)?;
+            self.replay[replay_index] = Some(replay_window);
             self.active[index] = Some(RemoteExecution {
                 peer,
                 lease_expires: now.saturating_add(60),

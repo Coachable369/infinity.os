@@ -22,7 +22,20 @@ charge, and inconsistent remaining-work reports are rejected without mutation.
 - Duplicate/invalid-progress and failover retest: 1 passed;
   `builds/manifests/20261125T180435578730Z-79132.json`.
 
-Remaining: provider replay fencing after termination, real Python/native remote
+Provider terminal replay is now fenced by a bounded per-consumer epoch window.
+Completion, cancellation (including cancellation before admission), lease expiry,
+and disconnect retain the fence. Old requests cannot allocate fresh contexts;
+unseen reordered tasks and newer epochs remain admissible. Exhausting the peer
+history fails closed instead of evicting replay protection. This history is
+runtime-only: reboot persistence and lost-result response replay remain open.
+
+- Red reproduction: `builds/manifests/20261125T180603155932Z-79426.json`.
+- Full host retest: 248 passed, 0 failed, 1 ignored;
+  `builds/manifests/20261125T180940673066Z-79646.json`.
+- Cancellation ordering, epoch, consumer isolation and window rollover: 1 passed;
+  `builds/manifests/20261125T181058574169Z-79727.json`.
+
+Remaining: durable provider replay history, real Python/native remote
 execution and output streaming, physical remote-memory allocation, operational
 GPU/inference providers, complete native management clients, and independent
 installed-node verification. No ISO containing this QA fix has been published.
@@ -51,7 +64,7 @@ installed-node verification. No ISO containing this QA fix has been published.
 - Require a current ResourcePolicyModify capability and expected revision to alter provider limits. Disabling contributions reclaims live contexts.
 - Reclaim remote contexts on consumer disconnect or expiry of a provider-owned 60-time-unit inactivity lease, even if a consumer supplied no deadline.
 
-The provider policy is currently a runtime API, not reboot-persistent configuration. Existing remote execution is still bounded built-in work, not arbitrary Python. A stale continuation after lease expiry still needs explicit replay-fencing coverage before general workload support. No desktop audio pipeline implementation was changed.
+The provider policy is currently a runtime API, not reboot-persistent configuration. Existing remote execution is still bounded built-in work, not arbitrary Python. Runtime replay protection now covers stale requests after lease expiry; durable replay history remains required before general workload support. No desktop audio pipeline implementation was changed.
 
 ## Verification scope
 
