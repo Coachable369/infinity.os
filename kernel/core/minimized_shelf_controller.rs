@@ -192,6 +192,9 @@ impl ConsoleRuntime {
         }
         shelf::publish(state);
         if state != old {
+            // Begin expansion, exit and gap transitions on this pointer event too.
+            shelf::animate(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,
+                self.spatial.state.reduced_motion);
             self.redraw();
         } else if consumed {
             crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);

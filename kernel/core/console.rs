@@ -15342,7 +15342,8 @@ pub fn ui_animation_tick(defer_decoration: bool) -> bool {
             widget_changed|=keys::advance(3,if minimized_shelf::current().hover.is_some(){255}else{0},now,reduced);
 
         }
-        if matches!(runtime.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !defer_decoration {
+        // Pointer-owned tray motion must not be deferred with decorative effects.
+        if matches!(runtime.mode,ConsoleMode::Desktop|ConsoleMode::Settings) {
             widget_changed|=crate::ui::app_launcher::minimized_shelf::animate(crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,runtime.spatial.state.reduced_motion);
         }
         let mut frame_changed = widget_changed || motion_frame || assistant_changed || effects_changed;

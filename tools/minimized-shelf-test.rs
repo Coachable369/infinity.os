@@ -278,9 +278,9 @@ fn connected_bubble_has_concave_shoulders() {
 fn hover_bubble_grows_and_reverses_continuously() {
     let mut state=State::new();state.set(EDITOR,true);state.hover=Some(EDITOR);state.expanded=true;state.row=Some(0);
     publish(state);animate(0,true);
-    state.row=Some(3);publish(state);animate(100,false);animate(210,false);
+    state.row=Some(3);publish(state);animate(100,false);animate(145,false);
     let (hover,tail)=bubble_state();assert!(hover[3]>0 && hover[3]<255);assert_eq!(presentation().1,0);assert_eq!(tail,0);
-    let before=hover[3];state.row=Some(1);publish(state);animate(210,false);assert_eq!(bubble_state().0[3],before);
+    let before=hover[3];state.row=Some(1);publish(state);animate(145,false);assert_eq!(bubble_state().0[3],before);
     animate(350,false);assert_eq!(bubble_state().0[1],255);assert_eq!(bubble_state().0[3],0);
     state.row=Some(4);state.selected_row=4;publish(state);animate(601,true);assert_eq!(bubble_state().0[4],255);assert_eq!(bubble_state().1,1024);
     publish(State::new());animate(602,true);
@@ -320,4 +320,22 @@ fn settled_hover_damage_is_bounded_to_actions() {
     assert!(r.height<g.rail.height);
     for i in 0..ACTIONS.len() {let a=g.action_rect(i);assert!(r.contains(Point{x:a.x,y:a.y}));assert!(r.contains(Point{x:a.right()-1,y:a.bottom()-1}));}
     publish(State::new());animate(0,true);
+}
+
+#[test]
+// ------------------------=
+// FUNC: hover_feedback_settles_within_ninety_ms
+// DESC: Measures fast pointer feedback, reversal, and reduced-motion endpoints without changing selection.
+// ------------------=
+fn hover_feedback_settles_within_ninety_ms() {
+    let mut state=State::new();state.set(EDITOR,true);state.hover=Some(EDITOR);state.expanded=true;
+    publish(state);animate(0,true);
+    state.row=Some(2);publish(state);animate(100,false);
+    animate(116,false);assert!(bubble_state().0[2]>=20);
+    animate(145,false);assert!(bubble_state().0[2]>=127);
+    animate(190,false);assert_eq!(bubble_state().0[2],255);
+    assert_eq!(presentation().1,0);
+    state.row=None;publish(state);animate(200,false);
+    animate(290,false);assert_eq!(bubble_state().0[2],0);
+    publish(State::new());animate(300,true);
 }

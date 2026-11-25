@@ -95,3 +95,11 @@ The timed production-painter regression compares each 16 ms expansion/rapid-hove
 frame against complete composition. Endpoint, partial-frame and motion checks pass.
 Reference render: `builds/validation/task-tray-bubble/endpoint-fixed.png`.
 Installed-VM latency has not been measured by these host renderer checks.
+
+## Direct hover feedback
+
+Tray motion remains eligible during busy interactive frames instead of sharing the
+decoration deferral gate. Expansion, row exit, and row entry clocks start on
+pointer delivery. Hover settles in 90 ms (previously 140 ms), reaches half strength
+within 45 ms, and reverses continuously. Rail geometry, glass material, selection
+travel, and reduced-motion endpoints remain unchanged.

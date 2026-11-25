@@ -456,7 +456,7 @@ pub fn animate(now: u64, reduced: bool) -> bool {
         for i in 0..5 {
             let destination=if s.expanded && s.row==Some(i) {255}else{0};
             if (*(&raw const HOVER_TARGETS))[i]!=destination || reduced {
-                (*(&raw mut HOVER))[i].retarget(destination,now,140,reduced);
+                (*(&raw mut HOVER))[i].retarget(destination,now,90,reduced);
                 (*(&raw mut HOVER_TARGETS))[i]=destination;
             }
             let value=(*(&raw const HOVER))[i].value(now);

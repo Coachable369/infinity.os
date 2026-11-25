@@ -136,7 +136,7 @@ impl DisplayDevice {
                 // The clip has a raised, softly shaded glass row, not a flat pill.
                 for line in 0..ah {
                     let radius=ah/2;
-                    let dy=if line<radius {radius-line}else{line-(ah-radius)};
+                    let dy=if line<radius {radius-line}else{line.saturating_sub(ah-radius)};
                     let inset=radius-shelf::circle_extent(radius as i32,dy as i32)as usize;
                     let alpha=(44usize.saturating_sub(line*24/ah))*opacity as usize/255;
                     self.fill_rect_alpha(ax+inset,ay+line,aw.saturating_sub(inset*2),1,174,204,238,alpha as u8);
