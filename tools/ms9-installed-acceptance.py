@@ -44,7 +44,10 @@ class Guest:
     # FUNC: __init__
     # DESC: Creates one isolated machine with a unique blank disk and independently booted installed generation.
     # ------------------=
-    def __init__(self, work, number, firmware, reuse=False, width=2048, height=2048, memory_mb=4096):
+    def __init__(self, work, number, firmware, reuse=False, width=2048, height=2048, memory_mb=4096,
+                 arch="x86_64", acceleration="tcg"):
+        assert arch in ("x86_64", "aarch64") and acceleration in ("tcg", "hvf")
+        self.arch, self.acceleration = arch, acceleration
         self.work = work / f"node-{number}"
         if not reuse:
             self.work.mkdir()
@@ -94,7 +97,22 @@ class Guest:
                    "-netdev", (f"socket,id=net,{'listen' if self.number == 1 and not self.mesh_connect else 'connect'}=127.0.0.1:{self.mesh_port}" if self.mesh_port else "user,id=net"), "-device", f"e1000,netdev=net,mac=02:00:00:00:09:{self.number:02x}",
                    "-object", "rng-random,id=rng0,filename=/dev/urandom", "-device", "virtio-rng-pci,rng=rng0",
                    "-qmp", f"unix:{qmp},server=on,wait=off", "-display", "none", "-serial", "stdio", "-no-reboot"]
-        if installer:
+        if self.arch == "aarch64":
+            command = ["qemu-system-aarch64", "-machine", "virt", "-accel", self.acceleration,
+                       "-cpu", "host" if self.acceleration == "hvf" else "max", "-smp", "2",
+                       "-m", f"{self.memory_mb}M", "-bios", self.firmware,
+                       "-device", "ramfb", "-device", "virtio-rng-pci",
+                       "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse",
+                       "-device", "virtio-scsi-pci", "-drive", f"if=none,id=disk,format=raw,file={self.disk}",
+                       "-device", "scsi-hd,drive=disk,bootindex=1",
+                       "-netdev", (f"socket,id=net,connect=127.0.0.1:{self.mesh_port}" if self.mesh_port else "user,id=net"),
+                       "-device", f"e1000,netdev=net,mac=02:00:00:00:09:{self.number:02x}",
+                       "-qmp", f"unix:{qmp},server=on,wait=off", "-display", "none",
+                       "-serial", "stdio", "-monitor", "none", "-no-reboot"]
+            if installer:
+                command += ["-drive", f"if=none,id=cd,format=raw,media=cdrom,file={self.work.parent / 'artifacts/installer.iso'}",
+                            "-device", "scsi-cd,drive=cd,bootindex=0"]
+        elif installer:
             command += ["-cdrom", str(self.work.parent / "artifacts/installer.iso"), "-boot", "order=d"]
         else:
             command += ["-boot", "order=c"]
@@ -207,11 +225,10 @@ class Guest:
             time.sleep(.25)
         self.screenshot("failure")
         self.frame_report("failure")
-        registers = self.qmp("human-monitor-command", {"command-line": "info registers"})
-        # Only execution addresses; never persist vector/general register
-        # contents that may retain credentials or cryptographic intermediates.
-        (self.work / "failure-registers.json").write_text(json.dumps(dict(
-            re.findall(r"\b(RIP|RSP|RBP)=([0-9a-fA-F]+)", registers))))
+        # Preserve the actual failed predicate before any optional diagnostics.
+        # HVF register inspection can block indefinitely on a running vCPU.
+        (self.work / "failure-state.json").write_text(json.dumps({
+            "stage": label, "state": last}))
         raise AssertionError({"stage": label, "state": last})
 
     # ------------------------=
@@ -425,8 +442,15 @@ class Guest:
                     "poll_resolution_ms": 250, "samples_ns": self.input_latency_ns,
                     "performance_acceptance": False}))
             if self.process.poll() is None:
-                self.qmp("quit")
-            self.process.wait(timeout=20)
+                try:
+                    self.qmp("quit")
+                except (OSError, EOFError, ValueError, AssertionError):
+                    self.process.terminate()
+            try:
+                self.process.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=20)
             self.channel.close()
             self.sock.close()
             self.log.close()

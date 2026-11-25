@@ -491,11 +491,9 @@ impl RemoteComputeExecutor {
             })
         });
         if dispatch.operation == super::iop::OperationId::ComputeCancel as u32 {
-            if matching.is_none() && self.active.iter().flatten().any(|active| {
-                active.task_id == dispatch.task_id && active.peer != peer
-            }) {
-                return Err(ComputeError::AccessDenied);
-            }
+            // Task numbers belong to the authenticated consumer. A cancellation
+            // before admission fences only this peer's epoch, even when another
+            // peer already has an unrelated job with the same numeric ID.
             // A cancellation can arrive before the initial request. Fence that epoch too.
             match self.next_replay_window(peer, dispatch.task_id, dispatch.epoch) {
                 Ok((index, window)) => self.commit_replay(index, window, commit)?,

@@ -5,9 +5,9 @@ Status: **in progress; not a completed milestone or release**.
 ## End-to-end QA checkpoint — 2026-11-25
 
 The current acceptance specification contains 178 criteria. The working matrix
-and environment inventory are under `builds/validation/ms18-qa/`. No independent
-installed-node acceptance has passed in this QA run. Host checks below are not
-distributed execution proof. MS19 peripheral sharing and MS20 handoff are outside
+and environment inventory are under `builds/validation/ms18-qa/`. Independent installed-node checks now pass for the bounded compute foundation,
+as recorded below. Actual Python/native application and provider-memory acceptance
+remain open. Host checks below are not distributed execution proof. MS19 peripheral sharing and MS20 handoff are outside
 this audit; existing peripheral categories do not establish those capabilities.
 
 One reproduced defect is fixed: after a partially executed job lost its provider,
@@ -251,3 +251,30 @@ Host command/broker suite: 255 passed, 0 failed, 1 ignored, 46.73 seconds;
 exercise the durable broker; overflow, invalid booleans, absent consent and query
 as mutation are rejected. Native console rendering and installed command dispatch
 remain to be verified in the next ARM kernel.
+
+### Independent installed ARM bounded-workload verification
+
+Three independently installed ARM guests completed the detached-media compute
+run. Structured native state verified concurrent consumers with identical task
+numbers, independent cancellation, checksum completion, revoked-authority denial,
+deadline cleanup, provider loss and restart on a third node, rejection of a stale
+result after the provider returned, and consumer reboot persistence. Opening Task
+Manager preserved the same authoritative task state; this does not prove complete
+Fabric Manager UI acceptance.
+
+- Receipt: `builds/validation/ms18-arm-durable-installed/ms11-result.json`.
+- Manifest: `builds/manifests/20261125T204935877426Z-17566.json`.
+- Three ARM QEMU/HVF guests, separate disks and identities, 2 vCPUs and 16 GiB
+  each, independent E1000 devices; ISO detached throughout runtime verification.
+- Workloads were built-in counters/checksums, not Python/native executables.
+  Memory values were execution reservations, not proof of physical provider RAM use.
+- Test media contains the durable provider foundation, not the subsequent console,
+  advertisement-limit or early-cancellation changes. No new x86 build was run.
+
+A separate cancellation fix scopes pre-admission cancellation to the authenticated
+consumer even when another consumer uses the same task number. The other consumer's
+allocation remains live; the cancelled epoch remains fenced across checkpoint restore.
+
+Cancellation regression suite: 257 passed, 0 failed, 1 ignored, 46.82 seconds;
+manifest `builds/manifests/20261125T210159478639Z-17959.json`. This latest
+fix is host-verified and not yet in the installed-node test media or published ISO.

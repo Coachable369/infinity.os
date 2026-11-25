@@ -9,6 +9,9 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import os
+import subprocess
+import tempfile
 import shutil
 import struct
 import time
@@ -20,6 +23,20 @@ SPEC = importlib.util.spec_from_file_location(
     "installed", pathlib.Path(__file__).with_name("ms9-installed-acceptance.py"))
 INSTALLED = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(INSTALLED)
+
+
+# ------------------------=
+# FUNC: installed_guest
+# DESC: Creates a current-kernel guest with sufficient addressable RAM and bounded boot/install deadlines.
+# ------------------=
+def installed_guest(work, number, firmware, reuse=False):
+    config = json.loads((work / "artifacts/environment.json").read_text())
+    guest = INSTALLED.Guest(work, number, firmware, reuse=reuse,
+                            width=1280, height=800, memory_mb=config.get("memory_mib_per_node", 16384),
+                            arch=config["arch"], acceleration=config["acceleration"])
+    guest.boot_timeout_seconds = 1200
+    guest.install_timeout_seconds = 1800
+    return guest
 
 
 # ------------------------=
@@ -277,22 +294,66 @@ def configure_network(guest, count):
 # FUNC: prepare
 # DESC: Creates three independent fresh installs and proves each identity survives cold detached-media boot.
 # ------------------=
-def prepare(work, firmware):
+def prepare(work, firmware, arch, acceleration, source):
     work.mkdir(parents=True, exist_ok=False)
     artifacts = work / "artifacts"
     artifacts.mkdir()
     hashes = {}
-    for source, name in [(ROOT / "builds/InfinityOS-x86_64.iso", "installer.iso"),
-                         (ROOT / "build/x86_64/kernel.elf", "kernel.elf"),
-                         (ROOT / "build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
-        target = artifacts / name
+    source = source.resolve()
+    source.relative_to(ROOT)
+    (artifacts / "environment.json").write_text(json.dumps({
+        "arch": arch, "acceleration": acceleration, "source_media": str(source),
+        "memory_mib_per_node": 16384,
+        "firmware": str(pathlib.Path(firmware).resolve()),
+    }, indent=2))
+    target = artifacts / "installer.iso"
+    if os.uname().sysname == "Darwin":
+        subprocess.run(["cp", "-c", str(source), str(target)], check=True)
+    else:
         shutil.copyfile(source, target)
-        with target.open("rb") as stream:
+    # Debug metadata must come from the actual media, never loose ELF files
+    # that may have changed since the installer was published.
+    with tempfile.TemporaryDirectory(prefix="fabric-media-", dir=ROOT / "build/tmp") as temporary:
+        temporary = pathlib.Path(temporary)
+        subprocess.run(["xorriso", "-osirrox", "on", "-indev", str(target),
+                        "-extract", "/efi.img", str(temporary / "boot.img")], check=True)
+        subprocess.run(["mcopy", "-i", str(temporary / "boot.img"),
+                        "::/EFI/INFINITY/KERNEL.ELF", str(artifacts / "kernel.elf")], check=True)
+        subprocess.run(["mcopy", "-i", str(temporary / "boot.img"),
+                        "::/EFI/INFINITY/PAYLOAD/P1-*.BIN", str(temporary)], check=True)
+        parts = sorted(temporary.glob("P1-*.BIN"))
+        assert parts and len(parts) <= 8
+        assert [part.name for part in parts] == [f"P1-{i:03}.BIN" for i in range(len(parts))]
+        with (artifacts / "installed-kernel.elf").open("wb") as output:
+            for part in parts:
+                with part.open("rb") as source_stream:
+                    shutil.copyfileobj(source_stream, output, 1024 * 1024)
+    for name in ("installer.iso", "kernel.elf", "installed-kernel.elf"):
+        with (artifacts / name).open("rb") as stream:
+            if name.endswith(".elf"):
+                header = stream.read(64)
+                assert header[:6] == b"\x7fELF\x02\x01" and int.from_bytes(header[18:20], "little") == (183 if arch == "aarch64" else 62)
+                if arch == "aarch64":
+                    offset = struct.unpack_from("<Q", header, 32)[0]
+                    size, count = struct.unpack_from("<HH", header, 54)
+                    assert size >= 56 and 0 < count <= 64
+                    loads = []
+                    for index in range(count):
+                        stream.seek(offset + index * size)
+                        segment = struct.unpack("<IIQQQQQQ", stream.read(56))
+                        if segment[0] == 1 and segment[6]:
+                            loads.append((segment[4], segment[4] + segment[6]))
+                    assert loads and all(0x40000000 <= start < end <= 0x440000000
+                                         for start, end in loads), {
+                        "incompatible_qemu_load_ranges": loads, "media": str(source),
+                        "required": "package-aarch64-qemu",
+                    }
+                stream.seek(0)
             hashes[name] = hashlib.file_digest(stream, "sha256").hexdigest()
     (artifacts / "sha256.json").write_text(json.dumps(hashes, indent=2))
     results = []
     for number in range(1, 4):
-        guest = INSTALLED.Guest(work, number, firmware, memory_mb=4096)
+        guest = installed_guest(work, number, firmware)
         try:
             guest.install()
             guest.stop()
@@ -302,6 +363,16 @@ def prepare(work, firmware):
     assert len({result["node_id"] for result in results}) == 3
     (work / "result.json").write_text(json.dumps({
         "independent_installs": 3, "iso_detached": True, "nodes": results,
+        "media_sha256": hashes,
+        "environment": {
+            "architecture": arch, "emulator": f"QEMU {acceleration}",
+            "source_media": str(source),
+            "vcpus_per_node": 2 if arch == "aarch64" else 1, "memory_mib_per_node": 16384,
+            "disk_bytes_per_node": 32 * 1024**3,
+            "network": "independent e1000 devices through EthernetHub",
+            "gpu_compute_verified": False,
+            "execution_under_test": "native bounded counter and checksum workloads",
+        },
     }, indent=2))
 
 
@@ -315,10 +386,11 @@ def installed_acceptance(work, firmware):
     expected = [entry["node_id"] for entry in receipt["nodes"]]
     hub = EthernetHub(3, metadata_limit=8192).start()
     guests = []
-    evidence = {"boundary": "three independently installed detached-media QEMU guests"}
+    evidence = {"boundary": "three independently installed detached-media QEMU guests",
+                "installation": receipt}
     try:
         for number in range(1, 4):
-            guest = INSTALLED.Guest(work, number, firmware, reuse=True, memory_mb=1024)
+            guest = installed_guest(work, number, firmware, reuse=True)
             guest.mesh_port, guest.mesh_connect = hub.port, True
             guest.boot(False)
             guests.append(guest)
@@ -369,6 +441,39 @@ def installed_acceptance(work, firmware):
 
         a.launch("command", 5)
         compute_capability = authorize_compute(a, 11)
+        # Two independently installed consumers start at task ID 1. Both must
+        # execute concurrently on B without sharing context ownership.
+        pair(b, c)
+        c.launch("command", 5)
+        policy(c, bid, "object", 0)
+        advertise_to_c = grant(c, bid, "resource-advertise", 0)
+        b.launch("command", 5)
+        b.command(f"pool advertise peer=node:{cid} grant={advertise_to_c}")
+        c.wait_compute(lambda values: values[10] >= 2 and values[11] >= 2,
+                       "B resources published to second consumer", timeout=180)
+        policy(b, cid, "compute", 11)
+        c_grants = (grant(b, cid, "compute-request", 11),
+                    grant(b, cid, "compute-cancel", 11))
+        c.launch("command", 5)
+        c_authority = authorize_compute(c, 11)
+        a.launch("command", 5)
+        a_job = submit(a, compute_capability, "counter", "restartable", 1_000_000, 900,
+                       bid, grants["b"])
+        c_job = submit(c, c_authority, "counter", "restartable", 1_000_000, 900,
+                       bid, c_grants)
+        assert a_job == c_job, {"first_consumer": a_job, "second_consumer": c_job}
+        b.wait_compute(lambda values: values[5] == 2, "independent colliding jobs active", timeout=180)
+        a_cancel = authorize_cancel(a, a_job)
+        a.command(f"compute cancel {a_job} {a_cancel}")
+        wait_task(a, a_job, lambda task, _: task["state"] == 6, "first consumer cancelled")
+        b.wait_compute(lambda values: values[5] == 1, "second consumer remains active")
+        wait_task(c, c_job, lambda task, _: task["state"] == 3, "other consumer unaffected")
+        c_cancel = authorize_cancel(c, c_job)
+        c.command(f"compute cancel {c_job} {c_cancel}")
+        wait_task(c, c_job, lambda task, _: task["state"] == 6, "second consumer cancelled")
+        b.wait_compute(lambda values: values[5] == 0, "both provider contexts released")
+        evidence["concurrent_consumer_task_ids"] = {"task_id": a_job, "independent_cancel": True}
+
         first = submit(a, compute_capability, "checksum", "restartable", 4096, 600,
                        bid, grants["b"])
         wait_task(a, first, lambda current, _: current["node"] == bid and current["state"] in (2, 3),
@@ -426,7 +531,7 @@ def installed_acceptance(work, firmware):
         assert recovered["epoch"] == 2 and recovered["node"] == cid and recovered["restarts"] == 1
         evidence["restartable_recovery"] = recovered
 
-        b = INSTALLED.Guest(work, 2, firmware, reuse=True, memory_mb=1024)
+        b = installed_guest(work, 2, firmware, reuse=True)
         b.mesh_port, b.mesh_connect = hub.port, True
         b.boot(False)
         guests[1] = b
@@ -450,7 +555,7 @@ def installed_acceptance(work, firmware):
         persisted = {entry["id"]: (entry["epoch"], entry["state"], entry["node"], entry["digest"])
                      for entry in tasks(a.compute_state())}
         a.stop()
-        a = INSTALLED.Guest(work, 1, firmware, reuse=True, memory_mb=1024)
+        a = installed_guest(work, 1, firmware, reuse=True)
         a.mesh_port, a.mesh_connect = hub.port, True
         a.boot(False)
         guests[0] = a
@@ -462,6 +567,11 @@ def installed_acceptance(work, firmware):
         evidence["ethernet"] = hub.traffic_snapshot()
         evidence["iso_attached_during_runtime"] = False
         (work / "ms11-result.json").write_text(json.dumps(evidence, indent=2))
+    except Exception as error:
+        evidence["failure"] = {"type": type(error).__name__, "detail": str(error)}
+        evidence["ethernet"] = hub.traffic_snapshot()
+        (work / "ms11-failure.json").write_text(json.dumps(evidence, indent=2))
+        raise
     finally:
         for guest in guests:
             guest.stop()
@@ -475,14 +585,26 @@ def installed_acceptance(work, firmware):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True, type=pathlib.Path)
-    parser.add_argument("--firmware", default="/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
+    parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
+    parser.add_argument("--accel", choices=("hvf", "tcg"), default="tcg")
+    parser.add_argument("--firmware")
+    parser.add_argument("--iso", type=pathlib.Path,
+                        help="Repository-local machine-compatible installer media; preserved in the receipt")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--run-only", action="store_true")
     args = parser.parse_args()
     assert not (args.prepare_only and args.run_only)
     work = args.output.resolve()
+    work.relative_to(ROOT / "builds/validation")
+    if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
+        raise SystemExit("Run through build-kit")
+    if args.firmware is None:
+        args.firmware = f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd"
+    if args.iso is None:
+        args.iso = ROOT / ("build/test-media/InfinityOS-aarch64-qemu-models.bootmedia"
+                          if args.arch == "aarch64" else "builds/InfinityOS-x86_64.iso")
     if not args.run_only:
-        prepare(work, args.firmware)
+        prepare(work, args.firmware, args.arch, args.accel, args.iso)
     if not args.prepare_only:
         installed_acceptance(work, args.firmware)
 

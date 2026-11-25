@@ -1398,8 +1398,8 @@ fn remote_executor_retains_and_cancels_live_bounded_contexts() {
     assert_eq!((remote.active_count(), execution.count()), (1, 1));
     let mut cancel = request;
     cancel.operation = OperationId::ComputeCancel as u32;
-    assert_eq!(remote.execute(cancel, &mut execution, node, NodeId([46; 32]), 9),
-        Err(super::super::super::compute::ComputeError::AccessDenied));
+    assert_eq!(remote.execute(cancel, &mut execution, node, NodeId([46; 32]), 9).unwrap().state,
+        ComputeState::Cancelled as u8);
     assert_eq!((remote.active_count(), execution.count()), (1, 1));
     let cancelled = remote.execute(cancel, &mut execution, node, NodeId([45; 32]), 10).unwrap();
     assert_eq!(
@@ -2425,4 +2425,44 @@ fn provider_durable_fences_survive_reboot_and_failed_commits_admit_no_work() {
     disk[500] ^= 1;
     assert_eq!(reboot.restore_provider_state(&disk), Err(ComputeError::InvalidRequest));
     assert_eq!(reboot.encode_provider_state(), baseline);
+}
+
+#[test]
+// ------------------------=
+// FUNC: early_cancellation_is_scoped_to_consumer_despite_colliding_task_number
+// DESC: Cancels a not-yet-arrived job without observing or disturbing another consumer and durably rejects its later arrival.
+// ------------------=
+fn early_cancellation_is_scoped_to_consumer_despite_colliding_task_number() {
+    use crate::runtime::compute::{ComputeError, ComputeState, RemoteComputeExecutor, PROVIDER_STATE_BYTES};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([44; 32]);
+    let first = NodeId([45; 32]);
+    let second = NodeId([46; 32]);
+    let mut execution = ExecutionManager::new();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut request = compute_payload(local);
+    request.deadline = 0;
+    request.work_units = 128;
+    let mut durable = [0u8; PROVIDER_STATE_BYTES];
+    let running = provider.execute_durable(request, &mut execution, local, first, 1,
+        &mut |state| { durable.copy_from_slice(state); true }).unwrap();
+    let allocation = provider.allocation();
+    let mut cancel = request;
+    cancel.operation = OperationId::ComputeCancel as u32;
+    let cancelled = provider.execute_durable(cancel, &mut execution, local, second, 2,
+        &mut |state| { durable.copy_from_slice(state); true }).unwrap();
+    assert_eq!(cancelled.state, ComputeState::Cancelled as u8);
+    assert_eq!(provider.allocation(), allocation);
+    assert_eq!(execution.count(), 1);
+    assert_eq!(provider.execute(request, &mut execution, local, second, 3), Err(ComputeError::StaleResult));
+    let mut continuation = request;
+    continuation.used_ticks = running.used_ticks;
+    continuation.work_units = running.work_units;
+    let completed = provider.execute(continuation, &mut execution, local, first, 4).unwrap();
+    assert_eq!(completed.state, ComputeState::Completed as u8);
+    assert_eq!(provider.allocation(), (0, 0, 0));
+    let mut restored = RemoteComputeExecutor::new();
+    restored.restore_provider_state(&durable).unwrap();
+    assert_eq!(restored.execute(request, &mut execution, local, second, 5), Err(ComputeError::StaleResult));
+    assert_eq!(execution.count(), 0);
 }
