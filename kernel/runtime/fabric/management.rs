@@ -159,3 +159,27 @@ pub fn decode_provider_update(node: &crate::runtime::console_language::Operation
         expected_revision: number(b"revision")?,
     })
 }
+
+// ------------------------=
+// FUNC: advertised_provider_resource
+// DESC: Limits advertised availability to the durable provider allowance while preserving measured physical capacity and resource identity.
+// ------------------=
+pub(crate) fn advertised_provider_resource(
+    mut resource: super::resources::Resource,
+    limits: crate::runtime::compute::ProviderComputeLimits,
+    allocation: (u64, u64, usize),
+) -> super::resources::Resource {
+    use super::resources::ResourceKind;
+    let allowance = match resource.kind {
+        ResourceKind::Compute => Some((limits.concurrent_tasks as u64)
+            .saturating_sub(allocation.2 as u64)
+            .min((limits.cpu_units as u64).saturating_sub(allocation.1))),
+        ResourceKind::Memory => Some(limits.memory_bytes.saturating_sub(allocation.0)),
+        _ => None,
+    };
+    if let Some(allowance) = allowance {
+        resource.available = if limits.enabled { resource.available.min(allowance) } else { 0 };
+        if !limits.enabled { resource.capabilities &= !1; }
+    }
+    resource
+}

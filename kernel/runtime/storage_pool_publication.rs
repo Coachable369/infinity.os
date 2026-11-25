@@ -273,6 +273,8 @@ fn step(r: &mut InfinityRuntime, now: u64) -> Result<bool, RemoteError> {
             .unwrap_or(0);
         resource.available = resource.available.saturating_sub(reserved);
         resource.reserved = 0;
+        resource = fabric::management::advertised_provider_resource(
+            resource, r.remote_compute.limits().0, r.remote_compute.allocation());
         resource.sequence = now.max(resource.sequence.saturating_add(1));
         resource
     };

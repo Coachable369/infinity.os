@@ -181,6 +181,8 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
                     .unwrap_or(0);
                 observed.available = observed.available.saturating_sub(reserved);
                 observed.reserved = 0;
+                observed = fabric::management::advertised_provider_resource(
+                    observed, r.remote_compute.limits().0, r.remote_compute.allocation());
                 observed.sequence = now.max(observed.sequence.saturating_add(1));
                 fabric::resource_protocol::encode(observed, 60)
                     .map_err(|_| RemoteError::MalformedRequest)?

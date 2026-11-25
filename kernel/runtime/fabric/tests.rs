@@ -772,3 +772,39 @@ fn provider_management_authenticates_persists_and_retires_authority() {
     assert_eq!(update_provider_from(&mut runtime, user, session, limits, revision, 4,
         &mut |_| panic!("locked session must not commit")), Err(ComputeError::AccessDenied));
 }
+
+// ------------------------=
+// FUNC: provider_advertisement_respects_limits_and_active_allocations
+// DESC: Verifies policy-disabled and fully allocated providers advertise no executable capacity without modifying physical inventory or unrelated storage.
+// ------------------=
+#[test]
+fn provider_advertisement_respects_limits_and_active_allocations() {
+    use super::management::advertised_provider_resource;
+    use crate::runtime::compute::ProviderComputeLimits;
+    let limits = ProviderComputeLimits { enabled: true, memory_bytes: 1024, cpu_units: 8, concurrent_tasks: 4 };
+    let original = resource(5, NodeId([7; 32]));
+    assert_eq!(advertised_provider_resource(original, limits, (512, 2, 1)), original);
+    for (kind, expected) in [(ResourceKind::Memory, 512), (ResourceKind::Compute, 3)] {
+        let local = Resource { kind, ..original };
+        let shared = advertised_provider_resource(local, limits, (512, 2, 1));
+        assert_eq!(shared.available, expected);
+        assert_eq!(shared.capacity, local.capacity);
+        assert_eq!(shared.id, local.id);
+        assert_eq!(local.available, 2048);
+        let packet = super::resource_protocol::encode(shared, 60).unwrap();
+        assert_eq!(super::resource_protocol::decode(packet, local.owner, 10).unwrap().available, expected);
+        let disabled = advertised_provider_resource(local, ProviderComputeLimits { enabled: false, ..limits }, (0, 0, 0));
+        assert_eq!(disabled.available, 0);
+        assert_eq!(disabled.capabilities & 1, 0);
+        let mut directory = Directory::new();
+        directory.observe_local(disabled, local.owner, 1).unwrap();
+        let capacity = directory.capacity(kind, NodeId([9; 32]), 2).unwrap();
+        assert_eq!(capacity.remote.usable_resources, 0);
+        assert_eq!(capacity.remote.capacity, 0);
+        assert_eq!(advertised_provider_resource(local, limits, (2048, 16, 8)).available, 0);
+    }
+    let compute = Resource { kind: ResourceKind::Compute, ..original };
+    assert_eq!(advertised_provider_resource(compute, limits, (0, 8, 0)).available, 0);
+    let scarce = Resource { kind: ResourceKind::Memory, available: 10, ..original };
+    assert_eq!(advertised_provider_resource(scarce, limits, (0, 0, 0)).available, 10);
+}

@@ -74,6 +74,26 @@ the epoch fence. This cache is bounded and runtime-only, not durable replay.
 
 ## Existing implementation audit
 
+### Provider advertisements and independent installation
+
+CPU and memory advertisements now cap available capacity at the durable sharing
+limits minus active provider allocations. Disabling contributions clears the
+shareable capability; consumers therefore do not count disabled resources as
+usable. Physical inventory and unrelated storage advertisements are preserved.
+Both transient and durable publication paths use the same projection.
+
+- Behavioral suite: 256 passed, 0 failed, 1 ignored, 46.72 seconds;
+  `builds/manifests/20261125T204319100638Z-16769.json`.
+- Three independent ARM QEMU/HVF installations completed configuration and
+  authenticated cold boot with installation media detached. Each retained a
+  distinct node identity. Receipt:
+  `builds/validation/ms18-arm-durable-installed/result.json`;
+  preparation manifest `builds/manifests/20261125T202751230791Z-16472.json`.
+- Those installed guests contain the durable provider management foundation,
+  not the later CLI and advertisement changes. Cross-node verification is still
+  pending. Installation success is not distributed-workload acceptance.
+- The advertisement change is not yet in the published ARM ISO.
+
 | Area | Existing implementation | Remaining requirement |
 |---|---|---|
 | Discovery and trust | `kernel/runtime/node/` provides discovery, durable identity, membership, grants and authenticated transport | Verify two independent installed nodes and hardware metadata updates |
