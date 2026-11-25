@@ -703,3 +703,50 @@ fn capacity_management_requires_active_owned_session() {
     runtime.identity.lock_session(session, user).unwrap();
     assert_eq!(inspect_capacity_from(&runtime, user, session, 10), Err(ResourceError::AccessDenied));
 }
+
+// ------------------------=
+// FUNC: provider_management_authenticates_persists_and_retires_authority
+// DESC: Exercises revisions, denied identities, failed persistence and repeated updates without leaking capabilities.
+// ------------------=
+#[test]
+fn provider_management_authenticates_persists_and_retires_authority() {
+    use crate::runtime::{InfinityRuntime, identity::StableId, compute::{ComputeError, RemoteComputeExecutor}};
+    use super::management::update_provider_from;
+    let mut runtime = InfinityRuntime::new(false);
+    runtime.define_bootstrap().unwrap();
+    runtime.start_all(0);
+    runtime.identity.create_machine(b"fabric-policy", 64, 1, 0).unwrap();
+    let user = runtime.identity.create_user(b"admin", b"Administrator", 0).unwrap().id;
+    runtime.identity.create_password(user, b"Fixture901", 0).unwrap();
+    let session = runtime.identity.create_session(user, b"Fixture901", 1).unwrap().id;
+    let baseline = runtime.remote_compute.limits();
+    let caps = runtime.capabilities.count();
+    let mut limits = baseline.0;
+    limits.enabled = false;
+    assert_eq!(update_provider_from(&mut runtime, StableId([0;16]), session, limits, baseline.1, 2,
+        &mut |_| panic!("unauthorized persistence")), Err(ComputeError::AccessDenied));
+    assert_eq!(update_provider_from(&mut runtime, user, session, limits, baseline.1, 2,
+        &mut |_| false), Err(ComputeError::InvalidState));
+    assert_eq!(runtime.remote_compute.limits(), baseline);
+    assert_eq!(runtime.capabilities.count(), caps);
+    let mut persisted = runtime.remote_compute.encode_provider_state();
+    let updated = update_provider_from(&mut runtime, user, session, limits, baseline.1, 2,
+        &mut |bytes| { persisted.copy_from_slice(bytes); true }).unwrap();
+    assert_eq!(updated.revision, baseline.1 + 1);
+    assert_eq!(updated.limits, limits);
+    assert_eq!(updated.active_tasks, 0);
+    let mut restored = RemoteComputeExecutor::new();
+    restored.restore_provider_state(&persisted).unwrap();
+    assert_eq!(restored.limits(), (limits, updated.revision));
+    assert_eq!(update_provider_from(&mut runtime, user, session, limits, baseline.1, 3,
+        &mut |_| panic!("stale revision must not commit")), Err(ComputeError::StaleResult));
+    for _ in 0..256 {
+        let revision = runtime.remote_compute.limits().1;
+        update_provider_from(&mut runtime, user, session, limits, revision, 3, &mut |_| true).unwrap();
+        assert_eq!(runtime.capabilities.count(), caps);
+    }
+    runtime.identity.lock_session(session, user).unwrap();
+    let revision = runtime.remote_compute.limits().1;
+    assert_eq!(update_provider_from(&mut runtime, user, session, limits, revision, 4,
+        &mut |_| panic!("locked session must not commit")), Err(ComputeError::AccessDenied));
+}

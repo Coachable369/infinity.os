@@ -1,5 +1,5 @@
-//! Read-only fabric management projection. All consumers use the existing
-//! resource directory; no second registry or cached capacity authority exists.
+//! Shared authenticated Fabric management. Capacity and provider policy use
+//! the existing authorities; clients cannot maintain competing state.
 use super::resources::{FabricCapacity, ResourceError, RESOURCE_KINDS};
 use crate::runtime::{InfinityRuntime, identity::{StableId, SessionState, MAX_SESSIONS, SESSION_IDENTITY_MANAGE}};
 
@@ -37,4 +37,86 @@ pub(crate) fn inspect_capacity_from(runtime: &InfinityRuntime, user: StableId, s
         snapshot.categories[index] = runtime.fabric_resources.capacity(*kind, local, now)?;
     }
     Ok(snapshot)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProviderSnapshot {
+    pub limits: crate::runtime::compute::ProviderComputeLimits,
+    pub revision: u64,
+    pub allocated_memory_bytes: u64,
+    pub allocated_cpu_units: u64,
+    pub active_tasks: usize,
+}
+
+// ------------------------=
+// FUNC: provider_authorized
+// DESC: Requires an active administrator-owned session before exposing or changing machine contribution policy.
+// ------------------=
+fn provider_authorized(runtime: &InfinityRuntime, user: StableId, session: StableId) -> bool {
+    runtime.identity.is_administrator(user)
+        && runtime.identity.console_session_authorized(session, user)
+        && (0..MAX_SESSIONS).filter_map(|i| runtime.identity.session_nth(i)).any(|candidate| {
+            candidate.id == session && candidate.user == user && candidate.state == SessionState::Active
+                && candidate.capabilities & SESSION_IDENTITY_MANAGE != 0
+        })
+}
+
+// ------------------------=
+// FUNC: provider_snapshot
+// DESC: Reads limits and allocation from the single authoritative provider rather than a client-side copy.
+// ------------------=
+fn provider_snapshot(runtime: &InfinityRuntime) -> ProviderSnapshot {
+    let (limits, revision) = runtime.remote_compute.limits();
+    let (allocated_memory_bytes, allocated_cpu_units, active_tasks) = runtime.remote_compute.allocation();
+    ProviderSnapshot { limits, revision, allocated_memory_bytes, allocated_cpu_units, active_tasks }
+}
+
+// ------------------------=
+// FUNC: inspect_provider
+// DESC: Provides one authenticated policy and usage API for Settings, console and AI clients.
+// ------------------=
+pub fn inspect_provider(user: StableId, session: StableId) -> Result<ProviderSnapshot, crate::runtime::compute::ComputeError> {
+    use crate::runtime::compute::ComputeError;
+    crate::runtime::with_runtime(|runtime| {
+        if !provider_authorized(runtime, user, session) { return Err(ComputeError::AccessDenied); }
+        Ok(provider_snapshot(runtime))
+    }).ok_or(ComputeError::InvalidState)?
+}
+
+// ------------------------=
+// FUNC: update_provider
+// DESC: Persists an administrator's revision-checked contribution change through the shared provider authority.
+// ------------------=
+pub fn update_provider(user: StableId, session: StableId,
+    limits: crate::runtime::compute::ProviderComputeLimits, expected_revision: u64,
+) -> Result<ProviderSnapshot, crate::runtime::compute::ComputeError> {
+    use crate::runtime::compute::ComputeError;
+    crate::runtime::with_runtime(|runtime| {
+        let now = runtime.node_clock.ok_or(ComputeError::InvalidState)?;
+        update_provider_from(runtime, user, session, limits, expected_revision, now,
+            &mut crate::runtime::persist_provider_state)
+    }).ok_or(ComputeError::InvalidState)?
+}
+
+// ------------------------=
+// FUNC: update_provider_from
+// DESC: Issues and retires a nondelegable one-operation capability only after authenticating the administrator session.
+// ------------------=
+pub(crate) fn update_provider_from(runtime: &mut InfinityRuntime, user: StableId, session: StableId,
+    limits: crate::runtime::compute::ProviderComputeLimits, expected_revision: u64, now: u64,
+    commit: &mut impl FnMut(&[u8]) -> bool,
+) -> Result<ProviderSnapshot, crate::runtime::compute::ComputeError> {
+    use crate::runtime::{compute::{ComputeError, PROVIDER_COMPUTE_POLICY_TARGET}, capability::CapabilityType};
+    if !provider_authorized(runtime, user, session) { return Err(ComputeError::AccessDenied); }
+    let caller = runtime.service_identity(crate::runtime::SERVICE_CONSOLE).ok_or(ComputeError::AccessDenied)?;
+    let expiry = now.checked_add(1).ok_or(ComputeError::InvalidState)?;
+    let capability = runtime.capabilities.grant(CapabilityType::ResourcePolicyModify,
+        PROVIDER_COMPUTE_POLICY_TARGET, 1, 0, caller, caller, Some(expiry), 0)
+        .map_err(|_| ComputeError::AccessDenied)?;
+    let result = runtime.remote_compute.set_limits_durable(limits, expected_revision, caller,
+        capability, &runtime.capabilities, &mut runtime.execution, now, commit);
+    let retired = runtime.capabilities.retire_leaf(capability, caller);
+    if retired.is_err() { return Err(ComputeError::InvalidState); }
+    result?;
+    Ok(provider_snapshot(runtime))
 }

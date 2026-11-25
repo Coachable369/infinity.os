@@ -192,3 +192,15 @@ failed model allocation; the same disk succeeded with 16 GiB. This establishes o
 node's installation and persistence only, not distributed acceptance.
 Evidence: `builds/validation/ms18-arm-installed-qemu/node-1/onboard-result.json`;
 manifest `builds/manifests/20261125T200428091505Z-12082.json`.
+
+### Shared provider management API
+
+The typed management broker now exposes current provider limits, revision and live
+allocation, plus durable revision-checked updates. Mutation requires the active
+administrator-owned session and a one-operation nondelegable capability, retired on
+both success and failure. GUI, CLI and AIKit client wiring remains open.
+
+Host suite: 255 passed, 0 failed, 1 ignored, 46.73 seconds;
+`builds/manifests/20261125T201331066349Z-12658.json`. Tests cover foreign and locked
+sessions, failed persistence, stale revisions, checkpoint restoration and 256
+successive updates without capability-slot leakage.
