@@ -27,7 +27,7 @@ Completion, cancellation (including cancellation before admission), lease expiry
 and disconnect retain the fence. Old requests cannot allocate fresh contexts;
 unseen reordered tasks and newer epochs remain admissible. Exhausting the peer
 history fails closed instead of evicting replay protection. This history is
-runtime-only: reboot persistence and lost-result response replay remain open.
+runtime-only: reboot persistence remains open. Lost-result retries are covered below.
 
 - Red reproduction: `builds/manifests/20261125T180603155932Z-79426.json`.
 - Full host retest: 248 passed, 0 failed, 1 ignored;
@@ -45,12 +45,32 @@ consumer; cancelling one job leaves the other running with independent accountin
   `builds/manifests/20261125T182147254631Z-80596.json`.
 - Prior two fixes compiled in live and installed ARM kernels:
   `builds/manifests/20261125T181204322003Z-79885.json`.
-  The latest concurrent-consumer fix still requires native compilation.
+  All three fixes subsequently compiled into both ARM kernel paths during release
+  run `20261125T182604410403Z-81207`. ARM packaging and parity passed; the
+  full run was stopped before x86 packaging at the user's request.
 
 Remaining: durable provider replay history, real Python/native remote
 execution and output streaming, physical remote-memory allocation, operational
 GPU/inference providers, complete native management clients, and independent
-installed-node verification. No ISO containing this QA fix has been published.
+installed-node verification. The ARM ISO published at 2026-11-25 13:19 CST
+contains these three fixes (SHA-256
+`7da6dbfe8775ceed7f688abdfd9157d8b0328e0a2e5f409803242702ef5e3126`).
+This does not establish installed-node acceptance. x86 rebuilding is deferred
+until feature acceptance, as explicitly requested by the user.
+
+### Lost-response recovery
+
+Exact authenticated retries now return the original bounded response without
+executing or charging work twice. The cache retains active slices during completed
+job churn; cancellation, disconnect, disable and expiry invalidate responses.
+Altered requests cannot use cached authorization. Terminal response eviction retains
+the epoch fence. This cache is bounded and runtime-only, not durable replay.
+
+- Host behavioral suite: 252 passed, 0 failed, 1 ignored, 45.91 seconds;
+  `builds/manifests/20261125T194513327153Z-8014.json`.
+- This latest change is not in the published ARM ISO yet.
+- ARM independent-install validation is being adapted using extracted ISO kernel
+  metadata and real fresh disks; no installed acceptance is claimed yet.
 
 ## Existing implementation audit
 

@@ -186,11 +186,21 @@ struct ProviderReplayWindow {
     epochs: [u32; PROVIDER_REPLAY_TASKS],
 }
 
+#[derive(Clone, Copy)]
+struct ProviderResponse {
+    peer: NodeId,
+    request: ComputeDispatchV1,
+    response: ComputeDispatchV1,
+    expires: u64,
+}
+
 pub struct RemoteComputeExecutor {
     active: [Option<RemoteExecution>; MAX_REMOTE_EXECUTIONS],
     replay: [Option<ProviderReplayWindow>; PROVIDER_REPLAY_PEERS],
     limits: ProviderComputeLimits,
     revision: u64,
+    responses: [Option<ProviderResponse>; MAX_REMOTE_EXECUTIONS * 2],
+    response_cursor: usize,
 }
 
 impl RemoteComputeExecutor {
@@ -209,6 +219,8 @@ impl RemoteComputeExecutor {
                 concurrent_tasks: MAX_REMOTE_EXECUTIONS as u16,
             },
             revision: 1,
+            responses: [None; MAX_REMOTE_EXECUTIONS * 2],
+            response_cursor: 0,
         }
     }
 
@@ -258,6 +270,7 @@ impl RemoteComputeExecutor {
         }
         let revision = self.revision.checked_add(1).ok_or(ComputeError::InvalidState)?;
         if !limits.enabled {
+            self.responses.fill(None);
             for slot in &mut self.active {
                 if let Some(task) = slot.take() { let _ = execution.destroy(task.context); }
             }
@@ -311,6 +324,9 @@ impl RemoteComputeExecutor {
     // DESC: Terminates remote contexts whose declared deadline has elapsed even when no further request arrives.
     // ------------------=
     pub fn expire(&mut self, execution: &mut ExecutionManager, now: u64) {
+        for cached in &mut self.responses {
+            if cached.is_some_and(|entry| now >= entry.expires) { *cached = None; }
+        }
         for slot in &mut self.active {
             if slot.is_some_and(|active| now >= active.lease_expires || (active.deadline != 0 && now >= active.deadline)) {
                 if let Some(active) = slot.take() {
@@ -325,6 +341,9 @@ impl RemoteComputeExecutor {
     // DESC: Reclaims only contexts owned by a disconnected authenticated consumer.
     // ------------------=
     pub fn disconnect(&mut self, peer: NodeId, execution: &mut ExecutionManager) {
+        for cached in &mut self.responses {
+            if cached.is_some_and(|entry| entry.peer == peer) { *cached = None; }
+        }
         for slot in &mut self.active {
             if slot.is_some_and(|task| task.peer == peer) {
                 if let Some(task) = slot.take() { let _ = execution.destroy(task.context); }
@@ -349,6 +368,7 @@ impl RemoteComputeExecutor {
         if dispatch.target_node != local || peer.0 == [0; 32] {
             return Err(ComputeError::AccessDenied);
         }
+        let original = dispatch;
         let matching = self.active.iter().position(|slot| {
             slot.is_some_and(|active| {
                 active.peer == peer && active.task_id == dispatch.task_id && active.epoch == dispatch.epoch
@@ -359,6 +379,12 @@ impl RemoteComputeExecutor {
                 active.task_id == dispatch.task_id && active.peer != peer
             }) {
                 return Err(ComputeError::AccessDenied);
+            }
+            // Never replay a running response after an acknowledged cancellation.
+            for cached in &mut self.responses {
+                if cached.is_some_and(|entry| entry.peer == peer
+                    && entry.request.task_id == dispatch.task_id
+                    && entry.request.epoch == dispatch.epoch) { *cached = None; }
             }
             // A cancellation can arrive before the initial request. Fence that epoch too.
             match self.next_replay_window(peer, dispatch.task_id, dispatch.epoch) {
@@ -388,6 +414,11 @@ impl RemoteComputeExecutor {
             return Err(ComputeError::DeadlineExceeded);
         }
         if !self.limits.enabled { return Err(ComputeError::ResourceUnavailable); }
+        // The authenticated transport may retry after losing the response. Return
+        // the exact result without executing or charging the slice a second time.
+        if let Some(cached) = self.responses.iter().flatten().find(|entry| {
+            entry.peer == peer && entry.request == dispatch
+        }) { return Ok(cached.response); }
         let index = if let Some(index) = matching {
             index
         } else {
@@ -473,6 +504,19 @@ impl RemoteComputeExecutor {
             dispatch.epoch,
             dispatch.used_ticks as u32,
         );
+        let index = self.responses.iter().position(|entry| entry.is_some_and(|entry|
+            entry.peer == peer && entry.request.task_id == original.task_id))
+            .or_else(|| self.responses.iter().position(Option::is_none))
+            .unwrap_or_else(|| (0..self.responses.len()).map(|offset|
+                (self.response_cursor + offset) % self.responses.len())
+                .find(|&slot| self.responses[slot].is_some_and(|cached|
+                    !self.active.iter().flatten().any(|active| active.peer == cached.peer
+                        && active.task_id == cached.request.task_id
+                        && active.epoch == cached.request.epoch)))
+                .expect("response slots exceed active execution slots"));
+        self.responses[index] = Some(ProviderResponse { peer, request: original,
+            response: dispatch, expires: now.saturating_add(60) });
+        self.response_cursor = (index + 1) % self.responses.len();
         Ok(dispatch)
     }
 }

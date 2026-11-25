@@ -2243,8 +2243,8 @@ fn provider_replay_window_handles_reordering_and_rollover() {
     provider.execute(cancel, &mut execution, local, peer, 1).unwrap();
     assert_eq!(provider.execute(request, &mut execution, local, peer, 2), Err(ComputeError::StaleResult));
     request.epoch += 1;
-    provider.execute(request, &mut execution, local, peer, 3).unwrap();
-    assert_eq!(provider.execute(request, &mut execution, local, peer, 4), Err(ComputeError::StaleResult));
+    let completed = provider.execute(request, &mut execution, local, peer, 3).unwrap();
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 4), Ok(completed));
     request.task_id = 99;
     provider.execute(request, &mut execution, local, peer, 5).unwrap();
     request.task_id = 164;
@@ -2294,4 +2294,78 @@ fn independent_consumers_can_share_task_numbers() {
     assert_eq!(result.state, ComputeState::Completed as u8);
     assert_eq!(provider.allocation(), (0, 0, 0));
     assert_eq!(execution.count(), 0);
+}
+
+#[test]
+// ------------------------=
+// FUNC: provider_retries_recover_lost_results_without_reexecution
+// DESC: Retries lost running and terminal responses with identical output and accounting; altered requests and cancelled or expired work cannot resume.
+// ------------------=
+fn provider_retries_recover_lost_results_without_reexecution() {
+    use crate::runtime::compute::{ComputeState, ComputeError, RemoteComputeExecutor};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([44; 32]);
+    let peer = NodeId([45; 32]);
+    let mut execution = ExecutionManager::new();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut request = compute_payload(local);
+    request.deadline = 0;
+    request.work_units = 128;
+    let first = provider.execute(request, &mut execution, local, peer, 1).unwrap();
+    let accounting = execution.nth(0).unwrap().usage;
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 2), Ok(first));
+    assert_eq!(execution.nth(0).unwrap().usage, accounting);
+    assert_eq!(execution.count(), 1);
+    let mut altered = request;
+    altered.input_refs[1] = [99; 16];
+    assert_eq!(provider.execute(altered, &mut execution, local, peer, 3), Err(ComputeError::InvalidRequest));
+    let mut continuation = request;
+    continuation.work_units = 64;
+    continuation.used_ticks = 64;
+    let final_result = provider.execute(continuation, &mut execution, local, peer, 4).unwrap();
+    assert_eq!(final_result.state, ComputeState::Completed as u8);
+    assert_eq!(provider.execute(continuation, &mut execution, local, peer, 5), Ok(final_result));
+    assert_eq!(execution.count(), 0);
+    assert_eq!(provider.allocation(), (0, 0, 0));
+    assert_eq!(provider.execute(continuation, &mut execution, local, NodeId([46; 32]), 6), Err(ComputeError::StaleResult));
+    assert_eq!(provider.execute(continuation, &mut execution, local, peer, 64), Err(ComputeError::StaleResult));
+    request.task_id += 1;
+    provider.execute(request, &mut execution, local, peer, 65).unwrap();
+    let mut cancel = request;
+    cancel.operation = OperationId::ComputeCancel as u32;
+    provider.execute(cancel, &mut execution, local, peer, 66).unwrap();
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 67), Err(ComputeError::StaleResult));
+    assert_eq!(execution.count(), 0);
+}
+
+#[test]
+// ------------------------=
+// FUNC: provider_response_churn_preserves_active_retry
+// DESC: Completed jobs cannot evict an active consumer's lost response or charge its retry twice.
+// ------------------=
+fn provider_response_churn_preserves_active_retry() {
+    use crate::runtime::compute::{ComputeState, RemoteComputeExecutor};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([47; 32]);
+    let peer = NodeId([48; 32]);
+    let mut execution = ExecutionManager::new();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut request = compute_payload(local);
+    request.deadline = 0;
+    request.work_units = 128;
+    let first = provider.execute(request, &mut execution, local, peer, 1).unwrap();
+    let usage = execution.nth(0).unwrap().usage;
+    for offset in 1..40 {
+        let mut short = request;
+        short.task_id += offset;
+        short.work_units = 1;
+        let result = provider.execute(short, &mut execution, local, peer, 2).unwrap();
+        assert_eq!(result.state, ComputeState::Completed as u8);
+    }
+    assert_eq!(provider.execute(request, &mut execution, local, peer, 3), Ok(first));
+    assert_eq!(execution.count(), 1);
+    assert_eq!(execution.nth(0).unwrap().usage, usage);
+    provider.disconnect(peer, &mut execution);
+    assert_eq!(execution.count(), 0);
+    assert!(provider.execute(request, &mut execution, local, peer, 4).is_err());
 }
