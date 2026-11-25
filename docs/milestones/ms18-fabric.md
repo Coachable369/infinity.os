@@ -36,6 +36,20 @@ Command: `./build-kit run env RUST_MIN_STACK=16777216 CARGO_TARGET_DIR=build/beh
 
 Previous foundation pass: 242 passed, 0 failed, 1 ignored; manifest `builds/manifests/20261125T083054309876Z-49394.json`. Lease/disconnect extension: 243 passed, 0 failed, 1 ignored in 51.29 seconds; manifest `builds/manifests/20261125T083432426531Z-49495.json`.
 
+## Capacity-management checkpoint
+
+The shared read-only management API now authenticates an active owned session and
+projects capacity from the existing directory. Internal local/provider breakdowns
+are diagnostics, not an application placement requirement. The intended public
+allocation contract remains one unified pool with automatic placement.
+
+Behavioral coverage checks reservations, provider deduplication, expired/offline/
+unshared resources, integer overflow, and rejected foreign or locked sessions.
+Result: 246 passed, 0 failed, 1 ignored; manifest
+`builds/manifests/20261125T084547148833Z-51615.json`.
+This checkpoint adds no hardware providers or remotely addressable RAM and is not
+end-to-end resource pooling acceptance.
+
 ## Milestone acceptance matrix
 
 All entries remain NOT TESTED at the required end-to-end acceptance level. Unit-level evidence does not promote a broader criterion to PASS.

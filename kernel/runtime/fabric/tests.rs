@@ -635,3 +635,71 @@ fn unified_resource_wire_categories_preserve_legacy_and_isolation() {
         assert_eq!(encode(entry, 60), Err(ResourceError::Invalid));
     }
 }
+
+// ------------------------=
+// FUNC: capacity_projection_excludes_unusable_resources_and_tracks_reservations
+// DESC: Checks local/remote accounting, provider deduplication, reservations and lease expiry using typed observations.
+// ------------------=
+#[test]
+fn capacity_projection_excludes_unusable_resources_and_tracks_reservations() {
+    let local = NodeId([1; 32]);
+    let remote = NodeId([2; 32]);
+    let mut directory = Directory::new();
+    for id in 1..=6 {
+        let mut item = resource(id, if id == 1 { local } else { remote });
+        if id == 4 { item.capabilities = 0; }
+        if id == 5 { item.online = false; item.health = Health::Failed; }
+        if id == 6 { item.expires = 5; }
+        directory.apply(item, 0).unwrap();
+    }
+    directory.reserve_kind(ResourceId([2; 16]), 1, ResourceKind::Storage, 512, 1).unwrap();
+    let view = directory.capacity(ResourceKind::Storage, local, 10).unwrap();
+    assert_eq!(view.local.known_resources, 1);
+    assert_eq!(view.local.available, 2048);
+    assert_eq!(view.remote.known_resources, 5);
+    assert_eq!(view.remote.usable_resources, 2);
+    assert_eq!(view.remote_providers, 1);
+    assert_eq!(view.remote.capacity, 8192);
+    assert_eq!(view.remote.available, 3584);
+    assert_eq!(view.remote.consumer_reserved, 512);
+    assert_eq!(directory.capacity(ResourceKind::Storage, local, 100).unwrap().remote.available, 0);
+    assert_eq!(directory.capacity(ResourceKind::Accelerator, local, 10).unwrap(), FabricCapacity::default());
+}
+
+// ------------------------=
+// FUNC: capacity_projection_rejects_overflow
+// DESC: Prevents aggregate capacity wrapping into misleading totals.
+// ------------------=
+#[test]
+fn capacity_projection_rejects_overflow() {
+    let mut directory = Directory::new();
+    for id in 1..=2 {
+        let mut item = resource(id, NodeId([2; 32]));
+        item.capacity = u64::MAX;
+        directory.apply(item, 0).unwrap();
+    }
+    assert_eq!(directory.capacity(ResourceKind::Storage, NodeId([1; 32]), 1), Err(ResourceError::Capacity));
+}
+
+// ------------------------=
+// FUNC: capacity_management_requires_active_owned_session
+// DESC: Exercises the shared broker with valid, foreign, missing and locked session identities.
+// ------------------=
+#[test]
+fn capacity_management_requires_active_owned_session() {
+    use crate::runtime::{InfinityRuntime, identity::StableId};
+    use super::management::inspect_capacity_from;
+    let mut runtime = InfinityRuntime::new(false);
+    runtime.define_bootstrap().unwrap();
+    runtime.start_all(0);
+    runtime.nodes.initialize(&[61; 32], true).unwrap();
+    runtime.identity.create_machine(b"fabric-fixture", 64, 1, 0).unwrap();
+    let user = runtime.identity.create_user(b"operator", b"Operator", 0).unwrap().id;
+    runtime.identity.create_password(user, b"Fixture901", 0).unwrap();
+    let session = runtime.identity.create_session(user, b"Fixture901", 1).unwrap().id;
+    assert!(inspect_capacity_from(&runtime, user, session, 10).is_ok());
+    assert_eq!(inspect_capacity_from(&runtime, StableId([0;16]), session, 10), Err(ResourceError::AccessDenied));
+    assert_eq!(inspect_capacity_from(&runtime, user, StableId([0;16]), 10), Err(ResourceError::AccessDenied));
+    runtime.identity.lock_session(session, user).unwrap();
+    assert_eq!(inspect_capacity_from(&runtime, user, session, 10), Err(ResourceError::AccessDenied));
+}

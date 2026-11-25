@@ -1,5 +1,6 @@
 //! Native resource inventory and placement policy. Namespace and object identity
 //! are deliberately absent from physical-resource selection.
+pub mod management;
 pub mod deletion;
 pub mod healing;
 pub mod manifest;

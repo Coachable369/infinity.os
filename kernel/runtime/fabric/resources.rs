@@ -22,6 +22,32 @@ pub enum ResourceKind {
     Sensor,
     Other,
 }
+/// Capacity uses the resource contract's units: compute slots, memory/storage
+/// bytes, or provider-specific device units. Never interpret slots as CPU cores.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CapacityTotals {
+    pub known_resources: u32,
+    pub usable_resources: u32,
+    pub capacity: u64,
+    pub available: u64,
+    pub provider_reserved: u64,
+    pub consumer_reserved: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FabricCapacity {
+    pub local: CapacityTotals,
+    pub remote: CapacityTotals,
+    pub remote_providers: u32,
+}
+
+pub const RESOURCE_KINDS: [ResourceKind; 11] = [
+    ResourceKind::Compute, ResourceKind::Memory, ResourceKind::Accelerator,
+    ResourceKind::Storage, ResourceKind::Usb, ResourceKind::Bluetooth,
+    ResourceKind::Camera, ResourceKind::Audio, ResourceKind::Network,
+    ResourceKind::Sensor, ResourceKind::Other,
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Health {
     Healthy,
@@ -172,6 +198,36 @@ impl Directory {
     // ------------------=
     pub fn entries(&self) -> &[Option<Resource>; MAX_RESOURCES] {
         &self.entries
+    }
+
+    // ------------------------=
+    // FUNC: capacity
+    // DESC: Projects usable local and remote capacity from authoritative observations and reservations, excluding stale or unshared resources.
+    // ------------------=
+    pub fn capacity(&self, kind: ResourceKind, local: NodeId, now: u64) -> Result<FabricCapacity, ResourceError> {
+        if local.0 == [0; 32] { return Err(ResourceError::Invalid); }
+        let mut result = FabricCapacity::default();
+        let mut providers = [None; MAX_RESOURCES];
+        let mut provider_count = 0;
+        for (index, resource) in self.entries.iter().enumerate().filter_map(|(i, r)| r.map(|r| (i, r))) {
+            if resource.kind != kind { continue; }
+            let remote = resource.owner != local;
+            let totals = if remote { &mut result.remote } else { &mut result.local };
+            totals.known_resources += 1;
+            if !resource.online || resource.expires <= now || resource.health != Health::Healthy
+                || resource.capabilities & 1 == 0 { continue; }
+            totals.usable_resources += 1;
+            totals.capacity = totals.capacity.checked_add(resource.capacity).ok_or(ResourceError::Capacity)?;
+            totals.available = totals.available.checked_add(self.usable_kind(index, kind, now)).ok_or(ResourceError::Capacity)?;
+            totals.provider_reserved = totals.provider_reserved.checked_add(resource.reserved).ok_or(ResourceError::Capacity)?;
+            totals.consumer_reserved = totals.consumer_reserved.checked_add(self.reserved[index]).ok_or(ResourceError::Capacity)?;
+            if remote && !providers[..provider_count].contains(&Some(resource.owner)) {
+                providers[provider_count] = Some(resource.owner);
+                provider_count += 1;
+            }
+        }
+        result.remote_providers = provider_count as u32;
+        Ok(result)
     }
 
     // ------------------------=
