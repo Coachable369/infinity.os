@@ -1,8 +1,12 @@
 //! Behavioral harness executing the production capture loop with a bounded camera.
 use std::cell::RefCell;
+use std::collections::VecDeque;
 #[path="../sdk/infinity-face-worker/capture.rs"] mod capture;
 #[derive(Default)]
-struct Camera { now:u64,opened:u64,starts:u32,stops:u32,sequence:u64,pinned:bool,frames:bool,command:u64 }
+struct Camera {
+    now:u64,opened:u64,starts:u32,stops:u32,sequence:u64,pinned:bool,frames:bool,command:u64,
+    start_results:VecDeque<i64>,supersede_on_start:Option<u32>,
+}
 thread_local! {static CAMERA:RefCell<Camera>=RefCell::new(Camera::default());}
 // ------------------------=
 // FUNC: clock
@@ -16,12 +20,18 @@ fn clock()->Result<u64,u32> {CAMERA.with(|c|{let mut c=c.borrow_mut();c.now+=10;
 fn visit(command:u64)->bool {CAMERA.with(|c|c.borrow().command==command)}
 // ------------------------=
 // FUNC: call
-// DESC: Models pinned paged camera delivery and dark startup pixels after every restart.
+// DESC: Models asynchronous camera admission, command cancellation, pinned delivery and dark startup pixels after every restart.
 // ------------------=
 fn call(op:u64,args:[u64;6])->i64 {CAMERA.with(|cell|{
     let mut c=cell.borrow_mut();
     match op {
-        0x1260=>{c.starts+=1;c.opened=c.now;0},
+        0x1260=>{
+            c.starts+=1;
+            if c.supersede_on_start==Some(c.starts) {c.command+=1;}
+            let status=c.start_results.pop_front().unwrap_or(0);
+            if status==0 {c.opened=c.now;}
+            status
+        },
         0x1262=>{c.stops+=1;c.pinned=false;0},
         0x1261 if args[3]==0=>{
             if !c.frames {return -11;}
@@ -104,6 +114,56 @@ fn analysis_releases_camera_then_retry_warms() {
     capture::capture(1,&mut pixels,&mut stream,true).unwrap();
     assert!(pixels.iter().all(|v|*v==128));
     CAMERA.with(|c|assert_eq!(c.borrow().starts,2));
+}
+
+// ------------------------=
+// FUNC: asynchronous_reopen_waits_then_admits_fresh_photo
+// DESC: A completed photo survives bounded shutdown/admission waits; the next capture settles again and receives a newer enrollment ticket.
+// ------------------=
+#[test]
+fn asynchronous_reopen_waits_then_admits_fresh_photo() {
+    reset();let mut stream=capture::Stream::default();let mut pixels=[0;8192];
+    let first=capture::photo(1,&mut pixels,&mut stream,false).unwrap();
+    capture::stop(&mut stream);
+    CAMERA.with(|c|{
+        let mut c=c.borrow_mut();c.command=2;c.sequence=0;
+        c.start_results=VecDeque::from([-16,-11,-16,-11]);
+    });
+    pixels.fill(0xa5);
+    let next=capture::photo(2,&mut pixels,&mut stream,false).unwrap();
+    assert!(next.1>first.1);assert!(next.2>first.2 && next.2-first.2<10_000);
+    assert!(pixels.iter().all(|&v|v==128));
+    CAMERA.with(|c|{
+        let c=c.borrow();assert_eq!(c.starts,6);assert_eq!(c.stops,1);
+        assert!(c.start_results.is_empty());assert!(!c.pinned);
+    });
+}
+
+// ------------------------=
+// FUNC: superseded_capture_exits_during_reopen_wait
+// DESC: A command cancelled while camera admission is pending returns without reading pixels or stopping a newer command; a later capture can resume.
+// ------------------=
+#[test]
+fn superseded_capture_exits_during_reopen_wait() {
+    reset();let mut stream=capture::Stream::default();let mut pixels=[0;8192];
+    let first=capture::photo(1,&mut pixels,&mut stream,false).unwrap();
+    capture::stop(&mut stream);
+    let previous_sequence=CAMERA.with(|c|{
+        let mut c=c.borrow_mut();c.command=2;
+        c.start_results=VecDeque::from([-16,-11,0]);
+        c.supersede_on_start=Some(c.starts+2);c.sequence
+    });
+    pixels.fill(0xa5);
+    assert_eq!(capture::photo(2,&mut pixels,&mut stream,false),Err(105));
+    assert!(pixels.iter().all(|&v|v==0xa5));
+    CAMERA.with(|c|{
+        let c=c.borrow();assert_eq!(c.starts,3);assert_eq!(c.stops,1);
+        assert_eq!(c.command,3);assert_eq!(c.sequence,previous_sequence);
+        assert_eq!(c.start_results.len(),1);assert!(!c.pinned);
+    });
+    let next=capture::photo(3,&mut pixels,&mut stream,false).unwrap();
+    assert!(next.1>first.1);assert!(pixels.iter().all(|&v|v==128));
+    CAMERA.with(|c|{let c=c.borrow();assert_eq!(c.starts,4);assert_eq!(c.stops,1);});
 }
 // ------------------------=
 // FUNC: cancellation_preserves_stream_and_timeout_closes

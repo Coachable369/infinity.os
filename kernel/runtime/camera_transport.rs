@@ -10,6 +10,8 @@ pub enum Transfer { Pending, Frame(usize), Disconnected, Failed }
 pub enum State { Idle, Streaming, Reconnecting, Stopping, Faulted }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Attach { Absent, Pending, Ready }
+const STOP_RETRY_MS:u64=50;
+const RECOVERY_COOLDOWN_MS:u64=250;
 pub trait Driver {
     // ------------------------=
     // FUNC: start
@@ -50,11 +52,21 @@ impl<'a,D:Driver> Transport<'a,D> {
     // DESC: Immediately invalidates delivery and schedules hardware quiescence, including during reconnect.
     // ------------------=
     pub fn cancel(&mut self) {
-        self.camera.clear(); self.reconnect_after_stop=false;
+        self.camera.clear();self.frame_requested=false;self.reconnect_after_stop=false;
         if self.state!=State::Idle && self.state!=State::Faulted {
-            if self.state!=State::Stopping {self.stop_attempts=0;}
+            if self.state!=State::Stopping {self.stop_attempts=0;self.next_ms=0;}
             self.state=State::Stopping;
         }
+    }
+    // ------------------------=
+    // FUNC: retry_shutdown
+    // DESC: Lets an authorized new capture attempt retry failed shutdown after cooldown, without admitting capture before acknowledgment.
+    // ------------------=
+    pub fn retry_shutdown(&mut self,now_ms:u64)->bool {
+        if self.state!=State::Faulted || now_ms<self.next_ms {return false;}
+        self.camera.clear();self.frame_requested=false;self.reconnect_after_stop=false;
+        self.stop_attempts=0;self.state=State::Stopping;
+        true
     }
     // ------------------------=
     // FUNC: dispatch
@@ -98,7 +110,7 @@ impl<'a,D:Driver> Transport<'a,D> {
     }
     // ------------------------=
     // FUNC: tick
-    // DESC: Executes at most one bounded backend call per visit; retries discovery three times and shutdown eight times.
+    // DESC: Executes at most one bounded backend call per visit; retries discovery three times and shutdown eight times with backoff.
     // ------------------=
     pub fn tick(&mut self,caps:&CapabilityManager,now_seconds:u64,now_ms:u64,scratch:&mut [u8]) {
         if matches!(self.state,State::Streaming|State::Reconnecting)
@@ -112,7 +124,7 @@ impl<'a,D:Driver> Transport<'a,D> {
                     Ok(Attach::Ready)=>{self.attempts+=1;self.start_steps=0;self.state=State::Streaming;},
                     Ok(Attach::Pending)=>{},
                     Ok(Attach::Absent)=>{self.attempts+=1;self.start_steps=0;self.next_ms=now_ms.saturating_add(250);},
-                    Err(())=>{self.attempts+=1;self.start_steps=0;self.reconnect_after_stop=true;self.stop_attempts=0;self.state=State::Stopping;}
+                    Err(())=>{self.attempts+=1;self.start_steps=0;self.reconnect_after_stop=true;self.stop_attempts=0;self.next_ms=now_ms;self.state=State::Stopping;}
                 }
             }
             State::Streaming => {
@@ -129,13 +141,13 @@ impl<'a,D:Driver> Transport<'a,D> {
                     Transfer::Disconnected=>{
                         // Drop stale bytes while preserving the lease only for bounded reconnect.
                         self.camera.storage[..self.camera.length].fill(0);self.camera.length=0;self.camera.pinned=false;
-                        self.reconnect_after_stop=true;self.stop_attempts=0;self.state=State::Stopping;
+                        self.reconnect_after_stop=true;self.stop_attempts=0;self.next_ms=now_ms;self.state=State::Stopping;
                     }
                     Transfer::Failed=>self.cancel(),
                 }
                 scratch.fill(0);
             }
-            State::Stopping=>{
+            State::Stopping if now_ms>=self.next_ms=>{
                 self.stop_attempts+=1;
                 match self.driver.stop() {
                     Ok(true)=>{
@@ -144,8 +156,11 @@ impl<'a,D:Driver> Transport<'a,D> {
                         } else {self.camera.clear();State::Idle};
                         self.next_ms=now_ms.saturating_add(250);
                     }
-                    result=>if result.is_err() || self.stop_attempts>=8 {
-                        self.camera.clear();self.state=State::Faulted;
+                    _=>if self.stop_attempts>=8 {
+                        self.camera.clear();self.frame_requested=false;self.state=State::Faulted;
+                        self.next_ms=now_ms.saturating_add(RECOVERY_COOLDOWN_MS);
+                    } else {
+                        self.next_ms=now_ms.saturating_add(STOP_RETRY_MS);
                     },
                 }
             }

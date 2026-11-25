@@ -115,8 +115,14 @@ pub unsafe fn initialize(address:usize) {
 // ------------------=
 pub fn grant(owner:SecurityIdentity)->bool {unsafe {
     if !active(owner) || (*core::ptr::addr_of!(EXCHANGE)).is_none() || (*core::ptr::addr_of!(LEASE)).is_some() {return false;}
-    if (&*core::ptr::addr_of!(SERVICE)).as_ref().is_some_and(|service|service.state()!=crate::runtime::camera::transport::State::Idle) {return false;}
-    let now=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000_000;
+    let now_ms=crate::runtime::ai::qwen::workers::clock_ns()/1_000_000;
+    if let Some(service)=(&mut *core::ptr::addr_of_mut!(SERVICE)).as_mut() {
+        if service.state()!=crate::runtime::camera::transport::State::Idle {
+            service.retry_shutdown(now_ms);
+            return false;
+        }
+    }
+    let now=now_ms/1_000;
     let deadline=now.saturating_add(30);
     let cap=crate::runtime::with_runtime(|runtime|runtime.capabilities.grant(CapabilityType::CameraCapture,0,1,0,owner,owner,Some(deadline),0).ok()).flatten();
     if let Some(cap)=cap {LEASE=Some((owner,cap,deadline));true}else{false}

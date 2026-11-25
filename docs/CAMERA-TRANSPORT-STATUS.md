@@ -91,7 +91,10 @@ when the version magic is present.
 frames are discarded until a new FID. `drivers/camera.rs` connects it to the
 typed transport and isolated native-app dispatch. Locking a session, expiry,
 revocation and process exit revoke delivery and schedule shutdown. Failed stop
-acknowledgement latches Faulted. Synchronous transfer quiescence does not prove
+acknowledgement is retried up to eight times with 50 ms between attempts. After
+exhaustion, the transport stays Faulted until an authorized capture request
+retries shutdown after a 250 ms cooldown. Reopening requires acknowledged
+quiescence and a fresh capture lease. Synchronous transfer quiescence does not prove
 the sensor is powered down; that still requires installed observation.
 
 No untrusted user address reaches firmware. Reads copy a maximum 4096 bytes
