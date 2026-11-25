@@ -176,8 +176,8 @@ pub struct ProviderComputeLimits {
 }
 
 pub const PROVIDER_COMPUTE_POLICY_TARGET: u64 = 0x46414252;
-pub const PROVIDER_STATE_BYTES: usize = 9536;
-pub const PROVIDER_STATE_PATH: &[u8] = b"/system/fabric-provider";
+pub const PROVIDER_STATE_BYTES: usize = crate::storage::object::fabric_provider_state::BYTES;
+pub const PROVIDER_STATE_PATH: &[u8] = crate::storage::object::fabric_provider_state::PATH;
 
 const PROVIDER_REPLAY_PEERS: usize = 32;
 const PROVIDER_REPLAY_TASKS: usize = 64;
@@ -329,11 +329,7 @@ impl RemoteComputeExecutor {
     // DESC: Validates the entire checkpoint before replacing idle provider policy and fences, rejecting corruption and duplicate identities.
     // ------------------=
     pub fn restore_provider_state(&mut self, state: &[u8]) -> Result<(), ComputeError> {
-        if state.len() != PROVIDER_STATE_BYTES || &state[..8] != b"INFPRV01"
-            || read_u32(state, PROVIDER_STATE_BYTES - 4) != state_checksum(&state[..PROVIDER_STATE_BYTES - 4])
-            || state[8] > 1 || state[9..12].iter().any(|v| *v != 0)
-            || state[32..40].iter().any(|v| *v != 0)
-            || state[9512..PROVIDER_STATE_BYTES - 4].iter().any(|v| *v != 0) {
+        if !crate::storage::object::fabric_provider_state::validate(state) {
             return Err(ComputeError::InvalidRequest);
         }
         if self.active_count() != 0 { return Err(ComputeError::InvalidState); }
@@ -341,28 +337,17 @@ impl RemoteComputeExecutor {
             cpu_units: read_u16(state, 12), concurrent_tasks: read_u16(state, 14),
             memory_bytes: read_u64(state, 16) };
         let revision = read_u64(state, 24);
-        if revision == 0 || limits.memory_bytes > MAX_COMPUTE_MEMORY || limits.cpu_units > 128
-            || limits.concurrent_tasks as usize > MAX_REMOTE_EXECUTIONS
-            || (limits.enabled && (limits.memory_bytes == 0 || limits.cpu_units == 0 || limits.concurrent_tasks == 0)) {
-            return Err(ComputeError::InvalidRequest);
-        }
         let mut replay = [None; PROVIDER_REPLAY_PEERS];
         for index in 0..PROVIDER_REPLAY_PEERS {
             let start = 40 + index * 296;
             let mut peer = [0; 32];
             peer.copy_from_slice(&state[start..start + 32]);
             if peer == [0; 32] {
-                if state[start..start + 296].iter().any(|v| *v != 0) { return Err(ComputeError::InvalidRequest); }
                 continue;
             }
-            if replay[..index].iter().flatten().any(|entry: &ProviderReplayWindow| entry.peer.0 == peer) {
-                return Err(ComputeError::InvalidRequest);
-            }
             let highest_task = read_u64(state, start + 32);
-            if highest_task == 0 { return Err(ComputeError::InvalidRequest); }
             let mut epochs = [0; PROVIDER_REPLAY_TASKS];
             for (slot, value) in epochs.iter_mut().enumerate() { *value = read_u32(state, start + 40 + slot * 4); }
-            if epochs[(highest_task % PROVIDER_REPLAY_TASKS as u64) as usize] == 0 { return Err(ComputeError::InvalidRequest); }
             replay[index] = Some(ProviderReplayWindow { peer: NodeId(peer), highest_task, epochs });
         }
         self.limits = limits;

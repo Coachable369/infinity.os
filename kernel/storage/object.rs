@@ -2,6 +2,8 @@
 //! no Rust layout is ever written to persistent media.
 
 use super::organization;
+#[path = "fabric_provider_state.rs"]
+pub(crate) mod fabric_provider_state;
 #[path = "../runtime/automation.rs"]
 mod automation_catalog;
 #[path = "sdk_package.rs"]
@@ -1697,9 +1699,8 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Creates or atomically replaces private provider policy and replay protection on new and upgraded stores.
     // ------------------=
     pub(crate) fn checkpoint_fabric_provider(&mut self, content: &[u8]) -> Result<u32, ObjectError> {
-        crate::runtime::compute::RemoteComputeExecutor::new().restore_provider_state(content)
-            .map_err(|_| ObjectError::CorruptContent)?;
-        match self.resolve(crate::runtime::compute::PROVIDER_STATE_PATH) {
+        if !fabric_provider_state::validate(content) { return Err(ObjectError::CorruptContent); }
+        match self.resolve(fabric_provider_state::PATH) {
             Ok(id) => {
                 let record = &self.state.objects[self.object_index(id)?];
                 if record.space != Space::System as u8 || record.kind != ObjectType::Metadata as u8
@@ -1710,7 +1711,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             },
             Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => self.create_attached(
                 b"fabric-provider", ObjectType::Metadata, Space::System, content,
-                crate::runtime::compute::PROVIDER_STATE_PATH).map(|_| 1),
+                fabric_provider_state::PATH).map(|_| 1),
             Err(error) => Err(error),
         }
     }
@@ -1720,7 +1721,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Reads only the private System Space provider checkpoint, rejecting substituted object types.
     // ------------------=
     pub(crate) fn read_fabric_provider(&mut self, out: &mut [u8]) -> Result<usize, ObjectError> {
-        let id = self.resolve(crate::runtime::compute::PROVIDER_STATE_PATH)?;
+        let id = self.resolve(fabric_provider_state::PATH)?;
         let record = &self.state.objects[self.object_index(id)?];
         if record.space != Space::System as u8 || record.kind != ObjectType::Metadata as u8
             || &record.name[..record.name_len as usize] != b"fabric-provider" { return Err(ObjectError::Unauthorized); }
