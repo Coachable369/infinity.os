@@ -193,6 +193,7 @@ impl OperationGraph<'_> {
                                 | OperationId::ObjectCopy
                                 | OperationId::ObjectSetPolicy
                                 | OperationId::ResourceAdvertise
+                                | OperationId::ProviderConfigure
                                 | OperationId::PoolHeal
                                 | OperationId::ObjectDelete
                                 | OperationId::PoolUploadBegin
@@ -354,6 +355,14 @@ const POOL_GRANT: ArgumentSchema = ArgumentSchema {
     value_type: ArgumentType::Text,
     required: false,
 };
+const PROVIDER_CONFIGURE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"enabled", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"memory", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"cpu", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"tasks", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"revision", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"confirm", value_type: ArgumentType::Text, required: true },
+];
 const POOL_RESULT_ARGS: &[ArgumentSchema] = &[ArgumentSchema {
     name: b"request",
     value_type: ArgumentType::Text,
@@ -1084,6 +1093,14 @@ pub static DOMAINS: &[DomainSchema] = &[
 ];
 
 pub static OPERATIONS: &[OperationSchema] = &[
+    op(b"pool", b"resources", b"Inspect usable Fabric workload capacity from the shared resource authority", OperationId::FabricCapacityInspect,
+        ValueType::Unit, ValueType::Object, None, NO_ARGS, 1, SideEffectClass::Query, b"pool resources"),
+    op(b"pool", b"provider", b"Inspect durable compute contribution and current allocations", OperationId::ProviderInspect,
+        ValueType::Unit, ValueType::Object, None, NO_ARGS, 1, SideEffectClass::Query, b"pool provider"),
+    op(b"pool", b"provider-set", b"Set durable administrator-owned compute contribution limits", OperationId::ProviderConfigure,
+        ValueType::Unit, ValueType::Object, None, PROVIDER_CONFIGURE_ARGS, 1, SideEffectClass::ReversibleChange,
+        b"pool provider-set enabled=true memory=67108864 cpu=8 tasks=2 revision=1 confirm=true"),
+
     op(b"pool",b"metadata-authority",b"Approve exact signed metadata operation authority",OperationId::PoolMetadata,ValueType::Unit,ValueType::Unit,None,POOL_RETIRE_ARGS,1,SideEffectClass::ReversibleChange,b"pool metadata-authority peer=node:<id> grant=1 lease=3600 confirm=true"),
     op(b"pool",b"repair",b"Request repair under a preexisting owner-issued destination grant",OperationId::PoolMetadata,ValueType::Unit,ValueType::Object,Some(ArgumentType::ObjectRef),POOL_REPAIR_ARGS,1,SideEffectClass::ReversibleChange,b"pool repair obj:<id> peer=node:<id> confirm=true"),
     op(b"pool",b"share",b"Publish an explicitly delegated quorum namespace binding",OperationId::PoolMetadata,ValueType::Unit,ValueType::Object,Some(ArgumentType::ObjectRef),POOL_SHARE_ARGS,1,SideEffectClass::ReversibleChange,b"pool share obj:<id> path=/Shared/Example confirm=true"),

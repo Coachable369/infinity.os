@@ -204,3 +204,30 @@ Host suite: 255 passed, 0 failed, 1 ignored, 46.73 seconds;
 `builds/manifests/20261125T201331066349Z-12658.json`. Tests cover foreign and locked
 sessions, failed persistence, stale revisions, checkpoint restoration and 256
 successive updates without capability-slot leakage.
+
+### Provider command integration (host behavior verified)
+
+The registered console operations now call the same typed management authority:
+
+- `pool resources` reports current unified workload capacity by resource category.
+  A zero usable-resource count means that category cannot currently supply work.
+  Memory totals describe workload allocations on providers, not local address space.
+- `pool provider` inspects durable policy revision, enabled state, memory limit,
+  scheduler-unit limit, concurrent-task ceiling and current allocations.
+- `pool provider-set enabled=true memory=67108864 cpu=8 tasks=2 revision=1 confirm=true`
+  commits all contribution limits together. Use the revision returned by inspection.
+  The memory argument is bytes; CPU units are scheduler weights, not core counts.
+  An active administrator session and explicit confirmation are required. Successful
+  changes return the new revision and allocation snapshot. Stale revisions, invalid
+  values, unauthorized sessions and failed persistence leave the policy unchanged.
+  Setting `enabled=false` durably disables contribution and terminates active remote
+  contexts. Plans never apply changes.
+
+These commands do not establish Python/native execution, GUI parity or installed
+acceptance; those gates remain open.
+
+Host command/broker suite: 255 passed, 0 failed, 1 ignored, 46.73 seconds;
+`builds/manifests/20261125T202617074225Z-16391.json`. Parsed provider updates
+exercise the durable broker; overflow, invalid booleans, absent consent and query
+as mutation are rejected. Native console rendering and installed command dispatch
+remain to be verified in the next ARM kernel.

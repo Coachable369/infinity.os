@@ -120,3 +120,42 @@ pub(crate) fn update_provider_from(runtime: &mut InfinityRuntime, user: StableId
     result?;
     Ok(provider_snapshot(runtime))
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProviderUpdate {
+    pub limits: crate::runtime::compute::ProviderComputeLimits,
+    pub expected_revision: u64,
+}
+
+// ------------------------=
+// FUNC: decode_provider_update
+// DESC: Converts the registered console operation into a strict typed request; never infers consent or truncates numeric values.
+// ------------------=
+pub fn decode_provider_update(node: &crate::runtime::console_language::OperationNode<'_>)
+    -> Result<ProviderUpdate, crate::runtime::compute::ComputeError> {
+    use crate::runtime::compute::{ComputeError, ProviderComputeLimits};
+    if node.schema.domain != b"pool" || node.schema.operation != crate::runtime::iop::OperationId::ProviderConfigure {
+        return Err(ComputeError::InvalidRequest);
+    }
+    let argument = |name: &[u8]| node.arguments.iter().flatten()
+        .find(|argument| argument.name == name).map(|argument| argument.value);
+    if argument(b"confirm") != Some(b"true".as_slice()) { return Err(ComputeError::AccessDenied); }
+    let enabled = match argument(b"enabled") {
+        Some(b"true") => true, Some(b"false") => false, _ => return Err(ComputeError::InvalidRequest),
+    };
+    let number = |name: &[u8]| -> Result<u64, ComputeError> {
+        let bytes = argument(name).ok_or(ComputeError::InvalidRequest)?;
+        if bytes.is_empty() { return Err(ComputeError::InvalidRequest); }
+        bytes.iter().try_fold(0u64, |value, byte| {
+            if !byte.is_ascii_digit() { return Err(ComputeError::InvalidRequest); }
+            value.checked_mul(10).and_then(|value| value.checked_add((byte - b'0') as u64))
+                .ok_or(ComputeError::InvalidRequest)
+        })
+    };
+    Ok(ProviderUpdate {
+        limits: ProviderComputeLimits { enabled, memory_bytes: number(b"memory")?,
+            cpu_units: u16::try_from(number(b"cpu")?).map_err(|_| ComputeError::InvalidRequest)?,
+            concurrent_tasks: u16::try_from(number(b"tasks")?).map_err(|_| ComputeError::InvalidRequest)? },
+        expected_revision: number(b"revision")?,
+    })
+}

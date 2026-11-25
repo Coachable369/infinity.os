@@ -721,8 +721,30 @@ fn provider_management_authenticates_persists_and_retires_authority() {
     let session = runtime.identity.create_session(user, b"Fixture901", 1).unwrap().id;
     let baseline = runtime.remote_compute.limits();
     let caps = runtime.capabilities.count();
-    let mut limits = baseline.0;
-    limits.enabled = false;
+    use crate::runtime::console_language::{parse, ParseOutcome};
+    let ParseOutcome::Graph(graph) = parse(b"pool provider-set enabled=false memory=1048576 cpu=4 tasks=2 revision=1 confirm=true").unwrap() else { panic!("typed operation required") };
+    assert!(graph.executable_pool_mutation());
+    let request = super::management::decode_provider_update(&graph.nodes[0].unwrap()).unwrap();
+    assert_eq!(request.expected_revision, baseline.1);
+    assert_eq!(request.limits.memory_bytes, 1048576);
+    assert_eq!(request.limits.cpu_units, 4);
+    assert_eq!(request.limits.concurrent_tasks, 2);
+    assert!(!request.limits.enabled);
+    let limits = request.limits;
+    for command in [
+        b"pool provider-set enabled=false memory=1048576 cpu=4 tasks=2 revision=1 confirm=false".as_slice(),
+        b"pool provider-set enabled=maybe memory=1048576 cpu=4 tasks=2 revision=1 confirm=true",
+        b"pool provider-set enabled=true memory=18446744073709551616 cpu=4 tasks=2 revision=1 confirm=true",
+        b"pool provider-set enabled=true memory=1048576 cpu=65536 tasks=2 revision=1 confirm=true",
+        b"pool provider-set enabled=true memory=-1 cpu=4 tasks=2 revision=1 confirm=true",
+    ] {
+        let ParseOutcome::Graph(graph) = parse(command).unwrap() else { panic!("typed operation required") };
+        assert!(super::management::decode_provider_update(&graph.nodes[0].unwrap()).is_err());
+    }
+    let ParseOutcome::Graph(query) = parse(b"pool provider").unwrap() else { panic!("typed query required") };
+    assert!(!query.executable_pool_mutation());
+    assert!(super::management::decode_provider_update(&query.nodes[0].unwrap()).is_err());
+
     assert_eq!(update_provider_from(&mut runtime, StableId([0;16]), session, limits, baseline.1, 2,
         &mut |_| panic!("unauthorized persistence")), Err(ComputeError::AccessDenied));
     assert_eq!(update_provider_from(&mut runtime, user, session, limits, baseline.1, 2,

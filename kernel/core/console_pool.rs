@@ -9,6 +9,47 @@ impl ConsoleRuntime {
     // ------------------=
     #[inline(never)]
     pub(super) fn execute_pool_node(&mut self, node: &OperationNode<'_>) -> bool {
+        if node.schema.operation == crate::runtime::iop::OperationId::FabricCapacityInspect {
+            match crate::runtime::fabric::management::inspect_capacity(self.current_user, self.current_session) {
+                Ok(snapshot) => {
+                    self.output.write_line(b"Fabric workload capacity (memory is allocated on the executing provider)");
+                    for (category, name) in snapshot.categories.iter().zip([
+                        b"CPU scheduler slots".as_slice(), b"Memory bytes", b"Accelerator units", b"Storage bytes",
+                        b"USB devices", b"Bluetooth devices", b"Cameras", b"Audio devices", b"Network", b"Sensors", b"Other",
+                    ]) {
+                        self.output.write_line(name);
+                        self.output.write_number(b"  Usable resources: ", category.local.usable_resources as u64 + category.remote.usable_resources as u64);
+                        self.output.write_number(b"  Capacity: ", category.local.capacity.saturating_add(category.remote.capacity));
+                        self.output.write_number(b"  Available: ", category.local.available.saturating_add(category.remote.available));
+                    }
+                }
+                Err(error) => self.output.write_number(b"Fabric capacity unavailable: ", error as u64),
+            }
+            return true;
+        }
+        if matches!(node.schema.operation, crate::runtime::iop::OperationId::ProviderInspect | crate::runtime::iop::OperationId::ProviderConfigure) {
+            use crate::runtime::fabric::management;
+            let result = if node.schema.operation == crate::runtime::iop::OperationId::ProviderInspect {
+                management::inspect_provider(self.current_user, self.current_session)
+            } else {
+                management::decode_provider_update(node).and_then(|request|
+                    management::update_provider(self.current_user, self.current_session, request.limits, request.expected_revision))
+            };
+            match result {
+                Ok(snapshot) => {
+                    self.output.write_line(if snapshot.limits.enabled { b"Compute sharing enabled" } else { b"Compute sharing disabled" });
+                    self.output.write_number(b"Policy revision: ", snapshot.revision);
+                    self.output.write_number(b"Memory contribution bytes: ", snapshot.limits.memory_bytes);
+                    self.output.write_number(b"CPU scheduler units: ", snapshot.limits.cpu_units as u64);
+                    self.output.write_number(b"Concurrent task limit: ", snapshot.limits.concurrent_tasks as u64);
+                    self.output.write_number(b"Allocated memory bytes: ", snapshot.allocated_memory_bytes);
+                    self.output.write_number(b"Allocated CPU units: ", snapshot.allocated_cpu_units);
+                    self.output.write_number(b"Active tasks: ", snapshot.active_tasks as u64);
+                }
+                Err(error) => self.output.write_number(b"Provider operation rejected: ", error as u64),
+            }
+            return true;
+        }
         if node_argument(node,b"durable")==Some(b"true".as_slice()) {
             self.output.write_line(b"DURABLE POOL APPROVAL: exact configured peers and operations, survives reboot until revoked.");
         }
