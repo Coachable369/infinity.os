@@ -2106,3 +2106,75 @@ fn provider_reclaims_disconnected_and_abandoned_consumers() {
     assert_eq!(execution.count(), 0);
     assert_eq!(provider.active_count(), 0);
 }
+
+// ------------------------=
+// FUNC: restarted_remote_work_preserves_total_accounting
+// DESC: Completes an epoch after partial work on a lost provider without confusing cumulative CPU use with epoch progress.
+// ------------------=
+#[test]
+fn restarted_remote_work_preserves_total_accounting() {
+    use crate::runtime::compute::{ComputeDurability, ComputeLocality, ComputeRequestV1,
+        ComputeService, ComputeState, NodeComputeObservation, RemoteComputeExecutor,
+        WorkloadKind, COMPUTE_SCHEMA_VERSION, COMPUTE_RESULT_CONTRACT_V1};
+    use crate::runtime::execution::ExecutionManager;
+    use crate::runtime::fabric::resources::{Directory, Resource, ResourceId, ResourceKind, Health};
+    let mut f = Fixture::new();
+    let local = f.nodes.local_id().unwrap();
+    let peers = [NodeId([81; 32]), NodeId([82; 32])];
+    let mut directory = Directory::new();
+    let mut compute = ComputeService::new();
+    for (index, peer) in peers.iter().copied().enumerate() {
+        for (offset, kind, capacity) in [(0, ResourceKind::Compute, 8), (1, ResourceKind::Memory, 65536)] {
+            let marker = (index * 2 + offset + 1) as u8;
+            directory.observe_local(Resource { id: ResourceId([marker; 16]), owner: peer,
+                kind, device: [marker; 16], capacity, available: capacity, reserved: 0,
+                health: Health::Healthy, online: true, capabilities: 1, generation: 1,
+                sequence: 1, expires: 1000 }, peer, 1).unwrap();
+        }
+        compute.observe_node(&directory, NodeComputeObservation { node: peer, trust_domain: 4,
+            latency_us: 100 + index as u32 * 100, latency_known: true, load_percent: 0,
+            generation: 1 }).unwrap();
+    }
+    let scope = u64::from_le_bytes([7; 8]);
+    let cap = f.caps.grant(CapabilityType::ComputeUse, scope, 1, 0, f.caller, f.caller,
+        Some(1000), 0).unwrap();
+    let request = ComputeRequestV1 { schema_version: COMPUTE_SCHEMA_VERSION,
+        workload_kind: WorkloadKind::CpuBoundedCounter, locality: ComputeLocality::RequireRemote,
+        durability: ComputeDurability::Restartable, priority: 128, privacy_local_only: false,
+        workload_id: [7; 16], input_refs: [[8; 16], [9; 16]], allowed_nodes: peers,
+        allowed_node_count: 2, allowed_domains: [4, 0], allowed_domain_count: 1,
+        memory_bytes: 4096, deadline: 900, correlation_id: 99, capability_ref: cap,
+        affinity: 0, anti_affinity: 0, work_units: 128, cpu_units: 2, restart_eligible: true,
+        result_contract: COMPUTE_RESULT_CONTRACT_V1 };
+    let task = compute.request(request, f.caller, &f.caps, &mut directory, local, 2).unwrap();
+    let mut provider = RemoteComputeExecutor::new();
+    let mut execution = ExecutionManager::new();
+    let dispatch = compute.remote_dispatch(task, f.caller, &f.caps, local, &mut directory, 3).unwrap();
+    let first_peer = dispatch.target_node;
+    let result = provider.execute(dispatch, &mut execution, first_peer, local, 3).unwrap();
+    compute.accept_remote_result(task, result, &mut directory, 4).unwrap();
+    assert_eq!(compute.inspect(task).unwrap().accounting.used_cpu_ticks, 64);
+    let before = compute.inspect(task).unwrap();
+    assert_eq!(compute.accept_remote_result(task, result, &mut directory, 4).unwrap(), before);
+    let mut inconsistent = result;
+    inconsistent.state = ComputeState::Completed as u8;
+    inconsistent.work_units = 0;
+    assert_eq!(compute.accept_remote_result(task, inconsistent, &mut directory, 4),
+        Err(crate::runtime::compute::ComputeError::InvalidRequest));
+    assert_eq!(compute.inspect(task).unwrap(), before);
+    provider.disconnect(local, &mut execution);
+    directory.mark_peer_offline(first_peer);
+    compute.node_lost(first_peer, &mut directory, local, 5);
+    for now in [6, 8] {
+        let dispatch = compute.remote_dispatch(task, f.caller, &f.caps, local, &mut directory, now).unwrap();
+        assert_ne!(dispatch.target_node, first_peer);
+        let result = provider.execute(dispatch, &mut execution, dispatch.target_node, local, now).unwrap();
+        compute.accept_remote_result(task, result, &mut directory, now + 1).unwrap();
+    }
+    let final_state = compute.inspect(task).unwrap();
+    assert_eq!(final_state.state, ComputeState::Completed);
+    assert_eq!(final_state.epoch, 2);
+    assert_eq!(final_state.accounting.used_cpu_ticks, 192);
+    assert_eq!(provider.active_count(), 0);
+    assert_eq!(execution.count(), 0);
+}

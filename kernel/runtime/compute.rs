@@ -1321,7 +1321,7 @@ impl ComputeService {
             result_contract: task.request.result_contract,
             error: 0,
             flags: 0,
-            used_ticks: task.snapshot.accounting.used_cpu_ticks,
+            used_ticks: task.progress as u64,
         })
     }
 
@@ -1358,7 +1358,7 @@ impl ComputeService {
             result_contract: task.request.result_contract,
             error: 0,
             flags: 0,
-            used_ticks: task.snapshot.accounting.used_cpu_ticks,
+            used_ticks: task.progress as u64,
         })
     }
 
@@ -1386,7 +1386,7 @@ impl ComputeService {
         if task.snapshot.state != ComputeState::Running {
             return Err(ComputeError::StaleResult);
         }
-        if result.used_ticks < task.snapshot.accounting.used_cpu_ticks
+        if result.used_ticks < task.progress as u64
             || result.used_ticks > task.request.work_units as u64
             || result.work_units > task.request.work_units
         {
@@ -1415,12 +1415,15 @@ impl ComputeService {
         }
         if !((result.state == ComputeState::Completed as u8 && result.work_units == 0)
             || (result.state == ComputeState::Running as u8 && result.work_units != 0))
+            || result.used_ticks + result.work_units as u64 != task.request.work_units as u64
+            || result.used_ticks - task.progress as u64 > MAX_SLICE_TICKS as u64
         {
             return Err(ComputeError::InvalidRequest);
         }
         let current = self.tasks[index].as_mut().unwrap();
         current.progress = current.request.work_units.saturating_sub(result.work_units);
-        current.snapshot.accounting.used_cpu_ticks = result.used_ticks;
+        current.snapshot.accounting.used_cpu_ticks = task.snapshot.accounting.used_cpu_ticks
+            .saturating_add(result.used_ticks - task.progress as u64);
         current.snapshot.output_digest = result.input_refs[0];
         if result.state == ComputeState::Completed as u8 && result.work_units == 0 {
             self.release(index, directory);

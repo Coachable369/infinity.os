@@ -2,6 +2,31 @@
 
 Status: **in progress; not a completed milestone or release**.
 
+## End-to-end QA checkpoint — 2026-11-25
+
+The current acceptance specification contains 178 criteria. The working matrix
+and environment inventory are under `builds/validation/ms18-qa/`. No independent
+installed-node acceptance has passed in this QA run. Host checks below are not
+distributed execution proof. MS19 peripheral sharing and MS20 handoff are outside
+this audit; existing peripheral categories do not establish those capabilities.
+
+One reproduced defect is fixed: after a partially executed job lost its provider,
+the new execution epoch reused lifetime CPU usage as its progress counter. Its
+completion was then rejected. Dispatch now uses epoch progress; accepted results
+add only the new work to lifetime accounting. Duplicate progress does not double
+charge, and inconsistent remaining-work reports are rejected without mutation.
+
+- Red reproduction: `builds/manifests/20261125T180239824171Z-78908.json`.
+- Full host suite: 247 passed, 0 failed, 1 ignored, 46.42 seconds;
+  `builds/manifests/20261125T180314079686Z-79015.json`.
+- Duplicate/invalid-progress and failover retest: 1 passed;
+  `builds/manifests/20261125T180435578730Z-79132.json`.
+
+Remaining: provider replay fencing after termination, real Python/native remote
+execution and output streaming, physical remote-memory allocation, operational
+GPU/inference providers, complete native management clients, and independent
+installed-node verification. No ISO containing this QA fix has been published.
+
 ## Existing implementation audit
 
 | Area | Existing implementation | Remaining requirement |
