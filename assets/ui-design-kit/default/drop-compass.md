@@ -14,9 +14,8 @@ item and a compact sapphire caption. Cards use shared UIKit Panel normal/focus
 states. Geometry reduces within small viewports without offscreen hit targets.
 
 Hold bare desktop for 550ms with at most 8px movement to open. Quick clicks do
-not open it. A stationary file drag offers actual local move destinations.
-Release over a card or click it to act. Release in the center keeps the desktop
-navigation compass open; releasing a dragged file outside cards cancels it.
+not open it. Holding a desktop file or shortcut offers actual local move destinations, even before moving the pointer.
+Release over a card or click it to act. Release without choosing a card keeps the compass and selected file open for a subsequent destination click.
 Escape/outside click cancels without a file mutation. Arrow keys select cardinal
 cards and Enter activates. No idle animation or audio changes.
 

@@ -8833,12 +8833,10 @@ impl ConsoleRuntime {
             if compass.center.is_some() {
                 let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
                 let changed=compass.advance(point,left_button,crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,self.system.framebuffer_width,self.system.framebuffer_height);
-                let file=compass.file;
-                let action=if clicked||released {compass.selected}else{None};
-                if (right_clicked || clicked || released && file) && action.is_none(){self.cancel_compass();compass.dismiss();}
-                if right_clicked || clicked || action.is_some() {compass.dismiss();}
+                if right_clicked || clicked && compass.selected.is_none(){self.cancel_compass();}
+                let action=compass.activate(clicked,released,right_clicked);
                 crate::ui::drop_compass::publish(compass);
-                if let Some(index)=action {self.compass_destination(index,file);}
+                if let Some((index,file))=action {self.compass_destination(index,file);}
                 if changed||clicked||released||right_clicked {self.redraw();}else{crate::bootstrap::system_ui_cursor(self.pointer_x,self.pointer_y);}
                 return;
             }
@@ -9940,6 +9938,7 @@ impl ConsoleRuntime {
                             self.home_drag_origin_x = self.pointer_x;
                             self.home_drag_origin_y = self.pointer_y;
                             self.home_drag_moved = false;
+                            if self.trash_drag_source.is_some() { self.arm_file_compass(); }
                         }
                     }
                     _ => {}

@@ -178,10 +178,30 @@ fn sdk_package_access() {
     assert_eq!(store.sidebar_location(owner,home,4,Some(music.as_bytes())).unwrap().as_bytes(),music.as_bytes());
     assert!(store.sidebar_location(second,home,4,Some(other_home.as_bytes())).is_err());
     assert!(store.sidebar_location(owner,home,4,Some(other_home.as_bytes())).is_err());
+    // Trashing a desktop reference must retain its source and remain enumerable after remount.
+    let desktop_link=home.child(b"desktop").unwrap().child(b"hello.c").unwrap();
+    let source=home.child(b"documents").unwrap().child(b"hello.c").unwrap();
+    let trash_root=home.child(b"trash").unwrap();
+    let trash_link=trash_root.child(b"desktop").unwrap().child(b"hello.c").unwrap();
+    let source_id=store.resolve(source.as_bytes()).unwrap();
+    store.attach(desktop_link.as_bytes(),source_id).unwrap();
+    store.move_entry(desktop_link.as_bytes(),trash_link.as_bytes()).unwrap();
+    assert!(store.resolve(desktop_link.as_bytes()).is_err());
+    assert_eq!(store.resolve(source.as_bytes()).unwrap(),source_id);
+    assert!((0..256).map_while(|i|store.namespace_list_nth(trash_root.as_bytes(),i))
+        .any(|entry| &entry.path[..entry.path_len as usize]==trash_link.as_bytes()));
     let motd=store.resolve(b"/System/motd").unwrap();store.write(motd,b"Welcome\nback").unwrap();
     drop(store);
     let mut store = ObjectStore::mount(disk, 0).unwrap();
     install_tree_access(&mut store, std::path::Path::new("runtime/install"));
+    assert_eq!(store.resolve(trash_link.as_bytes()).unwrap(),source_id);
+    assert!(store.resolve(desktop_link.as_bytes()).is_err());
+    assert!((0..256).map_while(|i|store.namespace_list_nth(trash_root.as_bytes(),i))
+        .any(|entry| &entry.path[..entry.path_len as usize]==trash_link.as_bytes()));
+    store.move_entry(trash_link.as_bytes(),desktop_link.as_bytes()).unwrap();
+    assert_eq!(store.resolve(desktop_link.as_bytes()).unwrap(),source_id);
+    assert!(store.resolve(trash_link.as_bytes()).is_err());
+
     assert_eq!(store.sidebar_location(owner,home,4,None).unwrap().as_bytes(),music.as_bytes());
     let mut message=[0;12];let n=store.read(motd,None,&mut message).unwrap();assert_eq!(&message[..n],b"Welcome\nback");
     assert_eq!(store.resolve(b"/InfinitySDK").unwrap(), root);

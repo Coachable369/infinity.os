@@ -20,3 +20,18 @@ fn hold_and_cancel(){
 // ------------------=
 #[test]
 fn bounded_targets(){for (w,h) in [(640,480),(1280,720),(1920,1080),(2560,1440)]{for p in [Point{x:0,y:0},Point{x:w as i32-1,y:h as i32-1}]{let mut c=Compass::new();c.arm(p,0,true);c.advance(p,true,550,w,h);for (i,r) in c.cards(w,h).into_iter().enumerate(){assert!(r.x>=0&&r.y>=0&&r.right()<=w as i32&&r.bottom()<=h as i32);c.advance(Point{x:r.x+10,y:r.y+10},true,600,w,h);assert_eq!(c.selected,Some(i));}c.advance(c.center.unwrap(),true,600,w,h);assert_eq!(c.selected,None);}}}
+
+// ------------------------=
+// FUNC: stationary_file_hold_retains_move_destination
+// DESC: Keeps file mode and its Trash destination across hold release and the later selection click.
+// ------------------=
+#[test]
+fn stationary_file_hold_retains_move_destination(){
+ let p=Point{x:640,y:360};let mut c=Compass::new();c.arm(p,0,true);
+ c.advance(p,true,550,1280,720);assert!(c.file);assert!(c.center.is_some());
+ c.advance(p,false,600,1280,720);assert_eq!(c.activate(false,true,false),None);assert!(c.file);assert!(c.center.is_some());
+ let trash=c.cards(1280,720)[3];
+ c.advance(Point{x:trash.x+20,y:trash.y+20},true,700,1280,720);
+ assert_eq!(c.selected,Some(3));assert!(c.file);
+ assert_eq!(c.activate(true,false,false),Some((3,true)));assert_eq!(c,Compass::new());
+}

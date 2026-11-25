@@ -39,6 +39,16 @@ impl Compass {
         [(0,-ry),(rx,0),(0,ry),(-rx,0)].map(|(x,y)|Rect{x:c.x+x-cw/2,y:c.y+y-ch/2,width:cw as u32,height:ch as u32})
     }
     // ------------------------=
+    // FUNC: activate
+    // DESC: Captures destination and file mode before dismissal; releasing over no card keeps the hold menu usable.
+    // ------------------=
+    pub fn activate(&mut self,clicked:bool,released:bool,cancel:bool)->Option<(usize,bool)> {
+        if cancel {self.dismiss();return None;}
+        let action=if clicked||released {self.selected.map(|i|(i,self.file))}else{None};
+        if clicked||action.is_some(){self.dismiss();}
+        action
+    }
+    // ------------------------=
     // FUNC: dismiss
     // DESC: Clears presentation and any pending gesture without performing an action.
     // ------------------=

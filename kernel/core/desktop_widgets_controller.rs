@@ -17,6 +17,15 @@ impl ConsoleRuntime {
         crate::ui::drop_compass::publish(crate::ui::drop_compass::Compass::new());
     }
     // ------------------------=
+    // FUNC: arm_file_compass
+    // DESC: Retains the selected desktop file for a stationary hold before any drag motion.
+    // ------------------=
+    pub(super) fn arm_file_compass(&mut self) {
+        let mut compass=crate::ui::drop_compass::Compass::new();
+        compass.arm(Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000},crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000,true);
+        crate::ui::drop_compass::publish(compass);
+    }
+    // ------------------------=
     // FUNC: compass_destination
     // DESC: Opens a native destination or moves an owned personal file without overwriting another object.
     // ------------------=
@@ -39,7 +48,7 @@ impl ConsoleRuntime {
             self.home_dragging_item=None;self.home_drag_moved=false;self.home_drag_from_desktop=false;self.desktop_file_drag=false;
             crate::ui::desktop_drag::finish(false,0,true);
             let _=self.checkpoint_desktop_layout();
-        }else{self.activate_launcher_action(LauncherAction::Home(location));}
+        }else{if index==3 {self.open_personal_trash(0);}else{self.activate_launcher_action(LauncherAction::Home(location));}}
     }
     // ------------------------=
     // FUNC: surface_desktop
@@ -292,6 +301,7 @@ impl ConsoleRuntime {
                 self.home_drag_moved = false;
                 self.home_drag_origin_x = self.pointer_x;
                 self.home_drag_origin_y = self.pointer_y;
+                self.arm_file_compass();
                 return true;
             }
         }
@@ -302,6 +312,7 @@ impl ConsoleRuntime {
             self.redraw();
             return true;
         }
+        if clicked && self.desktop_item_at_pointer().is_some() { return false; }
         if clicked {
             self.surface_desktop();
             let mut compass=crate::ui::drop_compass::Compass::new();
