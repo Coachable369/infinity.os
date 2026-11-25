@@ -27,7 +27,7 @@ fn button_cloud(width:usize,height:usize,x:usize,y:usize)->Rgb {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface { Frame, WindowFill, Panel, Primary, Secondary, Field, Current, Inactive }
 
-pub const STYLE_COUNT: usize = 7;
+pub const STYLE_COUNT: usize = 8;
 pub const STYLE_BYTES: usize = 12 + STYLE_COUNT * 12;
 #[used]
 static STYLE_PAYLOAD: &[u8] = include_bytes!("../../assets/ui-design-kit/default/uikit-styles.bin");
@@ -50,11 +50,11 @@ impl SurfaceStyle {
 // DESC: Rejects malformed surface records atomically before exposing geometry, material or optional tint overrides.
 // ------------------=
 pub const fn decode_styles(bytes: &[u8]) -> Option<[SurfaceStyle; STYLE_COUNT]> {
-    if bytes.len() != 84 && bytes.len() != STYLE_BYTES { return None; }
+    if bytes.len() != 84 && bytes.len() != 96 && bytes.len() != STYLE_BYTES { return None; }
     let magic = b"IUISTY01";
     let mut i = 0;
     while i < 8 { if bytes[i] != magic[i] { return None; } i += 1; }
-    if bytes[8] != 1 || bytes[9] != 0 || (bytes[10] != 6 && bytes[10] != 7) || bytes[11] != 0 { return None; }
+    if bytes[8] != 1 || bytes[9] != 0 || (bytes[10] < 6 || bytes[10] > 8) || bytes[11] != 0 { return None; }
     let mut result = [SurfaceStyle::AUTHORED; STYLE_COUNT];
     i = 0;
     if bytes.len() != 12 + bytes[10] as usize * 12 { return None; }
@@ -101,7 +101,51 @@ pub fn task_tray_style() -> SurfaceStyle {
     #[cfg(not(studio_native_preview))]
     let bytes=STYLE_PAYLOAD;
     let style=decode_styles(bytes).map(|styles|styles[6]).unwrap_or(SurfaceStyle::AUTHORED);
-    if style==SurfaceStyle::AUTHORED {surface_style(Surface::Panel)} else {style}
+    resolve_task_tray_style(style,surface_style(Surface::Panel))
+}
+
+// ------------------------=
+// FUNC: resolve_task_tray_style
+// DESC: Ignores an unused authored radius when inheriting the global panel recipe.
+// ------------------=
+pub fn resolve_task_tray_style(style: SurfaceStyle, global: SurfaceStyle) -> SurfaceStyle {
+    if style.material==0 && style.corners==0 && style.fill.is_none() && style.border.is_none() {global} else {style}
+}
+
+/// Appearance-only hover recipe. No geometry, animation or scheduling settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrayHover {
+    pub color: Rgb,
+    pub opacity: u8,
+    pub row_top: u8,
+    pub row_bottom: u8,
+    pub lens: u8,
+}
+
+// ------------------------=
+// FUNC: tray_hover_recipe
+// DESC: Resolves glass, frosted or satin coverage in constant time with legacy colors preserved.
+// ------------------=
+pub fn tray_hover_recipe(style: SurfaceStyle) -> TrayHover {
+    let c=style.fill.unwrap_or(0xfff8faff);
+    let (opacity,row_top,row_bottom,lens)=match style.material {
+        2 => (156,60,42,80),
+        3 => (200,48,48,96),
+        _ => (112,44,20,64),
+    };
+    TrayHover {color:((c>>16)as u8,(c>>8)as u8,c as u8),opacity,row_top,row_bottom,lens}
+}
+
+// ------------------------=
+// FUNC: task_tray_hover
+// DESC: Loads the independent hover appearance once per tray paint, with legacy glass defaults.
+// ------------------=
+pub fn task_tray_hover() -> TrayHover {
+    #[cfg(studio_native_preview)]
+    let bytes=crate::studio_native_render::asset_override(b"uikit-styles.bin").unwrap_or(STYLE_PAYLOAD);
+    #[cfg(not(studio_native_preview))]
+    let bytes=STYLE_PAYLOAD;
+    tray_hover_recipe(decode_styles(bytes).map(|styles|styles[7]).unwrap_or(SurfaceStyle::AUTHORED))
 }
 
 // ------------------------=

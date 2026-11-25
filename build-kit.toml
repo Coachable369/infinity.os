@@ -311,3 +311,13 @@ clean = false
 domain = "studio"
 command = ["env", "INFINITYCODE_GUI_TEST=1", "python3", "tools/native-python/infinitycode-test.py"]
 clean = false
+
+[profiles.task-tray-appearance-tests]
+domain = "studio"
+command = ["sh", "tools/task-tray-appearance-test.sh"]
+clean = false
+
+[profiles.task-tray-native-tests]
+domain = "studio"
+command = ["sh", "tools/task-tray-native-test.sh"]
+clean = false

@@ -475,51 +475,115 @@ private struct InteractiveButtonThemeSample: View {
     }
 }
 
-/// Independent task-manager rail material; action geometry and motion remain shared.
+/// Independent task-manager materials; geometry, clocks and hit testing remain OS-owned.
 struct GlobalTaskTrayStylePicker: View {
     @ObservedObject var store: UIKitStore
     @State private var expanded = false
     private let choices: [GlassButtonPreset] = [.sapphire, .smoked, .ice, .satin, .graphite, .minimal]
+    private let hoverMaterials: [UIKitSurfaceMaterial] = [.glass, .matte, .flat]
+    private let colorNames = ["Pearl", "Sapphire", "Ice", "Violet", "Teal"]
+    private let colors: [UInt32] = [0xfff8faff, 0xff91bdff, 0xffbbe8ff, 0xffd0baff, 0xff9de4dc]
+    private var hover: UIKitSurfaceStyle { store.document.styles[7] }
+    private var hoverColor: Color {
+        let c = hover.fill ?? colors[0]
+        return Color(red: Double((c >> 16) & 255)/255, green: Double((c >> 8) & 255)/255, blue: Double(c & 255)/255)
+    }
+    private var hoverOpacity: Double { hover.material == .matte ? 156/255.0 : hover.material == .flat ? 200/255.0 : 112/255.0 }
+
+    // ------------------------=
+    // FUNC: hoverName
+    // DESC: Names appearance-only hover finishes without exposing motion parameters.
+    // ------------------=
+    private func hoverName(_ material: UIKitSurfaceMaterial) -> String {
+        switch material { case .matte: "Frosted"; case .flat: "Satin"; default: "Translucent glass" }
+    }
+
+    // ------------------------=
+    // FUNC: setHover
+    // DESC: Updates one hover attribute while retaining the independent color or finish.
+    // ------------------=
+    private func setHover(material: UIKitSurfaceMaterial? = nil, color: UInt32? = nil) {
+        var next = hover
+        if let material { next.material = material }
+        if let color { next.fill = color }
+        store.setSurfaceStyle(7, style: next)
+    }
+
     var body: some View {
-        Button { expanded.toggle() } label: {
-            Label("Task Tray", systemImage: "sidebar.left")
-        }
-        .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
-        .accessibilityIdentifier("studio.global.task-tray-style")
-        .help("Style the desktop task manager independently of other panels")
-        .popover(isPresented: $expanded, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Task manager appearance").font(.headline)
-                Text("Desktop task tray · shared panel materials")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Use global panel style") { store.setSurfaceStyle(6, style: UIKitSurfaceStyle()) }
-                    .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(choices) { preset in
-                            Button { store.setSurfaceStyle(6, style: preset.style) } label: {
-                                HStack(spacing: 14) {
-                                    if let preview = UIKitStylePreviewImage.image(store: store, kind: .panel,
-                                        width: 120, height: 90, material: PrecisionMaterial(style: preset.style)) {
-                                        Image(decorative: preview, scale: 1).resizable().frame(width: 120, height: 90)
-                                    }
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(preset.rawValue).font(.headline)
-                                        Text(preset.detail).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if store.document.styles[6] == preset.style {
-                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(InfinityUIKit.Palette.nativeAccent)
-                                    }
-                                }.padding(10)
-                            }.buttonStyle(UIKitPreviewInteractionStyle())
+        Button { expanded.toggle() } label: { Label("Task Tray", systemImage: "sidebar.left") }
+            .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+            .accessibilityIdentifier("studio.global.task-tray-style")
+            .help("Choose task tray panel, hover finish and color")
+            .popover(isPresented: $expanded, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Task tray appearance").font(.headline)
+                    Text("Shared UIKit materials · independent hover appearance")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("Panel style"); Spacer()
+                        Menu {
+                            Button("Use global panel style") { store.setSurfaceStyle(6, style: .authored) }
+                            Divider()
+                            ForEach(choices) { preset in
+                                Button { store.setSurfaceStyle(6, style: preset.style) } label: {
+                                    Label(preset.rawValue, systemImage: store.document.styles[6] == preset.style ? "checkmark" : "rectangle.fill")
+                                }
+                            }
+                        } label: {
+                            Text(choices.first(where: { $0.style == store.document.styles[6] })?.rawValue ?? "Global panel style")
+                        }.frame(width: 230)
+                        .accessibilityIdentifier("studio.task-tray.panel")
+                    }
+                    if let preview = UIKitStylePreviewImage.image(store: store, kind: .panel,
+                        width: 380, height: 100, material: PrecisionMaterial(style:
+                            store.document.styles[6] == .authored ? store.document.styles[2] : store.document.styles[6])) {
+                        Image(decorative: preview, scale: 1).resizable().frame(width: 380, height: 100)
+                    }
+                    Divider()
+                    HStack {
+                        Text("Hover style"); Spacer()
+                        Menu {
+                            ForEach(hoverMaterials, id: \.rawValue) { material in
+                                Button(hoverName(material)) { setHover(material: material) }
+                            }
+                        } label: { Text(hoverName(hover.material)) }
+                            .frame(width: 230).accessibilityIdentifier("studio.task-tray.hover-style")
+                    }
+                    HStack {
+                        Text("Hover color"); Spacer()
+                        Menu {
+                            ForEach(colors.indices, id: \.self) { index in
+                                Button { setHover(color: colors[index]) } label: {
+                                    Label(colorNames[index], systemImage: (hover.fill ?? colors[0]) == colors[index] ? "checkmark.circle.fill" : "circle.fill")
+                                }
+                            }
+                        } label: { Text(colorNames[colors.firstIndex(of: hover.fill ?? colors[0]) ?? 0]) }
+                            .frame(width: 230).accessibilityIdentifier("studio.task-tray.hover-color")
+                    }
+                    Text("Show application").font(.body.weight(.medium))
+                        .foregroundStyle(Color(red: 21/255.0, green: 43/255.0, blue: 65/255.0))
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(hoverColor.opacity(hoverOpacity), in: Capsule())
+                        .accessibilityLabel("Selected hover appearance preview")
+                    HStack(spacing: 12) {
+                        ForEach(colors.indices, id: \.self) { index in
+                            Button { setHover(color: colors[index]) } label: {
+                                Circle().fill(Color(red: Double((colors[index] >> 16) & 255)/255,
+                                    green: Double((colors[index] >> 8) & 255)/255, blue: Double(colors[index] & 255)/255))
+                                    .frame(width: 28, height: 28)
+                                    .overlay { if (hover.fill ?? colors[0]) == colors[index] { Image(systemName: "checkmark").foregroundStyle(.black) } }
+                            }.buttonStyle(.plain).help(colorNames[index]).accessibilityLabel(colorNames[index])
                         }
                     }
-                }.frame(maxHeight: 440)
-                Text("Preserves task actions, hover animation and placement. Save & Update ISO applies the selected material to the OS.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button("Done") { expanded = false }.buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
-            }.padding(16).frame(width: 480).background(InfinityUIKit.Palette.nativePanel)
-        }
+                    Text("Appearance only. Animation, hover response, placement and task actions stay unchanged. Save & Update ISO applies your choices.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button("Reset hover") { store.setSurfaceStyle(7, style: .authored) }
+                            .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+                        Spacer()
+                        Button("Done") { expanded = false }.buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
+                    }
+                }.padding(20).frame(width: 420).background(InfinityUIKit.Palette.nativePanel)
+            }
     }
 }

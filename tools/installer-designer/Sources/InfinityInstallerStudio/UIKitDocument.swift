@@ -39,7 +39,7 @@ struct UIKitDocument: Codable, Equatable {
     var version = 1
     var colors: [UInt32] = Self.defaultColors
     var overrides: [UIKitOverride] = []
-    var styles: [UIKitSurfaceStyle] = Array(repeating: UIKitSurfaceStyle(), count: 7)
+    var styles: [UIKitSurfaceStyle] = Array(repeating: UIKitSurfaceStyle(), count: 8)
 
     private enum CodingKeys: String, CodingKey { case version, colors, overrides, styles }
 
@@ -59,8 +59,8 @@ struct UIKitDocument: Codable, Equatable {
         colors = try values.decode([UInt32].self, forKey: .colors)
         overrides = try values.decodeIfPresent([UIKitOverride].self, forKey: .overrides) ?? []
         styles = try values.decodeIfPresent([UIKitSurfaceStyle].self, forKey: .styles)
-            ?? Array(repeating: UIKitSurfaceStyle(), count: 7)
-        if styles.count == 6 { styles.append(UIKitSurfaceStyle()) }
+            ?? Array(repeating: UIKitSurfaceStyle(), count: 8)
+        if (6...7).contains(styles.count) { styles += Array(repeating: UIKitSurfaceStyle(), count: 8 - styles.count) }
     }
 
     static let defaultColors: [UInt32] = [
@@ -74,8 +74,8 @@ struct UIKitDocument: Codable, Equatable {
         guard version == 1, colors.count == UIKitColorRole.allCases.count else {
             throw UIKitIssue.invalid("Unsupported UIKit version or color-role count")
         }
-        guard styles.count == 7, styles.allSatisfy({ (0...40).contains($0.radius) }) else {
-            throw UIKitIssue.invalid("UIKit requires seven surface styles with corner radii between 0 and 40")
+        guard styles.count == 8, styles.allSatisfy({ (0...40).contains($0.radius) }) else {
+            throw UIKitIssue.invalid("UIKit requires eight surface styles with corner radii between 0 and 40")
         }
         guard Set(overrides.map(\.id)).count == overrides.count else {
             throw UIKitIssue.invalid("A UIKit element has multiple replacement images")
@@ -115,7 +115,7 @@ struct UIKitDocument: Codable, Equatable {
     func runtimeStyles() throws -> Data {
         try validate()
         var result = Data("IUISTY01".utf8)
-        result.append(contentsOf: [1, 0, 7, 0])
+        result.append(contentsOf: [1, 0, 8, 0])
         for style in styles {
             let flags: UInt8 = (style.fill == nil ? 0 : 1) | (style.border == nil ? 0 : 2)
             result.append(contentsOf: [UInt8(style.material.rawValue), UInt8(style.corners.rawValue), UInt8(style.radius), flags])

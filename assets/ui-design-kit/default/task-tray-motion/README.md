@@ -113,3 +113,18 @@ and Minimal Blue from the existing kit, with rendered panel previews. This chang
 only the rail substrate; task actions, glyphs, geometry, translucent hover bubble,
 and the 90 ms response contract stay unchanged. Reset restores global Panel inheritance.
 The recipe is packaged in the existing UIKit style payload for both live and installed boots.
+
+
+## Independent hover appearance
+
+The Task Tray chooser now has separate Panel style, Hover style and Hover color
+menus. Panel choices reuse the six existing UIKit finishes; Global panel style
+inherits the current Panel recipe. Hover finishes reuse translucent glass (112/255),
+frosted (156/255), and satin (200/255) coverage. Five pale, legible accents are
+Pearl #F8FAFF, Sapphire #91BDFF, Ice #BBE8FF, Violet #D0BAFF and Teal #9DE4DC.
+The eighth surface record stores hover material and fill independently. Six/seven
+record projects retain their previous translucent pearl hover. No new artwork is
+required: the existing clipped glass bubble is recolored, retaining its silhouette,
+90 ms hover response, expansion/selection clocks, damage bounds and hit targets.
+Only constant-time palette resolution is added once per tray paint. No allocations,
+image decoding or service calls are added to the animation or pointer path.

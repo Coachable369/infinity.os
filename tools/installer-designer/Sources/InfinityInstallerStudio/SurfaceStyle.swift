@@ -166,7 +166,7 @@ struct UIKitSurfaceStyle: Codable, Equatable, Hashable {
     var border: UInt32? = nil
 
     static let authored = UIKitSurfaceStyle()
-    static let defaults = Array(repeating: UIKitSurfaceStyle(), count: 7)
+    static let defaults = Array(repeating: UIKitSurfaceStyle(), count: 8)
 
     // ------------------------=
     // FUNC: index

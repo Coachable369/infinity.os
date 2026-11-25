@@ -77,10 +77,10 @@ def style_bytes(document):
     styles = document.get("styles", [])
     if styles is None:
         styles = []
-    if not isinstance(styles, list) or len(styles) not in (0, 6, 7):
-        raise ValueError("UIKit styles require six legacy or seven surface recipes")
+    if not isinstance(styles, list) or len(styles) not in (0, 6, 7, 8):
+        raise ValueError("UIKit styles require six to eight surface recipes")
     styles = list(styles or [{} for _ in range(6)])
-    if len(styles) == 6:
+    while len(styles) < 8:
         styles.append({})
     records = bytearray()
     for index, style in enumerate(styles):
@@ -99,7 +99,7 @@ def style_bytes(document):
                 flags |= bit
             colors.append(color or 0)
         records.extend(struct.pack("<4B2I", material, corners, radius, flags, *colors))
-    return b"IUISTY01" + struct.pack("<HH", 1, 7) + records
+    return b"IUISTY01" + struct.pack("<HH", 1, 8) + records
 
 # ------------------------=
 # FUNC: native_bitmap

@@ -116,10 +116,12 @@ impl DisplayDevice {
             if let Some(old)=previous_clip {clip.left=clip.left.max(old.left);clip.top=clip.top.max(old.top);clip.right=clip.right.min(old.right);clip.bottom=clip.bottom.min(old.bottom);}
             self.render_clip=Some(clip);
             let opacity=((expansion-40)*255/215) as u8;
-            let glass_opacity=(opacity as u16*112/255) as u8;
+            let finish=crate::ui::panel_recipe::task_tray_hover();
+            let (hr,hg,hb)=finish.color;
+            let glass_opacity=(opacity as u16*finish.opacity as u16/255) as u8;
             let spine=(base*62/100).max(18);
             let spine_x=x+w-spine-5;
-            self.fill_rounded_rect_alpha(spine_x,y+5,spine,h.saturating_sub(10),spine/2,248,250,255,glass_opacity);
+            self.fill_rounded_rect_alpha(spine_x,y+5,spine,h.saturating_sub(10),spine/2,hr,hg,hb,glass_opacity);
             let (hover,tail)=shelf::bubble_state();
             let first=g.action_rect(0);
             let pitch=g.action_rect(1).y-first.y;
@@ -138,21 +140,21 @@ impl DisplayDevice {
                     let radius=ah/2;
                     let dy=if line<radius {radius-line}else{line.saturating_sub(ah-radius)};
                     let inset=radius-shelf::circle_extent(radius as i32,dy as i32)as usize;
-                    let alpha=(44usize.saturating_sub(line*24/ah))*opacity as usize/255;
+                    let alpha=(finish.row_top as usize-(line*(finish.row_top-finish.row_bottom)as usize/ah))*opacity as usize/255;
                     self.fill_rect_alpha(ax+inset,ay+line,aw.saturating_sub(inset*2),1,174,204,238,alpha as u8);
                 }
                 let growth=hover[index].max(0)as usize;
                 let lens=(ah+(aw.saturating_sub(ah))*growth/255).min(aw);
-                self.fill_rounded_rect_alpha(ax,ay,lens,ah,ah/2,214,233,255,(growth*opacity as usize*64/(255*255))as u8);
+                self.fill_rounded_rect_alpha(ax,ay,lens,ah,ah/2,hr.saturating_sub(34),hg.saturating_sub(17),hb,(growth*opacity as usize*finish.lens as usize/(255*255))as u8);
             }
             if state.hover.is_some() {
                 let shoulder=(base*18/100).max(6) as i32;
                 for py in top-shoulder..bottom+shoulder {
                     if let Some((left,_))=shelf::bubble_span(py*4+2,top*4,bottom*4,first.x*4,spine_x as i32*4,shoulder*4) {
                         let start=(left+3)/4;
-                        self.fill_rect_alpha(start.max(0)as usize,py.max(0)as usize,(spine_x as i32-start).max(0)as usize,1,248,250,255,glass_opacity);
+                        self.fill_rect_alpha(start.max(0)as usize,py.max(0)as usize,(spine_x as i32-start).max(0)as usize,1,hr,hg,hb,glass_opacity);
                         let coverage=(start*4-left).clamp(0,4);
-                        if coverage>0 {self.fill_rect_alpha((start-1).max(0)as usize,py.max(0)as usize,1,1,248,250,255,(glass_opacity as i32*coverage/4)as u8);}
+                        if coverage>0 {self.fill_rect_alpha((start-1).max(0)as usize,py.max(0)as usize,1,1,hr,hg,hb,(glass_opacity as i32*coverage/4)as u8);}
                     }
                 }
             }
