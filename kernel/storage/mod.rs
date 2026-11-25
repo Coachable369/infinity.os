@@ -1393,6 +1393,28 @@ pub fn node_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
 }
 
 // ------------------------=
+// FUNC: fabric_provider_state_load
+// DESC: Reads durable Fabric provider limits and request replay fences from the mounted installed store.
+// ------------------=
+pub(crate) fn fabric_provider_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    { with_store(|store| store.read_fabric_provider(out)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = out; Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
+// FUNC: fabric_provider_state_commit
+// DESC: Atomically persists provider authority before an admission or management action takes effect.
+// ------------------=
+pub(crate) fn fabric_provider_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    { with_store(|store| store.checkpoint_fabric_provider(content)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = content; Err(object::ObjectError::SpaceUnavailable) }
+}
+
+// ------------------------=
 // FUNC: compute_state_load
 // DESC: Loads authoritative distributed task and audit state from installed System Space.
 // ------------------=

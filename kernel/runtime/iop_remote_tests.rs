@@ -2369,3 +2369,60 @@ fn provider_response_churn_preserves_active_retry() {
     assert_eq!(execution.count(), 0);
     assert!(provider.execute(request, &mut execution, local, peer, 4).is_err());
 }
+
+// ------------------------=
+// FUNC: provider_durable_fences_survive_reboot_and_failed_commits_admit_no_work
+// DESC: A real checkpoint round trip rejects old epochs after restart, while failed writes leave accounting and policy unchanged.
+// ------------------=
+#[test]
+fn provider_durable_fences_survive_reboot_and_failed_commits_admit_no_work() {
+    use crate::runtime::compute::{RemoteComputeExecutor, ComputeError, ProviderComputeLimits,
+        PROVIDER_COMPUTE_POLICY_TARGET};
+    use crate::runtime::execution::ExecutionManager;
+    let local = NodeId([61; 32]);
+    let peer = NodeId([62; 32]);
+    let mut provider = RemoteComputeExecutor::new();
+    let mut execution = ExecutionManager::new();
+    let request = compute_payload(local);
+    let before = provider.encode_provider_state();
+    assert_eq!(provider.execute_durable(request, &mut execution, local, peer, 1, &mut |_| false),
+        Err(ComputeError::InvalidState));
+    assert_eq!(execution.count(), 0);
+    assert_eq!(provider.encode_provider_state(), before);
+    let mut disk = before;
+    let result = provider.execute_durable(request, &mut execution, local, peer, 1,
+        &mut |bytes| { disk.copy_from_slice(bytes); true }).unwrap();
+    let mut restored = RemoteComputeExecutor::new();
+    restored.restore_provider_state(&disk).unwrap();
+    let mut after_boot = ExecutionManager::new();
+    assert_eq!(restored.execute(request, &mut after_boot, local, peer, 2), Err(ComputeError::StaleResult));
+    assert_eq!(after_boot.count(), 0);
+    let mut newer = request;
+    newer.epoch += 1;
+    assert!(restored.execute(newer, &mut after_boot, local, peer, 2).is_ok());
+    // In-process retries return the original slice without a second durable write.
+    assert_eq!(provider.execute_durable(request, &mut execution, local, peer, 2,
+        &mut |_| panic!("exact retry must not write or execute again")), Ok(result));
+    let caller = SecurityIdentity([63; 16]);
+    let mut caps = CapabilityManager::new();
+    let cap = caps.grant(CapabilityType::ResourcePolicyModify, PROVIDER_COMPUTE_POLICY_TARGET,
+        1, 0, caller, caller, Some(100), 0).unwrap();
+    let disabled = ProviderComputeLimits { enabled: false, ..provider.limits().0 };
+    let active = provider.active_count();
+    assert_eq!(provider.set_limits_durable(disabled, 1, caller, cap, &caps, &mut execution, 3,
+        &mut |_| false), Err(ComputeError::InvalidState));
+    assert_eq!(provider.active_count(), active);
+    assert_eq!(provider.limits().1, 1);
+    assert!(provider.limits().0.enabled);
+    provider.set_limits_durable(disabled, 1, caller, cap, &caps, &mut execution, 3,
+        &mut |bytes| { disk.copy_from_slice(bytes); true }).unwrap();
+    assert_eq!(execution.count(), 0);
+    let mut reboot = RemoteComputeExecutor::new();
+    reboot.restore_provider_state(&disk).unwrap();
+    assert_eq!(reboot.limits(), (disabled, 2));
+    assert_eq!(reboot.execute(newer, &mut execution, local, peer, 4), Err(ComputeError::ResourceUnavailable));
+    let baseline = reboot.encode_provider_state();
+    disk[500] ^= 1;
+    assert_eq!(reboot.restore_provider_state(&disk), Err(ComputeError::InvalidRequest));
+    assert_eq!(reboot.encode_provider_state(), baseline);
+}

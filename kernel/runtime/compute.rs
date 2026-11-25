@@ -175,6 +175,8 @@ pub struct ProviderComputeLimits {
 }
 
 pub const PROVIDER_COMPUTE_POLICY_TARGET: u64 = 0x46414252;
+pub const PROVIDER_STATE_BYTES: usize = 9536;
+pub const PROVIDER_STATE_PATH: &[u8] = b"/system/fabric-provider";
 
 const PROVIDER_REPLAY_PEERS: usize = 32;
 const PROVIDER_REPLAY_TASKS: usize = 64;
@@ -225,6 +227,14 @@ impl RemoteComputeExecutor {
     }
 
     // ------------------------=
+    // FUNC: disable_unavailable
+    // DESC: Keeps a provider closed when its durable policy cannot be recovered during boot.
+    // ------------------=
+    pub fn disable_unavailable(&mut self) {
+        self.limits.enabled = false;
+    }
+
+    // ------------------------=
     // FUNC: limits
     // DESC: Returns provider-enforced ceilings and their revision for all management clients.
     // ------------------=
@@ -251,6 +261,20 @@ impl RemoteComputeExecutor {
         caller: super::execution::SecurityIdentity, capability: CapabilityId,
         capabilities: &CapabilityManager, execution: &mut ExecutionManager, now: u64,
     ) -> Result<u64, ComputeError> {
+        self.set_limits_durable(limits, expected_revision, caller, capability, capabilities,
+            execution, now, &mut |_| true)
+    }
+
+    // ------------------------=
+    // FUNC: set_limits_durable
+    // DESC: Commits authorized provider policy before publishing it or revoking active allocations.
+    // ------------------=
+    pub fn set_limits_durable(
+        &mut self, limits: ProviderComputeLimits, expected_revision: u64,
+        caller: super::execution::SecurityIdentity, capability: CapabilityId,
+        capabilities: &CapabilityManager, execution: &mut ExecutionManager, now: u64,
+        commit: &mut impl FnMut(&[u8]) -> bool,
+    ) -> Result<u64, ComputeError> {
         capabilities.validate(capability, caller, CapabilityType::ResourcePolicyModify,
             PROVIDER_COMPUTE_POLICY_TARGET, 1, 0, now)
             .map_err(|_| ComputeError::AccessDenied)?;
@@ -269,6 +293,10 @@ impl RemoteComputeExecutor {
             return Err(ComputeError::ResourceUnavailable);
         }
         let revision = self.revision.checked_add(1).ok_or(ComputeError::InvalidState)?;
+        let mut state = self.encode_provider_state();
+        encode_provider_limits(&mut state, limits, revision);
+        seal_provider_state(&mut state);
+        if !commit(&state) { return Err(ComputeError::InvalidState); }
         if !limits.enabled {
             self.responses.fill(None);
             for slot in &mut self.active {
@@ -278,6 +306,83 @@ impl RemoteComputeExecutor {
         self.limits = limits;
         self.revision = revision;
         Ok(revision)
+    }
+
+    // ------------------------=
+    // FUNC: encode_provider_state
+    // DESC: Serializes sharing limits and replay fences; transient contexts and cached responses never survive reboot.
+    // ------------------=
+    pub fn encode_provider_state(&self) -> [u8; PROVIDER_STATE_BYTES] {
+        let mut state = [0; PROVIDER_STATE_BYTES];
+        state[..8].copy_from_slice(b"INFPRV01");
+        encode_provider_limits(&mut state, self.limits, self.revision);
+        for (index, entry) in self.replay.iter().enumerate() {
+            if let Some(window) = entry { encode_provider_window(&mut state, index, *window); }
+        }
+        seal_provider_state(&mut state);
+        state
+    }
+
+    // ------------------------=
+    // FUNC: restore_provider_state
+    // DESC: Validates the entire checkpoint before replacing idle provider policy and fences, rejecting corruption and duplicate identities.
+    // ------------------=
+    pub fn restore_provider_state(&mut self, state: &[u8]) -> Result<(), ComputeError> {
+        if state.len() != PROVIDER_STATE_BYTES || &state[..8] != b"INFPRV01"
+            || read_u32(state, PROVIDER_STATE_BYTES - 4) != state_checksum(&state[..PROVIDER_STATE_BYTES - 4])
+            || state[8] > 1 || state[9..12].iter().any(|v| *v != 0)
+            || state[32..40].iter().any(|v| *v != 0)
+            || state[9512..PROVIDER_STATE_BYTES - 4].iter().any(|v| *v != 0) {
+            return Err(ComputeError::InvalidRequest);
+        }
+        if self.active_count() != 0 { return Err(ComputeError::InvalidState); }
+        let limits = ProviderComputeLimits { enabled: state[8] == 1,
+            cpu_units: read_u16(state, 12), concurrent_tasks: read_u16(state, 14),
+            memory_bytes: read_u64(state, 16) };
+        let revision = read_u64(state, 24);
+        if revision == 0 || limits.memory_bytes > MAX_COMPUTE_MEMORY || limits.cpu_units > 128
+            || limits.concurrent_tasks as usize > MAX_REMOTE_EXECUTIONS
+            || (limits.enabled && (limits.memory_bytes == 0 || limits.cpu_units == 0 || limits.concurrent_tasks == 0)) {
+            return Err(ComputeError::InvalidRequest);
+        }
+        let mut replay = [None; PROVIDER_REPLAY_PEERS];
+        for index in 0..PROVIDER_REPLAY_PEERS {
+            let start = 40 + index * 296;
+            let mut peer = [0; 32];
+            peer.copy_from_slice(&state[start..start + 32]);
+            if peer == [0; 32] {
+                if state[start..start + 296].iter().any(|v| *v != 0) { return Err(ComputeError::InvalidRequest); }
+                continue;
+            }
+            if replay[..index].iter().flatten().any(|entry: &ProviderReplayWindow| entry.peer.0 == peer) {
+                return Err(ComputeError::InvalidRequest);
+            }
+            let highest_task = read_u64(state, start + 32);
+            if highest_task == 0 { return Err(ComputeError::InvalidRequest); }
+            let mut epochs = [0; PROVIDER_REPLAY_TASKS];
+            for (slot, value) in epochs.iter_mut().enumerate() { *value = read_u32(state, start + 40 + slot * 4); }
+            if epochs[(highest_task % PROVIDER_REPLAY_TASKS as u64) as usize] == 0 { return Err(ComputeError::InvalidRequest); }
+            replay[index] = Some(ProviderReplayWindow { peer: NodeId(peer), highest_task, epochs });
+        }
+        self.limits = limits;
+        self.revision = revision;
+        self.replay = replay;
+        self.responses.fill(None);
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: commit_replay
+    // DESC: Persists a candidate fence before exposing it; failed storage cannot admit or acknowledge a new epoch.
+    // ------------------=
+    fn commit_replay(&mut self, index: usize, window: ProviderReplayWindow,
+        commit: &mut impl FnMut(&[u8]) -> bool) -> Result<(), ComputeError> {
+        let mut state = self.encode_provider_state();
+        encode_provider_window(&mut state, index, window);
+        seal_provider_state(&mut state);
+        if !commit(&state) { return Err(ComputeError::InvalidState); }
+        self.replay[index] = Some(window);
+        Ok(())
     }
 
     // ------------------------=
@@ -357,11 +462,22 @@ impl RemoteComputeExecutor {
     // ------------------=
     pub fn execute(
         &mut self,
-        mut dispatch: ComputeDispatchV1,
+        dispatch: ComputeDispatchV1,
         execution: &mut ExecutionManager,
         local: NodeId,
         peer: NodeId,
         now: u64,
+    ) -> Result<ComputeDispatchV1, ComputeError> {
+        self.execute_durable(dispatch, execution, local, peer, now, &mut |_| true)
+    }
+
+    // ------------------------=
+    // FUNC: execute_durable
+    // DESC: Fences each newly admitted epoch durably before any execution or cancellation acknowledgement.
+    // ------------------=
+    pub fn execute_durable(
+        &mut self, mut dispatch: ComputeDispatchV1, execution: &mut ExecutionManager,
+        local: NodeId, peer: NodeId, now: u64, commit: &mut impl FnMut(&[u8]) -> bool,
     ) -> Result<ComputeDispatchV1, ComputeError> {
         ComputeDispatchV1::decode(&dispatch.encode())?;
         self.expire(execution, now);
@@ -380,17 +496,17 @@ impl RemoteComputeExecutor {
             }) {
                 return Err(ComputeError::AccessDenied);
             }
+            // A cancellation can arrive before the initial request. Fence that epoch too.
+            match self.next_replay_window(peer, dispatch.task_id, dispatch.epoch) {
+                Ok((index, window)) => self.commit_replay(index, window, commit)?,
+                Err(ComputeError::StaleResult) => {},
+                Err(error) => return Err(error),
+            }
             // Never replay a running response after an acknowledged cancellation.
             for cached in &mut self.responses {
                 if cached.is_some_and(|entry| entry.peer == peer
                     && entry.request.task_id == dispatch.task_id
                     && entry.request.epoch == dispatch.epoch) { *cached = None; }
-            }
-            // A cancellation can arrive before the initial request. Fence that epoch too.
-            match self.next_replay_window(peer, dispatch.task_id, dispatch.epoch) {
-                Ok((index, window)) => self.replay[index] = Some(window),
-                Err(ComputeError::StaleResult) => {},
-                Err(error) => return Err(error),
             }
             if let Some(index) = matching {
                 if let Some(active) = self.active[index].take() {
@@ -445,7 +561,10 @@ impl RemoteComputeExecutor {
                 return Err(ComputeError::ResourceUnavailable);
             }
             let handle = create_remote_context(dispatch, execution)?;
-            self.replay[replay_index] = Some(replay_window);
+            if let Err(error) = self.commit_replay(replay_index, replay_window, commit) {
+                let _ = execution.destroy(handle);
+                return Err(error);
+            }
             self.active[index] = Some(RemoteExecution {
                 peer,
                 lease_expires: now.saturating_add(60),
@@ -519,6 +638,40 @@ impl RemoteComputeExecutor {
         self.response_cursor = (index + 1) % self.responses.len();
         Ok(dispatch)
     }
+}
+
+// ------------------------=
+// FUNC: encode_provider_limits
+// DESC: Writes the stable provider policy header without serializing host layout or transient authority.
+// ------------------=
+fn encode_provider_limits(state: &mut [u8], limits: ProviderComputeLimits, revision: u64) {
+    state[8] = limits.enabled as u8;
+    state[12..14].copy_from_slice(&limits.cpu_units.to_le_bytes());
+    state[14..16].copy_from_slice(&limits.concurrent_tasks.to_le_bytes());
+    state[16..24].copy_from_slice(&limits.memory_bytes.to_le_bytes());
+    state[24..32].copy_from_slice(&revision.to_le_bytes());
+}
+
+// ------------------------=
+// FUNC: encode_provider_window
+// DESC: Writes one authenticated consumer identity and its bounded replay window.
+// ------------------=
+fn encode_provider_window(state: &mut [u8], index: usize, window: ProviderReplayWindow) {
+    let start = 40 + index * 296;
+    state[start..start + 32].copy_from_slice(&window.peer.0);
+    state[start + 32..start + 40].copy_from_slice(&window.highest_task.to_le_bytes());
+    for (slot, epoch) in window.epochs.iter().enumerate() {
+        state[start + 40 + slot * 4..start + 44 + slot * 4].copy_from_slice(&epoch.to_le_bytes());
+    }
+}
+
+// ------------------------=
+// FUNC: seal_provider_state
+// DESC: Checksums all checkpoint bytes so a torn persistent write cannot reset authority silently.
+// ------------------=
+fn seal_provider_state(state: &mut [u8]) {
+    let checksum = state_checksum(&state[..PROVIDER_STATE_BYTES - 4]);
+    state[PROVIDER_STATE_BYTES - 4..].copy_from_slice(&checksum.to_le_bytes());
 }
 
 // ------------------------=

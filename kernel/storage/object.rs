@@ -1693,6 +1693,41 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
 
     // ------------------------=
+    // FUNC: checkpoint_fabric_provider
+    // DESC: Creates or atomically replaces private provider policy and replay protection on new and upgraded stores.
+    // ------------------=
+    pub(crate) fn checkpoint_fabric_provider(&mut self, content: &[u8]) -> Result<u32, ObjectError> {
+        crate::runtime::compute::RemoteComputeExecutor::new().restore_provider_state(content)
+            .map_err(|_| ObjectError::CorruptContent)?;
+        match self.resolve(crate::runtime::compute::PROVIDER_STATE_PATH) {
+            Ok(id) => {
+                let record = &self.state.objects[self.object_index(id)?];
+                if record.space != Space::System as u8 || record.kind != ObjectType::Metadata as u8
+                    || &record.name[..record.name_len as usize] != b"fabric-provider" {
+                    return Err(ObjectError::Unauthorized);
+                }
+                self.replace_state(id, content)
+            },
+            Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => self.create_attached(
+                b"fabric-provider", ObjectType::Metadata, Space::System, content,
+                crate::runtime::compute::PROVIDER_STATE_PATH).map(|_| 1),
+            Err(error) => Err(error),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: read_fabric_provider
+    // DESC: Reads only the private System Space provider checkpoint, rejecting substituted object types.
+    // ------------------=
+    pub(crate) fn read_fabric_provider(&mut self, out: &mut [u8]) -> Result<usize, ObjectError> {
+        let id = self.resolve(crate::runtime::compute::PROVIDER_STATE_PATH)?;
+        let record = &self.state.objects[self.object_index(id)?];
+        if record.space != Space::System as u8 || record.kind != ObjectType::Metadata as u8
+            || &record.name[..record.name_len as usize] != b"fabric-provider" { return Err(ObjectError::Unauthorized); }
+        self.read_internal(id, None, out)
+    }
+
+    // ------------------------=
     // FUNC: checkpoint_automation
     // DESC: Creates or replaces a validated job catalog atomically, including migration of stores created before automation support.
     // ------------------=
@@ -1913,7 +1948,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         let name = &record.name[..record.name_len as usize];
         if self.is_identity_state(id)? || matches!(name, b"@ssh-user-private" | b"@ssh-user-public" | b"@ssh-user-directory")
             || record.space == Space::System as u8
-            && matches!(name, b"@ssh-host-key" | b"@ssh-config" | b"automation-state") {
+            && matches!(name, b"@ssh-host-key" | b"@ssh-config" | b"automation-state" | b"fabric-provider") {
             Err(ObjectError::Unauthorized)
         } else { Ok(()) }
     }

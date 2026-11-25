@@ -1163,3 +1163,46 @@ fn native_replica_rejects_malformed_and_corrupt_objects() {
     let mut native = NativeReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
     assert_eq!(native.read_verified(&mut [0; 32]), Err(ReplicaError::Integrity));
 }
+
+// ------------------------=
+// FUNC: provider_checkpoint_is_private_atomic_and_survives_remount
+// DESC: Verifies native disk persistence and every interrupted-write boundary for provider sharing policy.
+// ------------------=
+#[test]
+fn provider_checkpoint_is_private_atomic_and_survives_remount() {
+    use crate::runtime::compute::{RemoteComputeExecutor, PROVIDER_STATE_PATH, PROVIDER_STATE_BYTES};
+    use crate::storage::object::ObjectError;
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let mut provider = RemoteComputeExecutor::new();
+    let initial = provider.encode_provider_state();
+    store.checkpoint_fabric_provider(&initial).unwrap();
+    let id = store.resolve(PROVIDER_STATE_PATH).unwrap();
+    let mut bytes = [0; PROVIDER_STATE_BYTES];
+    assert_eq!(store.read(id, None, &mut bytes), Err(ObjectError::Unauthorized));
+    assert_eq!(store.write(id, &initial), Err(ObjectError::Unauthorized));
+    assert_eq!(store.remove(id), Err(ObjectError::Unauthorized));
+    assert_eq!(store.detach(PROVIDER_STATE_PATH), Err(ObjectError::Unauthorized));
+    let baseline = disk.0.borrow().sectors.clone();
+    provider.disable_unavailable();
+    let disabled = provider.encode_provider_state();
+    let before = disk.0.borrow().writes;
+    store.checkpoint_fabric_provider(&disabled).unwrap();
+    let writes = disk.0.borrow().writes - before;
+    drop(store);
+    let mut mounted = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert_eq!(mounted.read_fabric_provider(&mut bytes), Ok(PROVIDER_STATE_BYTES));
+    assert_eq!(bytes, disabled);
+    let mut restored = RemoteComputeExecutor::new();
+    restored.restore_provider_state(&bytes).unwrap();
+    assert!(!restored.limits().0.enabled);
+    for cut in 0..writes {
+        let trial = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: Some(cut), writes: 0 })));
+        let mut interrupted = ObjectStore::mount(trial.clone(), 0).unwrap();
+        assert!(interrupted.checkpoint_fabric_provider(&disabled).is_err());
+        trial.0.borrow_mut().writes_left = None;
+        let mut recovered = ObjectStore::mount(trial, 0).unwrap();
+        assert_eq!(recovered.read_fabric_provider(&mut bytes), Ok(PROVIDER_STATE_BYTES));
+        assert_eq!(bytes, initial);
+    }
+}

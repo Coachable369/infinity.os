@@ -26,8 +26,8 @@ Provider terminal replay is now fenced by a bounded per-consumer epoch window.
 Completion, cancellation (including cancellation before admission), lease expiry,
 and disconnect retain the fence. Old requests cannot allocate fresh contexts;
 unseen reordered tasks and newer epochs remain admissible. Exhausting the peer
-history fails closed instead of evicting replay protection. This history is
-runtime-only: reboot persistence remains open. Lost-result retries are covered below.
+history fails closed instead of evicting replay protection. Durable replay and provider policy are now covered by the checkpoint work below.
+Lost-result retries are covered below.
 
 - Red reproduction: `builds/manifests/20261125T180603155932Z-79426.json`.
 - Full host retest: 248 passed, 0 failed, 1 ignored;
@@ -49,7 +49,7 @@ consumer; cancelling one job leaves the other running with independent accountin
   run `20261125T182604410403Z-81207`. ARM packaging and parity passed; the
   full run was stopped before x86 packaging at the user's request.
 
-Remaining: durable provider replay history, real Python/native remote
+Remaining: installed verification of durable provider state, real Python/native remote
 execution and output streaming, physical remote-memory allocation, operational
 GPU/inference providers, complete native management clients, and independent
 installed-node verification. The ARM ISO published at 2026-11-25 13:19 CST
@@ -96,7 +96,7 @@ the epoch fence. This cache is bounded and runtime-only, not durable replay.
 - Require a current ResourcePolicyModify capability and expected revision to alter provider limits. Disabling contributions reclaims live contexts.
 - Reclaim remote contexts on consumer disconnect or expiry of a provider-owned 60-time-unit inactivity lease, even if a consumer supplied no deadline.
 
-The provider policy is currently a runtime API, not reboot-persistent configuration. Existing remote execution is still bounded built-in work, not arbitrary Python. Runtime replay protection now covers stale requests after lease expiry; durable replay history remains required before general workload support. No desktop audio pipeline implementation was changed.
+Provider policy and replay fences now have a private durable checkpoint. Complete management clients remain outstanding. Existing remote execution is still bounded built-in work, not arbitrary Python. No desktop audio pipeline implementation was changed.
 
 ## Verification scope
 
@@ -170,3 +170,25 @@ All entries remain NOT TESTED at the required end-to-end acceptance level. Unit-
 | SEC-06 | Node failures do not crash the remaining fabric | NOT TESTED | Native integrated implementation and required VM/device evidence pending |
 | SEC-07 | Sensitive peripherals require explicit authorization | NOT TESTED | Native integrated implementation and required VM/device evidence pending |
 | SEC-08 | Remote workloads execute within supported isolation boundaries | NOT TESTED | Native integrated implementation and required VM/device evidence pending |
+
+## Durable provider state checkpoint — 2026-11-25
+
+New execution epochs are committed before work begins. Sharing policy commits before
+it changes allocations; failed writes preserve the previous policy and admit no new
+work. Boot restores limits and replay fences; corrupt or unavailable storage disables
+provider admission rather than resetting sharing permissions. Response caches remain
+transient. The private checkpoint rejects generic read, write, remove and detach.
+
+- Behavioral suite: 254 passed, 0 failed, 1 ignored, 46.72 seconds.
+- Manifest: `builds/manifests/20261125T201043022895Z-12342.json`.
+- Actual ObjectStore remount and every interrupted checkpoint sector-write boundary
+  preserve the last committed provider state. Runtime tests reject old epochs after
+  checkpoint restore and preserve accounting on failed commits.
+- This change is not yet compiled into or verified on an installed ARM node.
+
+The first independent ARM installation completed configuration and authenticated
+after a disk-only cold reboot, preserving its node identity. A 12 GiB validation VM
+failed model allocation; the same disk succeeded with 16 GiB. This establishes one
+node's installation and persistence only, not distributed acceptance.
+Evidence: `builds/validation/ms18-arm-installed-qemu/node-1/onboard-result.json`;
+manifest `builds/manifests/20261125T200428091505Z-12082.json`.

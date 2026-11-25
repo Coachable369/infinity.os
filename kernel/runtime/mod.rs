@@ -2495,7 +2495,8 @@ pub fn poll_node_transport(now: u64) {
         let remote_compute = &mut runtime.remote_compute;
         iop.execute_remote_compute(nodes, now, |request| {
             remote_compute
-                .execute(request.payload, execution, request.local, request.peer, now)
+                .execute_durable(request.payload, execution, request.local, request.peer, now,
+                    &mut persist_provider_state)
                 .map_err(|error| match error {
                     compute::ComputeError::AccessDenied => iop::remote::RemoteError::AccessDenied,
                     compute::ComputeError::DeadlineExceeded => {
@@ -3003,6 +3004,17 @@ fn persist_control_state(bytes: &[u8; node::types::NODE_STATE_BYTES]) -> bool {
 }
 
 // ------------------------=
+// FUNC: persist_provider_state
+// DESC: Requires a native transactional checkpoint before acknowledging provider admission or policy changes.
+// ------------------=
+fn persist_provider_state(bytes: &[u8]) -> bool {
+    #[cfg(target_os = "none")]
+    { crate::storage::fabric_provider_state_commit(bytes).is_ok() }
+    #[cfg(not(target_os = "none"))]
+    { let _ = bytes; false }
+}
+
+// ------------------------=
 // FUNC: persist_compute_state
 // DESC: Transactionally checkpoints dirty distributed task and audit state in installed System Space.
 // ------------------=
@@ -3244,6 +3256,21 @@ pub fn storage_initialized() {
                 if runtime.compute.restore_state(&persisted[..length]).is_err() {
                     runtime.compute = compute::ComputeService::new();
                 }
+            }
+        }
+        #[cfg(target_os = "none")]
+        {
+            let mut persisted = [0u8; compute::PROVIDER_STATE_BYTES];
+            let restored = match crate::storage::fabric_provider_state_load(&mut persisted) {
+                Ok(length) => runtime.remote_compute.restore_provider_state(&persisted[..length]).is_ok(),
+                Err(crate::storage::object::ObjectError::NotFound | crate::storage::object::ObjectError::NamespaceNotFound) => {
+                    persist_provider_state(&runtime.remote_compute.encode_provider_state())
+                },
+                Err(_) => false,
+            };
+            if !restored {
+                // Preserve failed storage for repair; never grant default sharing after a corrupt checkpoint.
+                runtime.remote_compute.disable_unavailable();
             }
         }
         if ai::initialize_global() {
