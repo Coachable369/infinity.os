@@ -5,6 +5,7 @@ from tkinter import ttk
 from _infinity_app import fabric_request
 from infinity_uikit import workspace_controls, workspace_menu, MENU_HEIGHT
 from infinity_uikit_artwork import COLORS
+from infinity_uikit_dashboard import dashboard_controls
 
 # ------------------------=
 # FUNC: size
@@ -34,7 +35,7 @@ class FabricManager:
         root.geometry(f"{width}x{height}")
         root.minsize(min(1024, width), min(700, height))
         root.configure(bg=COLORS['canvas'])
-        font = ('Inter', -18)
+        font = ('Inter', -16)
         root.option_add('*Font', font)
         style = ttk.Style(root)
         style.theme_use('clam')
@@ -47,6 +48,7 @@ class FabricManager:
                         lightcolor=COLORS['panel'], darkcolor=COLORS['panel'], bordercolor=COLORS['border'], relief='flat')
         style.map('Fabric.Treeview', background=[('selected', COLORS['accent'])])
         self.images = workspace_controls(root, style, 1.0)
+        self.dashboard_images = dashboard_controls(root, style)
         style.configure('Workspace.TMenubutton', background=COLORS['panel'], borderwidth=0,
                         lightcolor=COLORS['panel'], darkcolor=COLORS['panel'], bordercolor=COLORS['panel'],
                         arrowcolor=COLORS['muted'], relief='flat')
@@ -63,11 +65,11 @@ class FabricManager:
             button.pack(side='right' if title=='Help' else 'left', fill='y', padx=8)
         toolbar = ttk.Frame(root, height=48)
         toolbar.pack(fill='x'); toolbar.pack_propagate(False)
-        ttk.Label(toolbar, text='Fabric resources', font=('Inter', -22)).pack(side='left', padx=16)
+        ttk.Label(toolbar, text='Overview', font=('Inter', -22)).pack(side='left', padx=16)
         ttk.Button(toolbar, text='Refresh', command=self.refresh).pack(side='right', padx=12, pady=4)
         self.status = tk.StringVar(value='Connecting to Fabric service…')
-        ttk.Label(root, textvariable=self.status, padding=12).pack(side='bottom', fill='x')
-        body = ttk.Frame(root, padding=12)
+        ttk.Label(root, textvariable=self.status, padding=(16,8)).pack(side='bottom', fill='x')
+        body = ttk.Frame(root, padding=16)
         body.pack(fill='both', expand=True)
         body.columnconfigure(0, weight=1)
         body.rowconfigure(1, weight=3, minsize=110)
@@ -75,37 +77,43 @@ class FabricManager:
         cards = ttk.Frame(body)
         cards.grid(row=0, column=0, sticky='ew', pady=(0,12))
         self.totals = []
+        self.card_icons = []
+        self.cards = cards
         for i, heading in enumerate(('CPU slots', 'Memory allowance', 'Accelerators')):
-            cards.columnconfigure(i, weight=1)
-            card = ttk.Frame(cards, padding=(12,8))
+            cards.columnconfigure(i, weight=1, uniform='resource')
+            card = ttk.Frame(cards, padding=12, style='DashboardCard.TFrame')
             card.grid(row=0, column=i, sticky='nsew', padx=(0,8))
-            ttk.Label(card, text=heading).pack(anchor='w')
+            icon = ttk.Label(card, image=self.dashboard_images[('cpu','memory','gpu')[i]], style='DashboardCard.TLabel')
+            icon.pack(side='left', padx=(0,12))
+            self.card_icons.append(icon)
+            style.configure('DashboardCardInterior.TFrame', background='#112D48')
+            summary = ttk.Frame(card, style='DashboardCardInterior.TFrame')
+            summary.pack(side='left', fill='x', expand=True)
+            ttk.Label(summary, text=heading, style='DashboardCard.TLabel').pack(anchor='w')
             value = tk.StringVar(value='Unavailable')
-            ttk.Label(card, textvariable=value, font=('Inter', -32)).pack(anchor='w', pady=8)
+            ttk.Label(summary, textvariable=value, font=('Inter', -24, 'bold'), style='DashboardCard.TLabel').pack(anchor='w', pady=(8,0))
             self.totals.append(value)
-        center = ttk.Frame(body)
+        cards.bind('<Configure>', self.card_layout)
+        center = ttk.Frame(body, padding=12, style='DashboardPanel.TFrame')
         center.grid(row=1, column=0, sticky='nsew')
-        ttk.Label(center, text='Nodes', font=('Inter',-22), padding=8).pack(anchor='w')
+        ttk.Label(center, text='Nodes', font=('Inter',-22,'bold'), padding=(8,4)).pack(anchor='w')
         self.nodes = ttk.Treeview(center, columns=('state','cpu','memory','trust'), show='tree headings', style='Fabric.Treeview', selectmode='browse', height=2)
-        self.nodes.heading('#0', text='Node'); self.nodes.column('#0', width=180, minwidth=140)
-        for key, label, width in [('state','Connection',110),('cpu','CPU slots',100),('memory','Memory',130),('trust','Trust',100)]:
+        self.nodes.heading('#0', text='Node'); self.nodes.column('#0', width=140, minwidth=120)
+        for key, label, width in [('state','Connection',100),('cpu','CPU slots',80),('memory','Memory',110),('trust','Trust',80)]:
             self.nodes.heading(key,text=label); self.nodes.column(key,width=width,minwidth=80)
         self.node_scroll = ttk.Scrollbar(center, orient='vertical', command=self.nodes.yview)
         self.node_scroll.pack(side='right', fill='y')
         self.nodes.configure(yscrollcommand=self.node_scroll.set)
         self.nodes.pack(fill='both', expand=True)
-        node_horizontal = ttk.Scrollbar(center, orient='horizontal', command=self.nodes.xview)
-        node_horizontal.pack(fill='x')
-        self.nodes.configure(xscrollcommand=node_horizontal.set)
         self.nodes.bind('<<TreeviewSelect>>', self.select)
         self.detail = tk.StringVar(value='Select a node to inspect its resources.')
         # Full node identity stays accessible without consuming the table's rows.
-        ttk.Label(toolbar, textvariable=self.detail, padding=(12,0), wraplength=420).pack(side='left')
-        jobs_panel = ttk.Frame(body, padding=8)
+        # Node identity is shown in the inspector rather than crowded into the toolbar.
+        jobs_panel = ttk.Frame(body, padding=12, style='DashboardPanel.TFrame')
         jobs_panel.grid(row=2, column=0, sticky='nsew', pady=(12,0))
         job_header = ttk.Frame(jobs_panel)
         job_header.pack(fill='x', pady=(0,8))
-        ttk.Label(job_header, text='Job activity', font=('Inter',-20)).pack(side='left')
+        ttk.Label(job_header, text='Job activity', font=('Inter',-20,'bold')).pack(side='left')
         self.cancel_button = ttk.Button(job_header, text='Cancel job', command=self.cancel_job, state='disabled')
         self.cancel_button.pack(side='right')
         self.jobs = ttk.Treeview(jobs_panel, columns=('node','state','cpu','memory'),
@@ -116,46 +124,59 @@ class FabricManager:
         job_scroll = ttk.Scrollbar(jobs_panel, orient='vertical', command=self.jobs.yview)
         job_scroll.pack(side='right',fill='y')
         self.jobs.configure(yscrollcommand=job_scroll.set)
-        self.jobs.pack(fill='both',expand=True)
         self.jobs.bind('<<TreeviewSelect>>', self.select_job)
         self.job_status = tk.StringVar()
-        ttk.Label(jobs_panel,textvariable=self.job_status).pack(anchor='w')
-        inspector_host = ttk.Frame(body, width=260)
+        ttk.Label(jobs_panel,textvariable=self.job_status).pack(side='bottom',anchor='w',pady=(4,0))
+        self.jobs.pack(fill='both',expand=True)
+        inspector_host = ttk.Frame(body, width=280)
         inspector_host.grid(row=0,column=1,rowspan=3,sticky='ns',padx=(12,0))
         inspector_host.grid_propagate(False)
         inspector_host.rowconfigure(0, weight=1)
         inspector_host.columnconfigure(0, weight=1)
-        self.inspector_canvas = tk.Canvas(inspector_host, width=244, highlightthickness=0, bg=COLORS['panel'])
+        self.inspector_canvas = tk.Canvas(inspector_host, width=264, highlightthickness=0, bg=COLORS['panel'])
         self.inspector_canvas.grid(row=0,column=0,sticky='nsew')
         inspector_scroll = ttk.Scrollbar(inspector_host, orient='vertical', command=self.inspector_canvas.yview)
         inspector_scroll.grid(row=0,column=1,sticky='ns')
         self.inspector_canvas.configure(yscrollcommand=inspector_scroll.set)
-        inspector = ttk.Frame(self.inspector_canvas, padding=(8,12))
+        inspector = ttk.Frame(self.inspector_canvas, padding=(12,16), style='DashboardPanel.TFrame')
         self.inspector_window = self.inspector_canvas.create_window(0,0,window=inspector,anchor='nw')
         inspector.bind('<Configure>', self.inspector_layout)
         self.inspector_canvas.bind('<Configure>', self.inspector_layout)
-        ttk.Label(inspector,text='This computer',font=('Inter',-20)).grid(row=0,column=0,sticky='w',pady=(0,16))
+        inspector.columnconfigure(0, weight=1)
+        ttk.Label(inspector,text='This computer',font=('Inter',-20,'bold')).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,12))
         self.enabled = tk.BooleanVar()
         self.cpu = tk.StringVar(); self.memory = tk.StringVar(); self.tasks = tk.StringVar()
-        self.toggle = ttk.Checkbutton(inspector,text='Contribute resources',variable=self.enabled,command=self.mark_dirty)
-        self.toggle.grid(row=1,column=0,sticky='w',pady=8)
+        self.toggle = ttk.Checkbutton(inspector,text='Contribute resources',variable=self.enabled,command=self.mark_dirty,style='Dashboard.TCheckbutton')
+        self.toggle.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(0,12))
         self.entries = []
-        for row,(label,var) in enumerate((('CPU scheduling units',self.cpu),('Memory limit (MiB)',self.memory),('Concurrent jobs',self.tasks)),2):
-            ttk.Label(inspector,text=label).grid(row=row*2,column=0,sticky='w',pady=(12,4))
-            entry = ttk.Entry(inspector,textvariable=var,width=20)
-            entry.grid(row=row*2+1,column=0,sticky='ew')
+        for row,(label,var) in enumerate((('CPU units',self.cpu),('Memory (MiB)',self.memory),('Concurrent jobs',self.tasks)),2):
+            ttk.Label(inspector,text=label).grid(row=row,column=0,sticky='w',padx=(0,8),pady=6)
+            entry = ttk.Entry(inspector,textvariable=var,width=7)
+            entry.grid(row=row,column=1,sticky='ew',pady=6)
             entry.bind('<KeyRelease>',self.mark_dirty)
             self.entries.append(entry)
-        self.apply_button = ttk.Button(inspector,text='Apply contribution',command=self.apply)
-        self.apply_button.grid(row=10,column=0,sticky='ew',pady=20)
-        ttk.Button(inspector,text='Discard edits and reload',command=self.reload_policy).grid(row=11,column=0,sticky='ew',pady=(0,12))
+        self.apply_button = ttk.Button(inspector,text='Apply contribution',command=self.apply,style='Accent.TButton')
+        self.apply_button.grid(row=10,column=0,columnspan=2,sticky='ew',pady=(12,8))
+        ttk.Button(inspector,text='Discard edits',command=self.reload_policy).grid(row=11,column=0,columnspan=2,sticky='ew',pady=(0,12))
         self.usage = tk.StringVar()
-        ttk.Label(inspector,textvariable=self.usage,wraplength=240).grid(row=12,column=0,sticky='w')
-        ttk.Label(inspector,text='Selected node',font=('Inter',-20)).grid(row=13,column=0,sticky='w',pady=(20,8))
+        ttk.Label(inspector,textvariable=self.usage,wraplength=240).grid(row=12,column=0,columnspan=2,sticky='w')
+        ttk.Label(inspector,text='Selected node',font=('Inter',-20,'bold')).grid(row=13,column=0,columnspan=2,sticky='w',pady=(12,8))
         self.node_detail = tk.StringVar(value='Select a node to inspect it.')
-        ttk.Label(inspector,textvariable=self.node_detail,wraplength=220,justify='left').grid(row=14,column=0,sticky='w')
+        ttk.Label(inspector,textvariable=self.node_detail,wraplength=220,justify='left').grid(row=14,column=0,columnspan=2,sticky='w')
         self.refresh()
         root.after(2000,self.tick)
+
+    # ------------------------=
+    # FUNC: card_layout
+    # DESC: Keeps resource values readable at small client widths without scaling typography or controls.
+    # ------------------=
+    def card_layout(self, event=None):
+        spacious = self.cards.winfo_width() >= 690
+        for icon in self.card_icons:
+            if spacious and not icon.winfo_manager():
+                icon.pack(side='left', padx=(0,12), before=icon.master.winfo_children()[1])
+            elif not spacious and icon.winfo_manager():
+                icon.pack_forget()
 
     # ------------------------=
     # FUNC: inspector_layout
@@ -237,6 +258,8 @@ class FabricManager:
                 self.jobs.delete(*self.jobs.get_children())
                 self.job_status.set('Administrator access is required to inspect all jobs.')
             self.snapshot = snapshot
+            if not self.nodes.selection() and self.nodes.get_children():
+                self.nodes.selection_set(self.nodes.get_children()[0])
             self.select()
             self.select_job()
             self.status.set(self.notice or f"{len(snapshot['nodes'])} nodes • Live resource observations")

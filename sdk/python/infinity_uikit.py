@@ -95,7 +95,7 @@ def workspace_controls(root, style, scale=1):
             style.element_create(f"UIKit{key}.{prefix}","image",images[offset],
                 ("disabled",images[offset+3]),
                 ("pressed",images[offset+2]),("focus",images[offset+1]),("active",images[offset+1]),
-                border=round(8*scale),padding=(round(12*scale),round(8*scale)),sticky="nsew")
+                border=(round(24*scale),round(8*scale),round(24*scale),round(8*scale)),padding=(round(12*scale),round(8*scale)),sticky="nsew")
     for name,prefix in (("TButton","Secondary"),("Accent.TButton","Primary")):
         style.layout(name,[(f"UIKit{key}.{prefix}",{"sticky":"nsew","children":[("Button.label",{"sticky":"nsew"})]})])
     style.layout("TEntry",[(f"UIKit{key}.Field",{"sticky":"nsew","children":[("Entry.textarea",{"sticky":"nsew"})]})])

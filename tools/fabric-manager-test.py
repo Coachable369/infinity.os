@@ -42,6 +42,12 @@ try:
     root.maxsize(900, 580)
     app=runpy.run_path('runtime/install/System/infinity-fabric.py')['FabricManager'](root)
     root.update()
+    assert all(not icon.winfo_manager() for icon in app.card_icons)
+    before=app.enabled.get()
+    app.toggle.invoke(); root.update()
+    assert app.enabled.get()!=before and app.dirty
+    app.reload_policy()
+    assert app.enabled.get()==state['provider']['enabled']
     assert root.minsize()[0] <= 900 and root.minsize()[1] <= 580
     assert root.winfo_width() <= 900 and root.winfo_height() <= 580
     node=state['nodes'][0]['id']
@@ -55,6 +61,9 @@ try:
     assert header_height>=36
     root.geometry('1200x800');root.update()
     assert root.winfo_children()[0].winfo_height()==header_height
+    assert all(icon.winfo_manager() for icon in app.card_icons)
+    for icon in app.card_icons:
+        assert icon.winfo_width()==44 and icon.winfo_height()==44
     jobs.append({'id':1,'epoch':1,'state':3,'cpu':2,'memory':1048576,'node':'01'*32})
     app.refresh()
     assert app.jobs.get_children() == ('1',)
@@ -98,6 +107,8 @@ try:
     assert app.selected_node is None
     state['provider']=None;app.refresh()
     assert app.apply_button.instate(['disabled'])
+    before=app.enabled.get(); app.toggle.invoke()
+    assert app.enabled.get()==before
     app.apply()
     assert len(writes)==1
     # Losing the authority must remove stale observations and disable mutations.
