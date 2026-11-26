@@ -10,6 +10,7 @@ extension TemplateStore {
     // DESC: Opens the authored menu workspace without changing the document merely by inspecting it.
     // ------------------=
     func editInfinityMenu() {
+        editingApps = false
         selectScreenCollection(.desktop, screen: 1)
         selectedElementID = selectedScreen?.elements.first(where: { $0.role == .desktopBrand })?.id
         editingMenu = true

@@ -198,6 +198,8 @@ class Browser:
         self.editor.pack(fill="both", expand=True, padx=14, before=row)
         root.bind("<Escape>", lambda event: self.cancel_confirmation())
         tk.Label(root, textvariable=self.status, bg=PANEL, fg=MUTED, anchor="w", padx=18, pady=5, font=("Inter",-14)).pack(fill="x")
+        from infinity_app_design import apply
+        apply(root, "memory", menu=menu_bar, content=body)
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.bind("<Control-n>", lambda event: self.new())
         root.bind("<Control-s>", lambda event: self.save())

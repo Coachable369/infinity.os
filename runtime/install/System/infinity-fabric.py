@@ -191,6 +191,8 @@ class FabricManager:
             root.bind(f'<{modifier}-minus>', lambda event: self.set_zoom(self.zoom - .1))
             root.bind(f'<{modifier}-0>', lambda event: self.set_zoom(1.0))
         self.set_zoom(1.0)
+        from infinity_app_design import apply
+        apply(root, "fabric", menu=self.menu_bar, content=body)
         self.refresh()
         root.after(2000,self.tick)
 

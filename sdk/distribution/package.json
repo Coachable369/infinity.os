@@ -50,6 +50,8 @@
     "UIKit/application-workspace.md": "assets/ui-design-kit/default/application-workspace.md",
     "UIKit/infinitycode-tabs.md": "assets/ui-design-kit/default/infinitycode-tabs.md",
     "UIKit/infinitycode-tabs-reference.png": "assets/ui-design-kit/default/infinitycode-tabs-reference.png",
+    "UIKit/infinity_app_design.py": "runtime/install/System/infinity_app_design.py",
+    "UIKit/AppDesign.md": "docs/studio-app-design.md",
     "UIKit/infinity_uikit.py": "sdk/python/infinity_uikit.py",
     "UIKit/infinity_uikit_artwork.py": "sdk/python/infinity_uikit_artwork.py",
     "UIKit/infinity_uikit_tabs.py": "sdk/python/infinity_uikit_tabs.py",

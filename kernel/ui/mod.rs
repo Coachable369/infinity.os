@@ -4,6 +4,7 @@
 //! selection, input focus, window/surface policy, damage tracking, and trusted
 //! UI state. Platform framebuffer code consumes its bounded render model.
 
+pub mod app_design;
 pub mod app_assistant;
 pub mod ai_widget;
 pub mod app_features;

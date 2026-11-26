@@ -2136,11 +2136,11 @@ impl super::DisplayDevice {
             } else if screen==8&&native_ui.active {
                 &native_ui.title[..native_ui.title_length]
             } else if screen == 9 {
-                b"Text Editor"
+                crate::ui::app_design::title(1, b"Text Editor")
             } else if screen == 10 {
-                b"Task Manager"
+                crate::ui::app_design::title(3, b"Task Manager")
             } else {
-                b"Command Window"
+                crate::ui::app_design::title(2, b"Command Window")
             };
             self.app_label(crate::ui::geometry::Rect {
                 x:(left+54*scale) as i32,y:(top+12*scale) as i32,
@@ -3533,15 +3533,16 @@ impl super::DisplayDevice {
             );
             let title_center_y = top + title_height / 2;
             self.small_infinity_mark(left + 25 * scale, title_center_y, 31 * scale);
+            let title_clip = self.render_clip;
+            self.intersect_render_clip(left + 50 * scale, top,
+                width.saturating_sub(230 * scale), title_height);
             self.ui_text_strong(
                 left + 50 * scale,
                 title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
-                b"System Settings",
-                241,
-                246,
-                250,
-                1,
+                crate::ui::app_design::title(4, b"System Settings"),
+                241, 246, 250, 1,
             );
+            self.render_clip = title_clip;
             for (index,control) in crate::ui::app_launcher::window_controls::bounds(
                 crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},
                 title_height as u32,scale).into_iter().enumerate() {
@@ -5077,10 +5078,14 @@ impl super::DisplayDevice {
             225,
         );
         let title_center_y = browser_top + title_h / 2;
-        self.app_text(
-            browser_left + 14 * scale,
-            title_center_y.saturating_sub(12 * scale),
-            b"File Navigator",
+        self.app_label(
+            crate::ui::geometry::Rect {
+                x: (browser_left + 14 * scale) as i32,
+                y: title_center_y.saturating_sub(12 * scale) as i32,
+                width: (140 * scale) as u32,
+                height: (24 * scale) as u32,
+            },
+            crate::ui::app_design::title(0, b"File Navigator"),
             (226, 237, 245), true, scale,
         );
         for (index, (label, offset)) in [

@@ -80,6 +80,8 @@ class Player:
         self.art = original.subsample(factor, factor)
         self.screen.configure(image=self.art)
         root.bind("<space>", lambda e: self.toggle())
+        from infinity_app_design import apply
+        apply(root, "media", content=viewport)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.scan()
         if initial:

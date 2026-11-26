@@ -200,6 +200,9 @@ class Studio:
         methods_scroll.pack(side="right", fill="y")
         self.methods.pack(fill="both", expand=True)
         self.methods.configure(yscrollcommand=methods_scroll.set)
+        from infinity_app_design import apply, load
+        self.app_design = load("code")
+        apply(root, "code", menu=self.menu_bar, content=workspace, inspector=self.inspector)
         self.syntax_jobs = {}
         for editor in (self.source,self.methods):
             for role,color in (("keyword","#91BDFF"),("string","#9CE1C0"),("comment","#8A9BB4"),("number","#EBC293")):
@@ -248,7 +251,7 @@ class Studio:
         self.style.configure("Workspace.TNotebook.Tab",padding=(round(24*self.scale),round(9*self.scale)))
         self.style.configure("Heading.TLabel",font=("Inter",-round(20*self.scale),"bold"))
         self.toolbox.configure(width=round(210*self.scale))
-        self.inspector.configure(width=round(260*self.scale))
+        self.inspector.configure(width=round((self.app_design["inspectorWidth"] if self.app_design else 260)*self.scale))
         self.menu_bar.configure(height=round(MENU_HEIGHT*self.scale))
         self.toolbar.configure(height=round(TOOLBAR_HEIGHT*self.scale))
         self.layers.configure(font=("Inter",-size))

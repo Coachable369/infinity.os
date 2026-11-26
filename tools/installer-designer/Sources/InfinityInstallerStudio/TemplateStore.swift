@@ -58,6 +58,9 @@ private struct ProjectSnapshot: Equatable {
 final class TemplateStore: ObservableObject {
     static let minimumZoom = 0.25
     static let maximumZoom = 3.0
+    let appDesigns: AppDesignStore
+    @Published var editingApps = false
+    private var appObservation: AnyCancellable?
     let uiKit: UIKitStore
     let isoUpdater: ISOUpdateService
     @Published var showISOUpdate = false
@@ -107,7 +110,7 @@ final class TemplateStore: ObservableObject {
     private var savedProject: ProjectSnapshot?
 
     var hasUnsavedChanges: Bool {
-        uiKit.isDirty || savedProject != ProjectSnapshot(desktop: desktopDocument, login: loginDocument, boot: bootDocument, installation: document,
+        appDesigns.isDirty || uiKit.isDirty || savedProject != ProjectSnapshot(desktop: desktopDocument, login: loginDocument, boot: bootDocument, installation: document,
             configuration: configurationDocument, systemSettings: settingsDocument)
     }
 
@@ -168,8 +171,8 @@ final class TemplateStore: ObservableObject {
         }.count > 1
     }
 
-    var canUndo: Bool { editingUIKit ? uiKit.canUndo : !undoStack.isEmpty }
-    var canRedo: Bool { editingUIKit ? uiKit.canRedo : !redoStack.isEmpty }
+    var canUndo: Bool { editingApps ? appDesigns.canUndo : editingUIKit ? uiKit.canUndo : !undoStack.isEmpty }
+    var canRedo: Bool { editingApps ? appDesigns.canRedo : editingUIKit ? uiKit.canRedo : !redoStack.isEmpty }
     var canAddScreen: Bool { ![.boot, .login, .desktop].contains(selectedCollection) && activeScreens.count < InstallerStudioDocument.maximumScreenCount }
     var canRemoveScreen: Bool { selectedCollection == .desktop ? selectedScreenID >= 4 : ![.boot, .login].contains(selectedCollection) && activeScreens.count > InstallerStudioDocument.minimumScreenCount }
     var resizeHandlesVisible: Bool {
@@ -223,6 +226,7 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     init(projectRoot suppliedRoot: URL? = nil) {
         let root = suppliedRoot ?? Self.findProjectRoot()
+        appDesigns = AppDesignStore(root: root)
         uiKit = UIKitStore(projectRoot: root)
         isoUpdater = ISOUpdateService(projectRoot: root)
         projectRoot = root
@@ -271,6 +275,7 @@ final class TemplateStore: ObservableObject {
         } else {
             document = .factoryDefault()
         }
+        appObservation = appDesigns.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         kitObservation = uiKit.objectWillChange.sink { [weak self] in
             self?.objectWillChange.send()
         }
@@ -309,6 +314,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Activates one sidebar screen collection and selects its requested screen.
     // ------------------=
     func selectScreenCollection(_ collection: ScreenCollection, screen id: Int = 1) {
+        editingApps = false
         editingMenu = false
         editingUIKit = false
         selectedCollection = collection
@@ -321,6 +327,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Opens the shared OS kit without discarding pending template edits or their selections.
     // ------------------=
     func selectUIKit(category: String = "All Elements") {
+        editingApps = false
         editingMenu = false
         pendingNativeSelectionReveal = nil
         editingUIKit = true
@@ -334,6 +341,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Selects one installer screen and clears an element selection that does not belong to it.
     // ------------------=
     func selectScreen(_ id: Int) {
+        editingApps = false
         editingMenu = false
         pendingNativeSelectionReveal = nil
         selectedScreenID = id
@@ -1375,6 +1383,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Restores the previous complete template document.
     // ------------------=
     func undo() {
+        if editingApps { appDesigns.undo(); return }
         if editingUIKit { uiKit.undo(); return }
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(projectSnapshot())
@@ -1397,6 +1406,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Restores the next complete template document.
     // ------------------=
     func redo() {
+        if editingApps { appDesigns.redo(); return }
         if editingUIKit { uiKit.redo(); return }
         guard let next = redoStack.popLast() else { return }
         undoStack.append(projectSnapshot())
@@ -1435,6 +1445,7 @@ final class TemplateStore: ObservableObject {
             return false
         }
         do {
+            try appDesigns.validate()
             try uiKit.validate()
             try TemplateValidator.validate(bootDocument, for: .boot)
             try TemplateValidator.validate(document, for: .installation)
@@ -1457,6 +1468,14 @@ final class TemplateStore: ObservableObject {
     // DESC: Saves the active source/runtime pair with rollback if either file cannot be published.
     // ------------------=
     func save() {
+        if editingApps {
+            guard let root = projectRoot else { status = "Choose a project first"; return }
+            do {
+                try StudioFileTransaction.commit(appDesigns.prepareSave(root: root), root: root)
+                appDesigns.didSave(); status = "Saved application designs"
+            } catch { validationIssues = [error.localizedDescription] }
+            return
+        }
         if editingUIKit {
             saveUIKit()
             return
@@ -1465,6 +1484,7 @@ final class TemplateStore: ObservableObject {
             validationIssues = [issue]; status = "Original source protected"; return
         }
         do {
+            try appDesigns.validate()
             try uiKit.validate()
             try TemplateValidator.validate(activeDocument, for: selectedCollection)
         } catch {
@@ -1550,9 +1570,11 @@ final class TemplateStore: ObservableObject {
             for (section, source) in [(ScreenCollection.desktop, desktopDocument), (.login, loginDocument), (.boot, bootDocument), (.installation, document), (.configuration, configurationDocument), (.systemSettings, settingsDocument)] {
                 writes += try prepareSave(source, collection: section, root: root)
             }
+            writes += try appDesigns.prepareSave(root: root)
             writes += try uiKit.prepareSave()
             try StudioFileTransaction.commit(writes, root: root)
             uiKit.didSave()
+            appDesigns.didSave()
             savedProject = ProjectSnapshot(desktop: desktopDocument, login: loginDocument, boot: bootDocument, installation: document, configuration: configurationDocument,
                 systemSettings: settingsDocument)
             validationIssues = []

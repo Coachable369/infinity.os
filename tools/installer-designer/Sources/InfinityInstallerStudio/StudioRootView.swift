@@ -24,7 +24,11 @@ struct StudioRootView: View {
             HSplitView {
                 ScreenSidebar(store: store, kit: kit)
                     .frame(minWidth: 220, idealWidth: 248, maxWidth: 290)
-                if store.editingUIKit {
+                if store.editingApps {
+                    AppDesignWorkspace(store: store.appDesigns,
+                        openUIKit: { store.selectUIKit(category: "Surface Styles") },
+                        openSettings: { store.selectScreenCollection(.systemSettings) })
+                } else if store.editingUIKit {
                     UIKitWorkspace(store: kit).frame(minWidth: 560)
                     UIKitInspector(store: kit).frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
                 } else if store.editingMenu {
@@ -70,11 +74,11 @@ private struct StudioToolbar: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text("Infinity Studio").font(.headline)
-                Text(store.editingUIKit ? "Shared OS UIKit" : "\(store.selectedCollection.title)")
+                Text(store.editingApps ? "App Design" : store.editingUIKit ? "Shared OS UIKit" : "\(store.selectedCollection.title)")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Divider().frame(height: 28).padding(.horizontal, 4)
-            if !store.editingUIKit && !store.editingMenu {
+            if !store.editingApps && !store.editingUIKit && !store.editingMenu {
             Button(action: store.toggleMarqueeSelection) {
                 Label(
                     store.marqueeSelectionEnabled ? "Marquee On" : "Marquee Select",
@@ -100,7 +104,7 @@ private struct StudioToolbar: View {
             GlobalButtonStylePicker(store: kit)
             GlobalWindowFrameEditor(store: kit)
             GlobalTaskTrayStylePicker(store: kit)
-            if !store.editingUIKit && !store.editingMenu && store.selectedCollection == .desktop {
+            if !store.editingApps && !store.editingUIKit && !store.editingMenu && store.selectedCollection == .desktop {
                 Button(action: store.editInfinityMenu) {
                     Label("Infinity System Menu", systemImage: "list.bullet.indent")
                 }
@@ -115,7 +119,7 @@ private struct StudioToolbar: View {
                     Label("Reset Artwork", systemImage: "arrow.counterclockwise")
                 }
                 .disabled(kit.selectedAsset == nil)
-            } else if !store.editingMenu {
+            } else if !store.editingApps && !store.editingMenu {
             Menu {
                 Button("Panel") { store.addElement(kind: .panel) }
                 Button("Text") { store.addElement(kind: .text) }
@@ -178,6 +182,7 @@ private struct StudioToolbar: View {
 private struct ScreenSidebar: View {
     @ObservedObject var store: TemplateStore
     @ObservedObject var kit: UIKitStore
+    @AppStorage("studio.sidebar.apps") private var appsExpanded = true
     @AppStorage("studio.sidebar.uikit") private var uikitExpanded = false
     @AppStorage("studio.sidebar.installation") private var installationExpanded = true
     @AppStorage("studio.sidebar.configuration") private var configurationExpanded = true
@@ -188,6 +193,15 @@ private struct ScreenSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             List {
+                DisclosureGroup(isExpanded: $appsExpanded) {
+                    ForEach(AppDesign.catalog, id: \.0) { app in
+                        Button(app.1) {
+                            store.editingUIKit = false; store.editingMenu = false
+                            store.appDesigns.selectedID = app.0; store.editingApps = true
+                        }
+                        .foregroundStyle(store.editingApps && store.appDesigns.selectedID == app.0 ? InfinityUIKit.Palette.nativeAccent : .primary)
+                    }
+                } label: { Label("APP DESIGN", systemImage: "macwindow").font(.caption.weight(.semibold)) }
                 DisclosureGroup(isExpanded: $uikitExpanded) {
                     kitCategory("Themes", icon: "paintbrush.pointed")
                     kitCategory("Colors & Theme", icon: "paintpalette")
@@ -246,7 +260,7 @@ private struct ScreenSidebar: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             Divider()
-            if !store.editingUIKit && !store.editingMenu && store.selectedScreen != nil {
+            if !store.editingApps && !store.editingUIKit && !store.editingMenu && store.selectedScreen != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("SCREEN NAME")
                         .font(.caption2.weight(.semibold))
@@ -289,7 +303,7 @@ private struct ScreenSidebar: View {
                 .padding(InfinityUIKit.Metrics.gutter)
             }
             Divider()
-            if !store.editingUIKit { Button(role: .destructive, action: store.resetScreen) {
+            if !store.editingApps && !store.editingUIKit { Button(role: .destructive, action: store.resetScreen) {
                 Label("Reset Current Screen", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(InfinityStudioButtonStyle(emphasis: .quiet))

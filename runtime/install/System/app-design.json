@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "id": "files",
+      "title": "File Navigator",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "editor",
+      "title": "Text Editor",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "terminal",
+      "title": "Command Window",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "tasks",
+      "title": "Task Manager",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "settings",
+      "title": "System Settings",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "browser",
+      "title": "Infinity Browser",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "code",
+      "title": "InfinityCode",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "memory",
+      "title": "Infinity Memory",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "fabric",
+      "title": "Infinity Fabric",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "media",
+      "title": "Media Player",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "world",
+      "title": "World Shift",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    },
+    {
+      "id": "holographic",
+      "title": "Holographic Desktop",
+      "menuAlignment": "leading",
+      "contentInset": 16,
+      "inspectorSide": "right",
+      "inspectorWidth": 260,
+      "enabled": false
+    }
+  ]
+}
