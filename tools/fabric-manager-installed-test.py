@@ -114,6 +114,10 @@ def main():
             guest.screenshot('fabric-manager-'+label)
             receipt['window_states'].append({'state': gui[13], 'geometry': gui[9:13]})
         assert gui[9:13] == original_geometry
+        # Page the independent inspector to expose the real node details.
+        native.adaptive_click(guest, gui[9]+gui[11]-22, gui[10]+gui[12]-100)
+        time.sleep(1)
+        guest.screenshot('fabric-manager-inspector')
         receipt['complete'] = True
     except BaseException as error:
         receipt['failure'] = repr(error)

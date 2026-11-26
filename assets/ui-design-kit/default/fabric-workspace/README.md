@@ -11,8 +11,7 @@ fixed 36px application menu, never a second title bar.
 Menu 36px; toolbar 48px; outer inset 16px; gutter 12px. Right inspector 280px,
 scrollable independently. Center resource cards precede Nodes and Job activity.
 Nodes receive three fifths of flexible vertical space; jobs two fifths. Card
-interior #112D48, inspector #0E1C36, steel border #365774, selected row uses the
-active Studio accent. Inter 16px body, 20–22px section headings, 24px totals.
+interior #112D48, inspector #0E1C36, steel border #48779D, selected row #164F79. Inter 16px body, 20–22px section headings, 24px totals.
 Icons are 44px with 12px spacing. Below 690px center width the decorative icons
 hide, preserving all values and fixed text sizes. Tables scroll rather than
 compressing headers. The inspector retains its width at normal/maximized sizes.
@@ -26,7 +25,9 @@ Dashboard.TCheckbutton. Native ttk keyboard, focus, state and command semantics
 remain authoritative. Toggle states are off/on/hover-off/hover-on/disabled.
 No animation timers or application-specific event loop is added.
 
-SVG source is limited to rect, circle and line primitives. The build compiler
+SVG source supports rect, circle, line and vertical linear-gradient fills.
+Gradients fade into a flat center so nine-slice expansion preserves the material
+without stretching corner highlights. The build compiler
 `tools/native-python/uikit-dashboard.py` renders at 4x and downsamples, then emits
 PPM-compatible compressed RGB for native Tk. Panel nine-slices reserve 16px on
 all edges. Do not scale corner radii with window geometry. Standard buttons,
@@ -58,3 +59,29 @@ the mandatory compositor/application separation instead of the generated board's
 combined title/menu. Visual acceptance remains open; stop speculative correction
 under the repository's six-loop limit. This diagnostic kernel is not a published
 installer, and this UI does not establish arbitrary CPU/RAM/GPU pooling.
+
+### Follow-up visual pass
+
+Reopened by the user to resolve the remaining differences and publish ARM only.
+Panels now use sapphire gradient shoulders, tables use filled bold headers and
+a restrained sapphire selection, and the inspector separates identity, trust
+and connection from resource reservations. Full node identifiers remain in the
+scrollable details. Studio button overrides and compositor chrome remain the
+authority. A centered SVG job-empty state and online/offline connection indicators
+are included. Table headings align with their values. The small-screen layout
+keeps the inspector independently scrollable rather than shrinking controls.
+
+Follow-up verification:
+- Host controls: `builds/manifests/20261126T015314964086Z-37314.json`.
+- SVG pixels and SDK/install parity: `builds/manifests/20261126T015325361897Z-37323.json`.
+- Installed ARM normal/maximized/restored and inspector review:
+  `builds/manifests/20261126T015638555918Z-38260.json` (launch 1.18 seconds).
+- Selection-state monitor artwork removes the contrasting rectangle on selected rows.
+
+Reviewed native output preserves the kit's card hierarchy, corner geometry,
+fixed typography, sapphire surfaces, filled headers, and structured inspector.
+The generated reference is not a pixel-identical screenshot: compositor-owned
+chrome, user-selected button styles, and small-screen reflow intentionally follow
+the shared application-workspace rules. Do not describe this as measured 100%
+pixel parity. Core arbitrary-workload CPU/RAM/GPU pooling remains separate from
+these UI changes; x86 release remains on hold.

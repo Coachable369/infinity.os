@@ -15,6 +15,9 @@ for name,(width,height,data) in SPRITES.items():
     assert raster.tobytes()==zlib.decompress(base64.b64decode(data))
 assert SPRITES['toggle-on'][2]!=SPRITES['toggle-off'][2]
 assert SPRITES['toggle-on'][2]!=SPRITES['toggle-hover-on'][2]
+surface=render(ROOT/'assets/ui-design-kit/default/fabric-workspace/card.svg')
+assert surface.getpixel((32,6)) != surface.getpixel((32,32))
+assert surface.getpixel((32,32)) != surface.getpixel((32,58))
 package=runpy.run_path(str(ROOT/'tools/package-sdk.py'))
 manifest,payloads,entries=package['catalog']()
 for filename in ('infinity_uikit_dashboard.py','infinity_uikit_dashboard_artwork.py'):

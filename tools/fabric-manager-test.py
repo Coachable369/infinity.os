@@ -54,6 +54,8 @@ try:
     assert app.nodes.bbox(node), 'First node must be visible at minimum display size'
     assert app.nodes.winfo_height() >= 80
     assert app.jobs.winfo_height() >= 60
+    assert app.empty_jobs.winfo_manager() == 'place'
+    assert str(app.node_field_labels['Connection'].cget('image')[0]) == str(app.dashboard_images['online'])
     app.inspector_canvas.yview_moveto(1.0); root.update()
     assert app.inspector_canvas.yview()[1] > .99
     root.maxsize(1600, 1000)
@@ -67,6 +69,7 @@ try:
     jobs.append({'id':1,'epoch':1,'state':3,'cpu':2,'memory':1048576,'node':'01'*32})
     app.refresh()
     assert app.jobs.get_children() == ('1',)
+    assert not app.empty_jobs.winfo_manager()
     app.jobs.selection_set('1')
     app.select_job()
     assert not app.cancel_button.instate(['disabled'])
@@ -81,6 +84,7 @@ try:
     assert app.jobs.selection() == ('1',)
     jobs.clear(); app.refresh()
     assert not app.jobs.get_children()
+    assert app.empty_jobs.winfo_manager() == 'place'
     node=state['nodes'][0]['id']
     app.nodes.selection_set(node);app.select()
     assert app.selected_node['id']==node

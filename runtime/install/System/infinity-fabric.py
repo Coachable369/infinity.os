@@ -44,9 +44,9 @@ class FabricManager:
         style.configure('Fabric.Treeview', background=COLORS['panel'], fieldbackground=COLORS['panel'],
                         foreground=COLORS['text'], font=font, rowheight=40, borderwidth=0,
                         lightcolor=COLORS['panel'], darkcolor=COLORS['panel'], bordercolor=COLORS['panel'])
-        style.configure('Fabric.Treeview.Heading', background=COLORS['panel'], foreground=COLORS['text'], font=font,
+        style.configure('Fabric.Treeview.Heading', background='#19334E', foreground=COLORS['text'], font=('Inter',-16,'bold'), padding=(8,4),
                         lightcolor=COLORS['panel'], darkcolor=COLORS['panel'], bordercolor=COLORS['border'], relief='flat')
-        style.map('Fabric.Treeview', background=[('selected', COLORS['accent'])])
+        style.map('Fabric.Treeview', background=[('selected', '#164F79')], foreground=[('selected','#FFFFFF')])
         self.images = workspace_controls(root, style, 1.0)
         self.dashboard_images = dashboard_controls(root, style)
         style.configure('Workspace.TMenubutton', background=COLORS['panel'], borderwidth=0,
@@ -98,9 +98,9 @@ class FabricManager:
         center.grid(row=1, column=0, sticky='nsew')
         ttk.Label(center, text='Nodes', font=('Inter',-22,'bold'), padding=(8,4)).pack(anchor='w')
         self.nodes = ttk.Treeview(center, columns=('state','cpu','memory','trust'), show='tree headings', style='Fabric.Treeview', selectmode='browse', height=2)
-        self.nodes.heading('#0', text='Node'); self.nodes.column('#0', width=140, minwidth=120)
-        for key, label, width in [('state','Connection',100),('cpu','CPU slots',80),('memory','Memory',110),('trust','Trust',80)]:
-            self.nodes.heading(key,text=label); self.nodes.column(key,width=width,minwidth=80)
+        self.nodes.heading('#0', text='Node',anchor='w'); self.nodes.column('#0', width=160, minwidth=140)
+        for key, label, width in [('state','Connection',100),('cpu','CPU slots',80),('memory','Memory',100),('trust','Trust',80)]:
+            self.nodes.heading(key,text=label,anchor='w'); self.nodes.column(key,width=width,minwidth=80)
         self.node_scroll = ttk.Scrollbar(center, orient='vertical', command=self.nodes.yview)
         self.node_scroll.pack(side='right', fill='y')
         self.nodes.configure(yscrollcommand=self.node_scroll.set)
@@ -118,15 +118,16 @@ class FabricManager:
         self.cancel_button.pack(side='right')
         self.jobs = ttk.Treeview(jobs_panel, columns=('node','state','cpu','memory'),
                                 show='tree headings', style='Fabric.Treeview', height=2)
-        self.jobs.heading('#0', text='Job'); self.jobs.column('#0', width=90, minwidth=60)
+        self.jobs.heading('#0', text='Job',anchor='w'); self.jobs.column('#0', width=90, minwidth=60)
         for key,label,width in [('node','Node',140),('state','Status',120),('cpu','CPU units',90),('memory','Reserved memory',150)]:
-            self.jobs.heading(key,text=label); self.jobs.column(key,width=width,minwidth=70)
+            self.jobs.heading(key,text=label,anchor='w'); self.jobs.column(key,width=width,minwidth=70)
         job_scroll = ttk.Scrollbar(jobs_panel, orient='vertical', command=self.jobs.yview)
         job_scroll.pack(side='right',fill='y')
         self.jobs.configure(yscrollcommand=job_scroll.set)
         self.jobs.bind('<<TreeviewSelect>>', self.select_job)
         self.job_status = tk.StringVar()
-        ttk.Label(jobs_panel,textvariable=self.job_status).pack(side='bottom',anchor='w',pady=(4,0))
+        self.empty_jobs = ttk.Label(self.jobs,textvariable=self.job_status,image=self.dashboard_images['jobs'],compound='top',justify='center',padding=8)
+        self.empty_jobs.place(relx=.5,rely=.65,anchor='center')
         self.jobs.pack(fill='both',expand=True)
         inspector_host = ttk.Frame(body, width=280)
         inspector_host.grid(row=0,column=1,rowspan=3,sticky='ns',padx=(12,0))
@@ -143,7 +144,7 @@ class FabricManager:
         inspector.bind('<Configure>', self.inspector_layout)
         self.inspector_canvas.bind('<Configure>', self.inspector_layout)
         inspector.columnconfigure(0, weight=1)
-        ttk.Label(inspector,text='This computer',font=('Inter',-20,'bold')).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,12))
+        ttk.Label(inspector,text='This computer',image=self.dashboard_images['monitor'],compound='left',font=('Inter',-20,'bold')).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,12))
         self.enabled = tk.BooleanVar()
         self.cpu = tk.StringVar(); self.memory = tk.StringVar(); self.tasks = tk.StringVar()
         self.toggle = ttk.Checkbutton(inspector,text='Contribute resources',variable=self.enabled,command=self.mark_dirty,style='Dashboard.TCheckbutton')
@@ -160,9 +161,19 @@ class FabricManager:
         ttk.Button(inspector,text='Discard edits',command=self.reload_policy).grid(row=11,column=0,columnspan=2,sticky='ew',pady=(0,12))
         self.usage = tk.StringVar()
         ttk.Label(inspector,textvariable=self.usage,wraplength=240).grid(row=12,column=0,columnspan=2,sticky='w')
-        ttk.Label(inspector,text='Selected node',font=('Inter',-20,'bold')).grid(row=13,column=0,columnspan=2,sticky='w',pady=(12,8))
+        ttk.Separator(inspector,orient='horizontal').grid(row=13,column=0,columnspan=2,sticky='ew',pady=(12,12))
+        ttk.Label(inspector,text='Selected node details',font=('Inter',-20,'bold')).grid(row=14,column=0,columnspan=2,sticky='w',pady=(0,12))
+        self.node_fields={}
+        self.node_field_labels={}
+        for row,label in enumerate(('Identity','Trust','Connection'),15):
+            ttk.Label(inspector,text=label).grid(row=row,column=0,sticky='w',pady=6)
+            value=tk.StringVar(value='—'); self.node_fields[label]=value
+            field=ttk.Label(inspector,textvariable=value,wraplength=132,compound='left')
+            field.grid(row=row,column=1,sticky='w',pady=6)
+            self.node_field_labels[label]=field
+        ttk.Separator(inspector,orient='horizontal').grid(row=18,column=0,columnspan=2,sticky='ew',pady=12)
         self.node_detail = tk.StringVar(value='Select a node to inspect it.')
-        ttk.Label(inspector,textvariable=self.node_detail,wraplength=220,justify='left').grid(row=14,column=0,columnspan=2,sticky='w')
+        ttk.Label(inspector,textvariable=self.node_detail,wraplength=220,justify='left').grid(row=19,column=0,columnspan=2,sticky='w')
         self.refresh()
         root.after(2000,self.tick)
 
@@ -219,7 +230,7 @@ class FabricManager:
                 values = (node['reachability'],str(cpu['available']),size(memory['available']),node['trust'])
                 label = 'This computer' if node['local'] else ident[:12]
                 if self.nodes.exists(ident): self.nodes.item(ident,text=label,values=values)
-                else: self.nodes.insert('', 'end', iid=ident,text=label,values=values)
+                else: self.nodes.insert('', 'end', iid=ident,text=label,values=values,image=self.dashboard_images['monitor'])
             for ident in self.nodes.get_children():
                 if ident not in present: self.nodes.delete(ident)
             total = snapshot['totals']
@@ -262,7 +273,9 @@ class FabricManager:
                 self.nodes.selection_set(self.nodes.get_children()[0])
             self.select()
             self.select_job()
-            self.status.set(self.notice or f"{len(snapshot['nodes'])} nodes • Live resource observations")
+            if self.jobs.get_children(): self.empty_jobs.place_forget()
+            else: self.empty_jobs.place(relx=.5,rely=.65,anchor='center')
+            self.status.set(self.notice or f"{len(snapshot['nodes'])} nodes | Live resource observations")
         except (OSError,ValueError,KeyError) as error:
             self.snapshot = None
             self.job_records = {}
@@ -273,6 +286,8 @@ class FabricManager:
             for value in self.totals: value.set('Unavailable')
             for control in [self.toggle,self.apply_button]+self.entries:
                 control.configure(state='disabled')
+            self.job_status.set('Job service unavailable.')
+            self.empty_jobs.place(relx=.5,rely=.65,anchor='center')
             self.status.set(f'Fabric service unavailable: {error}')
 
     # ------------------------=
@@ -281,7 +296,11 @@ class FabricManager:
     # ------------------=
     def select(self, event=None):
         selected = self.nodes.selection()
+        for ident in self.nodes.get_children():
+            self.nodes.item(ident,image=self.dashboard_images['monitor-selected' if ident in selected else 'monitor'])
         self.selected_node = None
+        for value in self.node_fields.values(): value.set('—')
+        self.node_field_labels['Connection'].configure(image='')
         if not selected or not self.snapshot:
             self.detail.set('Select a node to inspect its resources.')
             self.node_detail.set('Select a node to inspect it.')
@@ -290,10 +309,15 @@ class FabricManager:
         if node:
             self.selected_node = node
             self.detail.set(f"{node['id'][:12]} · {node['trust']} · {node['reachability']}")
-            lines = [node['id'], f"{node['reachability']} · {node['trust']}"]
+            self.node_fields['Identity'].set('This computer' if node['local'] else node['id'][:12])
+            self.node_fields['Trust'].set(node['trust'])
+            self.node_fields['Connection'].set(node['reachability'])
+            self.node_field_labels['Connection'].configure(image=self.dashboard_images['online' if node['reachability']=='Online' else 'offline'])
+            lines = []
             for label, resource, formatter in zip(('CPU slots','Memory allowance','Accelerators'),node['resources'],(str,size,str)):
                 lines.append(f"\n{label}\n{formatter(resource['available'])} available / {formatter(resource['capacity'])} advertised\n"
                              f"{formatter(resource['provider_reserved'])} provider reserved\n{formatter(resource['consumer_reserved'])} consumer reserved")
+            lines.append('\nNode identity\n'+node['id'])
             self.node_detail.set('\n'.join(lines))
 
     # ------------------------=
