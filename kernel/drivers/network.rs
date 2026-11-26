@@ -157,6 +157,7 @@ fn pump(nic: &mut super::e1000::E1000, ns: u64) {
                 Some(address)
             });
         unsafe { super::network_time::poll(network,address,ns); }
+        runtime.node_links.advertise_nearby(network,address,now);
         let mut frame = [0u8; super::e1000::MAX_FRAME];
         for _ in 0..4 {
             let Some(length) = nic.receive(&mut frame) else {
@@ -175,6 +176,7 @@ fn pump(nic: &mut super::e1000::E1000, ns: u64) {
                 break;
             };
             if unsafe { super::network_time::receive(&packet,ns) } {continue;}
+            if runtime.node_links.receive_nearby(network,&runtime.nodes,&packet,address,now) { continue; }
             let _ = network.connections.deliver_datagram(
                 packet,
                 &mut network.policy,

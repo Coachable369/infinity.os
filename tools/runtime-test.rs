@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+#[path = "../kernel/storage/fabric_provider_state.rs"] pub mod fabric_provider_state;
+mod storage { pub mod object { pub use crate::fabric_provider_state; } }
 #[path = "../kernel/ui/mod.rs"] mod ui;
 #[path = "../kernel/runtime/mod.rs"] mod runtime;
 // ------------------------=

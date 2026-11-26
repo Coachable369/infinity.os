@@ -36,7 +36,23 @@ def request(action,*args):
     state['provider'].update(revision=revision+1,enabled=bool(enabled),memory=memory,cpu=packed&65535,tasks=packed>>16)
     return b''
 
-sys.modules['_infinity_app']=types.SimpleNamespace(fabric_request=request)
+node_calls=[]
+verification=None
+# ------------------------=
+# FUNC: node_request
+# DESC: Models explicit identity confirmation without granting trust on discovery.
+# ------------------=
+def node_request(action, peer, handle=0, value=0):
+    global verification
+    if not service_available: raise OSError('disconnected')
+    if action==0: return json.dumps(verification).encode()
+    node_calls.append((action,peer,handle,value))
+    if action==1: verification={'handle':7,'code':123456,'state':'Pending','fingerprint':'ab'*32}
+    if action==2:
+        if handle!=7 or value!=123456: raise OSError('identity mismatch')
+        state['nodes'][1]['trust']='Trusted'
+    return b''
+sys.modules['_infinity_app']=types.SimpleNamespace(fabric_request=request,fabric_node_request=node_request)
 root=tk.Tk()
 try:
     root.maxsize(900, 580)
@@ -90,6 +106,7 @@ try:
     assert app.zoom == 1.1
     app.menus[1].invoke(2); root.update()
     assert app.zoom == 1.0
+    root.minsize(960,604); root.geometry('960x604'); root.update()
     app.menus[2].invoke(0); root.update()
     guide = app.guide
     assert guide.winfo_exists() and guide.winfo_ismapped()
@@ -98,7 +115,30 @@ try:
     panel = guide.winfo_children()[0]
     for control in panel.winfo_children():
         assert control.winfo_y()+control.winfo_height() <= panel.winfo_height()
-    panel.winfo_children()[-1].invoke(); root.update()
+    assert not app.peers.get_children()
+    peer=dict(state['nodes'][0],id='02'*32,local=False,trust='Unknown')
+    state['nodes'].append(peer); app.refresh(automatic=True); root.update()
+    assert app.peers.get_children()==(peer['id'],)
+    app.peers.selection_set(peer['id']); app.pair_selection()
+    assert not app.verify_button.instate(['disabled'])
+    assert all(b.instate(['disabled']) for b in app.sharing_buttons)
+    app.verify_button.invoke()
+    root.update()
+    for control in (app.close_pair_button, app.verify_button, app.cancel_pair_button,
+                    app.confirm_button, *app.sharing_buttons):
+        assert control.winfo_ismapped() and control.winfo_height() >= 20
+        assert control.winfo_rooty()+control.winfo_height() <= root.winfo_rooty()+root.winfo_height()
+    assert app.pair_verification['handle']==7
+    app.pair_code.set('12'); app.confirm_pair(); assert len(node_calls)==1
+    app.pair_code.set('123456'); app.refresh(automatic=True)
+    assert app.pair_code.get()=='123456'
+    app.confirm_pair(); assert node_calls[-1]==(2,peer['id'],7,123456)
+    assert all(not b.instate(['disabled']) for b in app.sharing_buttons)
+    app.allow_sharing()
+    assert [c[2:] for c in node_calls[-3:]]==[(1,1),(2,1),(10,1)]
+    state['nodes'].pop(); app.refresh(automatic=True)
+    assert not app.peers.get_children() and app.verify_button.instate(['disabled'])
+    app.close_pair_button.invoke(); root.update()
     assert not guide.winfo_exists()
     jobs.append({'id':1,'epoch':1,'state':3,'cpu':2,'memory':1048576,'node':'01'*32})
     app.refresh()

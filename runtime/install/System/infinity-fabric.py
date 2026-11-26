@@ -3,7 +3,7 @@ import json
 import sys
 import tkinter as tk
 from tkinter import ttk
-from _infinity_app import fabric_request
+from _infinity_app import fabric_request, fabric_node_request
 from infinity_uikit import workspace_controls, workspace_menu, MENU_HEIGHT
 from infinity_uikit_artwork import COLORS
 from infinity_uikit_dashboard import dashboard_controls
@@ -260,31 +260,130 @@ class FabricManager:
 
     # ------------------------=
     # FUNC: connection_guide
-    # DESC: Presents the existing trusted Settings pairing workflow without bypassing bilateral confirmation.
+    # DESC: Presents live discovered peers and native identity verification without leaving Fabric.
     # ------------------=
     def connection_guide(self):
         guide = getattr(self, 'guide', None)
         if guide is not None and guide.winfo_exists():
             guide.lift()
             return
-        guide = self.guide = tk.Toplevel(self.root)
-        guide.title('Connect Fabric nodes')
-        guide.geometry('720x640')
-        guide.configure(bg=COLORS['panel'])
-        panel = ttk.Frame(guide, padding=24)
+        guide = self.guide = ttk.Frame(self.root)
+        guide.place(x=0, y=MENU_HEIGHT, relwidth=1, relheight=1, height=-MENU_HEIGHT)
+        guide.lift()
+        panel = ttk.Frame(guide, padding=20)
         panel.pack(fill='both', expand=True)
-        ttk.Label(panel, text='Connect and share resources', font=('Inter', -22, 'bold')).pack(anchor='w', pady=(0,16))
-        steps = (
-            '1. Sign in as an administrator on both installed nodes. Connect them to the same reachable LAN. For VMs, use bridged networking; separate NAT networks do not discover one another.',
-            '2. On each node open Settings → Nodes & Mesh → Pair Node. Select Node cycles through discovered peers. Choose Verify Identity on one node to begin pairing.',
-            '3. Compare the fingerprint and six-digit code on both screens. On each node choose Confirm, type the matching peer code, then press Enter. Never confirm a mismatch.',
-            '4. In Access Policy on both nodes, allow NAMESPACE (membership), COMPUTE, and MESH for the selected peer. Use Next categories for MESH. Then open Mesh Health and choose Join Mesh on both nodes.',
-            '5. Open Infinity Fabric on each node. Enable Contribute resources, set CPU units, memory allowance and concurrent jobs, then Apply contribution. Refresh to inspect peer status and combined available capacity.',
-            'If a trusted peer has no active session, use Trusted Nodes → Open Session. Discovery alone grants no resource access.'
-        )
-        for step in steps:
-            ttk.Label(panel, text=step, wraplength=660, justify='left').pack(fill='x', pady=(0,16))
-        ttk.Button(panel, text='Close', command=guide.destroy).pack(side='bottom', anchor='e')
+        header = ttk.Frame(panel); header.pack(fill='x')
+        self.close_pair_button = ttk.Button(header, text='Back to overview', command=guide.destroy)
+        self.close_pair_button.pack(side='right')
+        ttk.Label(header, text='Nearby Fabric nodes', font=('Inter', -22, 'bold')).pack(side='left')
+        ttk.Label(panel, text='Discovery updates automatically. Verify identity on both computers before sharing.',
+                  wraplength=760).pack(anchor='w', pady=(8,12))
+        self.peers = ttk.Treeview(panel, columns=('connection','trust'), show='tree headings', height=3,
+                                  selectmode='browse', style='Fabric.Treeview')
+        self.peers.heading('#0', text='Node identity'); self.peers.column('#0', width=280)
+        for column in ('connection','trust'):
+            self.peers.heading(column, text=column.title()); self.peers.column(column, width=160)
+        self.peers.pack(fill='both', expand=True)
+        self.peers.bind('<<TreeviewSelect>>', self.pair_selection)
+        self.pair_details = tk.StringVar(value='Looking for nodes on your local network…')
+        ttk.Label(panel, textvariable=self.pair_details, wraplength=760, justify='left').pack(fill='x', pady=12)
+        actions = ttk.Frame(panel); actions.pack(fill='x')
+        self.verify_button = ttk.Button(actions, text='Verify Identity', command=lambda:self.node_action(1))
+        self.verify_button.pack(side='left', padx=(0,8))
+        self.cancel_pair_button = ttk.Button(actions, text='Cancel pairing', command=lambda:self.node_action(3))
+        self.cancel_pair_button.pack(side='left')
+        confirmation = ttk.Frame(panel); confirmation.pack(fill='x', pady=12)
+        ttk.Label(confirmation, text='Code from the other computer').pack(side='left', padx=(0,12))
+        self.pair_code = tk.StringVar()
+        ttk.Entry(confirmation, textvariable=self.pair_code, width=8).pack(side='left', padx=(0,12))
+        self.confirm_button = ttk.Button(confirmation, text='Confirm matching identity', command=self.confirm_pair)
+        self.confirm_button.pack(side='left')
+        sharing = ttk.Frame(panel); sharing.pack(fill='x')
+        self.sharing_buttons=[]
+        for label, action in (('Allow resource sharing', self.allow_sharing),
+                              ('Open Session', lambda:self.node_action(4)), ('Join Mesh', lambda:self.node_action(5))):
+            button=ttk.Button(sharing,text=label,command=action); button.pack(side='left',padx=(0,8))
+            self.sharing_buttons.append(button)
+        self.pair_notice=tk.StringVar(value='')
+        ttk.Label(panel,textvariable=self.pair_notice,wraplength=760).pack(fill='x',pady=12)
+        self.pair_peer=None; self.pair_verification=None
+        self.refresh_peers()
+
+    # ------------------------=
+    # FUNC: refresh_peers
+    # DESC: Reconciles automatic discovery without resetting the user's selected peer or typed code.
+    # ------------------=
+    def refresh_peers(self):
+        if not getattr(self,'guide',None) or not self.guide.winfo_exists(): return
+        present=set()
+        for node in (self.snapshot or {}).get('nodes',[]):
+            if node['local']: continue
+            ident=node['id']; present.add(ident)
+            values=(node['reachability'],node['trust'])
+            if self.peers.exists(ident): self.peers.item(ident,values=values)
+            else: self.peers.insert('','end',iid=ident,text=ident[:20],values=values)
+        for ident in self.peers.get_children():
+            if ident not in present: self.peers.delete(ident)
+        self.pair_selection()
+
+    # ------------------------=
+    # FUNC: pair_selection
+    # DESC: Reads authenticated verification material for the exact selected peer and disables invalid actions.
+    # ------------------=
+    def pair_selection(self, event=None):
+        selection=self.peers.selection(); peer=selection[0] if selection else None
+        if peer!=self.pair_peer: self.pair_code.set(''); self.pair_notice.set('')
+        self.pair_peer=peer; self.pair_verification=None
+        node=next((n for n in (self.snapshot or {}).get('nodes',[]) if n['id']==peer),None)
+        admin=bool((self.snapshot or {}).get('provider'))
+        online=bool(node and node['reachability']=='Online')
+        self.verify_button.configure(state='normal' if admin and online else 'disabled')
+        for button in self.sharing_buttons:
+            button.configure(state='normal' if admin and online and node['trust']=='Trusted' else 'disabled')
+        if peer and admin:
+            try: self.pair_verification=json.loads(fabric_node_request(0,peer))
+            except OSError as error: self.pair_notice.set(str(error))
+        v=self.pair_verification
+        for button in (self.confirm_button,self.cancel_pair_button): button.configure(state='normal' if v else 'disabled')
+        if v:
+            fingerprint=' '.join(v['fingerprint'][i:i+8] for i in range(0,64,8))
+            self.pair_details.set(f"Compare on both computers: {v['code']:06d} • {v['state']}\nFingerprint: {fingerprint}")
+        elif peer: self.pair_details.set(f"Selected node: {peer}\nChoose Verify Identity, then compare the code and fingerprint on both computers.")
+        else: self.pair_details.set('Select a discovered node. Both computers must be on a reachable local network with discovery enabled.')
+
+    # ------------------------=
+    # FUNC: node_action
+    # DESC: Sends explicit actions to the native broker and reports failures without optimistic trust updates.
+    # ------------------=
+    def node_action(self, action, value=0, handle=None):
+        if not self.pair_peer: return False
+        if handle is None: handle=(self.pair_verification or {}).get('handle',0)
+        try:
+            fabric_node_request(action,self.pair_peer,handle,value)
+            self.pair_notice.set('Request accepted. Complete verification and sharing consent on the other computer too.')
+            self.refresh(automatic=True)
+            return True
+        except (OSError,ValueError) as error:
+            self.pair_notice.set(str(error)); return False
+
+    # ------------------------=
+    # FUNC: confirm_pair
+    # DESC: Requires a manually entered six-digit peer code; never automatically approves discovered identities.
+    # ------------------=
+    def confirm_pair(self):
+        code=self.pair_code.get().strip()
+        if len(code)!=6 or not code.isascii() or not code.isdigit():
+            self.pair_notice.set('Enter the six-digit code shown on the other computer.'); return
+        if self.node_action(2,int(code)): self.pair_code.set('')
+
+    # ------------------------=
+    # FUNC: allow_sharing
+    # DESC: Explicitly grants only membership, compute and mesh policy categories required for resource sharing.
+    # ------------------=
+    def allow_sharing(self):
+        for category in (1,2,10):
+            if not self.node_action(6,1,category): return
+        self.pair_notice.set('Membership, compute and mesh allowed. Open Session and Join Mesh on both computers.')
 
     # ------------------------=
     # FUNC: explain
@@ -349,6 +448,7 @@ class FabricManager:
                 self.jobs.delete(*self.jobs.get_children())
                 self.job_status.set('Administrator access is required to inspect all jobs.')
             self.snapshot = snapshot
+            self.refresh_peers()
             if not self.nodes.selection() and self.nodes.get_children():
                 self.nodes.selection_set(self.nodes.get_children()[0])
             self.select()
@@ -358,6 +458,7 @@ class FabricManager:
             self.status.set(self.notice or f"{len(snapshot['nodes'])} nodes | Live resource observations")
         except (OSError,ValueError,KeyError) as error:
             self.snapshot = None
+            self.refresh_peers()
             self.job_records = {}
             self.nodes.delete(*self.nodes.get_children())
             self.jobs.delete(*self.jobs.get_children())

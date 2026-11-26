@@ -125,9 +125,29 @@ static PyObject *fabric_request(PyObject *self, PyObject *args) {
     }
     return PyBytes_FromStringAndSize(result, rc);
 }
+// ------------------------=
+// FUNC: fabric_node_request
+// DESC: Sends an exact peer identity and pairing handle to the authenticated native Fabric broker.
+// ------------------=
+static PyObject *fabric_node_request(PyObject *self, PyObject *args) {
+    unsigned long long action, handle=0, value=0; const char *peer; Py_ssize_t length;
+    unsigned char id[32]; char result[16384]; (void)self;
+    if (!PyArg_ParseTuple(args,"Ks#|KK",&action,&peer,&length,&handle,&value)) return NULL;
+    if(length!=64) { PyErr_SetString(PyExc_ValueError,"Expected a complete node identity"); return NULL; }
+    for(int i=0;i<32;i++) {
+        unsigned byte=0;
+        for(int j=0;j<2;j++) { char c=peer[i*2+j]; int n=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:-1;
+            if(n<0) { PyErr_SetString(PyExc_ValueError,"Invalid node identity"); return NULL; } byte=(byte<<4)|n; }
+        id[i]=(unsigned char)byte;
+    }
+    int64_t rc=infinity_system_call(0x12fa,action,(uintptr_t)id,handle,value,0,(uintptr_t)result);
+    if(rc<0 || rc>sizeof(result)) { PyErr_Format(PyExc_OSError,"Node operation failed (%lld)",(long long)rc); return NULL; }
+    return PyBytes_FromStringAndSize(result,rc);
+}
 static PyMethodDef methods[]={
     {"memory_request",memory_request,METH_VARARGS,NULL},
     {"fabric_request",fabric_request,METH_VARARGS,NULL},
+    {"fabric_node_request",fabric_node_request,METH_VARARGS,NULL},
     {"window",window,METH_VARARGS,NULL},{"element",element,METH_VARARGS,NULL},
     {"state",state,METH_VARARGS,NULL},{"choice",choice,METH_VARARGS,NULL},
     {"text_action",text_action,METH_VARARGS,NULL},{"publish",publish,METH_NOARGS,NULL},

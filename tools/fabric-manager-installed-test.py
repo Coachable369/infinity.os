@@ -139,6 +139,10 @@ def main():
         native.adaptive_click(guest, gui[9]+gui[11]-22, gui[10]+gui[12]-100)
         time.sleep(1)
         guest.screenshot('fabric-manager-inspector')
+        # Open the actual native pairing surface from the Fabric toolbar.
+        native.adaptive_click(guest, gui[9]+gui[11]-210, gui[10]+60)
+        time.sleep(3)
+        guest.screenshot('fabric-manager-connect-nodes')
         receipt['complete'] = True
     except BaseException as error:
         receipt['failure'] = repr(error)

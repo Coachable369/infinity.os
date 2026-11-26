@@ -93,3 +93,13 @@ zoom content from 75–175% without changing resource settings or selection.
 Explicit zoom scales menu/toolbar metrics; resizing alone never changes them.
 The compositor title bar remains unchanged. Large-display acceptance must cover
 native maximized drawing surfaces, not only the default 1024×768 display.
+
+## In-app connection panel
+
+Reuse the workspace sapphire surface, UIKit buttons, entries and table states.
+The connection surface fills the application workspace below its menu bar,
+preserving compositor chrome. It uses 20 px padding, a 22 px heading, a flexible
+peer table, wrapped identity details, explicit verification and sharing actions.
+Discovery never changes trust. Selection and typed confirmation survive refresh.
+Unavailable service, missing peer, and non-admin sessions disable mutation controls.
+Identity confirmation requires manual entry of the other node's six-digit code.
