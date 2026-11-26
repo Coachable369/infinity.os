@@ -3,15 +3,15 @@
 `reference.png` is the AI-generated visual target (2026-11-25). `components.png`
 shows the exact SVG-derived production component pixels. The original design's
 fictional resource values are illustrative; production values use authenticated
-Fabric snapshots. The compositor owns the title bar; File/Help occupy a separate
+Fabric snapshots. The compositor owns the title bar; File/View/Help occupy a separate
 fixed 36px application menu, never a second title bar.
 
 ## Geometry and responsive behavior
 
-Menu 36px; toolbar 48px; outer inset 16px; gutter 12px. Right inspector 280px,
+Menu 36px; toolbar 48px; outer inset 16px; gutter 12px. Right inspector 312px,
 scrollable independently. Center resource cards precede Nodes and Job activity.
 Nodes receive three fifths of flexible vertical space; jobs two fifths. Card
-interior #112D48, inspector #0E1C36, steel border #48779D, selected row #164F79. Inter 16px body, 20–22px section headings, 24px totals.
+interior #112D48, inspector #0E1C36, steel border #48779D, selected row #164F79. Inter 18px body, 20–22px section headings, 24px totals.
 Icons are 44px with 12px spacing. Below 690px center width the decorative icons
 hide, preserving all values and fixed text sizes. Tables scroll rather than
 compressing headers. The inspector retains its width at normal/maximized sizes.
@@ -85,3 +85,11 @@ chrome, user-selected button styles, and small-screen reflow intentionally follo
 the shared application-workspace rules. Do not describe this as measured 100%
 pixel parity. Core arbitrary-workload CPU/RAM/GPU pooling remains separate from
 these UI changes; x86 release remains on hold.
+
+### Workspace typography and zoom
+
+File, View, and Help use arrow-free shared menu controls. Cmd/Ctrl +, −, and 0
+zoom content from 75–175% without changing resource settings or selection.
+Explicit zoom scales menu/toolbar metrics; resizing alone never changes them.
+The compositor title bar remains unchanged. Large-display acceptance must cover
+native maximized drawing surfaces, not only the default 1024×768 display.

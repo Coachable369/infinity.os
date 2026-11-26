@@ -66,6 +66,40 @@ try:
     assert all(icon.winfo_manager() for icon in app.card_icons)
     for icon in app.card_icons:
         assert icon.winfo_width()==44 and icon.winfo_height()==44
+    from tkinter import font as tkfont
+    base_font = tkfont.Font(root=root, font=app.style.lookup('TLabel', 'font'))
+    base_width = base_font.measure('MMMMMMMMMM')
+    original = (app.cpu.get(), app.memory.get(), app.selected_node['id'])
+    app.set_zoom(1.5); root.update()
+    assert tkfont.Font(root=root, font=app.style.lookup('TLabel', 'font')).measure('MMMMMMMMMM') > base_width*1.3
+    assert app.menu_bar.winfo_height() == 54
+    assert app.inspector_host.winfo_width() == 468
+    assert (app.cpu.get(), app.memory.get(), app.selected_node['id']) == original
+    root.geometry('1500x900'); root.update()
+    assert app.menu_bar.winfo_height() == 54
+    assert app.nodes.winfo_width() >= app.nodes.master.winfo_width()-50
+    app.set_zoom(1.0); root.update()
+    assert app.menu_bar.winfo_height() == 36
+    assert len(app.menus) == 3
+    root.focus_force(); root.update()
+    root.event_generate('<Control-plus>'); root.update()
+    assert app.zoom == 1.1
+    root.event_generate('<Control-minus>'); root.update()
+    assert app.zoom == 1.0
+    app.menus[1].invoke(0); root.update()
+    assert app.zoom == 1.1
+    app.menus[1].invoke(2); root.update()
+    assert app.zoom == 1.0
+    app.menus[2].invoke(0); root.update()
+    guide = app.guide
+    assert guide.winfo_exists() and guide.winfo_ismapped()
+    app.connection_guide(); root.update()
+    assert app.guide is guide
+    panel = guide.winfo_children()[0]
+    for control in panel.winfo_children():
+        assert control.winfo_y()+control.winfo_height() <= panel.winfo_height()
+    panel.winfo_children()[-1].invoke(); root.update()
+    assert not guide.winfo_exists()
     jobs.append({'id':1,'epoch':1,'state':3,'cpu':2,'memory':1048576,'node':'01'*32})
     app.refresh()
     assert app.jobs.get_children() == ('1',)

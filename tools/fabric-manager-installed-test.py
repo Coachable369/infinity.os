@@ -111,7 +111,28 @@ def main():
             else:
                 raise AssertionError({'window_state': gui, 'expected': expected})
             time.sleep(2)
-            guest.screenshot('fabric-manager-'+label)
+            capture = guest.screenshot('fabric-manager-'+label)
+            with Path(capture).open('rb') as frame:
+                assert frame.readline().strip() == b'P6'
+                dimensions = frame.readline()
+                while dimensions.startswith(b'#'):
+                    dimensions = frame.readline()
+                fw, fh = map(int, dimensions.split())
+                assert frame.readline().strip() == b'255'
+                data = frame.read()
+            x, y, w, h = gui[9:13]
+            black = 0
+            for row in range(y+4, min(fh,y+h-4)):
+                scan = data[(row*fw+x+4)*3:(row*fw+min(fw,x+w-4))*3]
+                black += sum(max(scan[i:i+3])<4 for i in range(0,len(scan),3))
+            ratio = black/((w-8)*(h-8))
+            receipt.setdefault('black_pixel_ratios', {})[label] = ratio
+            assert ratio < .001, {'unpainted_fraction': ratio, 'window': label}
+            if expected == 2:
+                guest.key('meta_l', 'equal'); guest.key('meta_l', 'equal')
+                time.sleep(2)
+                guest.screenshot('fabric-manager-zoomed')
+                guest.key('meta_l', '0'); time.sleep(1)
             receipt['window_states'].append({'state': gui[13], 'geometry': gui[9:13]})
         assert gui[9:13] == original_geometry
         # Page the independent inspector to expose the real node details.

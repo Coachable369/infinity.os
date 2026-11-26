@@ -128,12 +128,12 @@ impl DisplayDevice {
         );
         let mut labels: [[&[u8]; 2]; 6] = match page {
             0 => [
-                [b"DISCOVERED", b"Observed, not trusted"],
-                [b"TRUSTED", b"Explicit relationships"],
+                [b"SELECT NODE", b"Cycle discovered peers"],
+                [b"REVOKE TRUST", b"Selected peer relationship"],
                 [b"ONLINE", b"Authenticated reachability"],
-                [b"SESSIONS", b"Mutually authenticated"],
-                [b"AUTHORITY", b"Capability scoped"],
-                [b"REFRESH", b"Discover local nodes"],
+                [b"OPEN SESSION", b"Connect selected trusted peer"],
+                [b"BLOCK NODE", b"Deny selected peer access"],
+                [b"DISCOVERY", b"Automatic on reachable LAN"],
             ],
             1 => [
                 [b"SELECT NODE", b"Choose an untrusted peer"],
@@ -144,8 +144,8 @@ impl DisplayDevice {
                 [b"PAIRING STATE", b"Short lived transaction"],
             ],
             2 => [
-                [b"MEMBERS", b"Explicit domain membership"],
-                [b"ONLINE", b"Recent authenticated heartbeat"],
+                [b"SELECT NODE", b"Choose peer to join"],
+                [b"JOIN MESH", b"Join selected peer domain"],
                 [b"DEGRADED", b"Partial availability"],
                 [b"OFFLINE", b"State retained safely"],
                 [b"LEAVE DOMAIN", b"Preserve node trust"],

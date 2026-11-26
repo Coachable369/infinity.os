@@ -1,5 +1,6 @@
 """Native Fabric management; all observations and mutations come from the OS authority."""
 import json
+import sys
 import tkinter as tk
 from tkinter import ttk
 from _infinity_app import fabric_request
@@ -35,9 +36,10 @@ class FabricManager:
         root.geometry(f"{width}x{height}")
         root.minsize(min(1024, width), min(700, height))
         root.configure(bg=COLORS['canvas'])
-        font = ('Inter', -16)
+        self.zoom = 1.0
+        font = ('Inter', -18)
         root.option_add('*Font', font)
-        style = ttk.Style(root)
+        style = self.style = ttk.Style(root)
         style.theme_use('clam')
         style.configure('TLabel', background=COLORS['panel'], foreground=COLORS['text'], font=font)
         style.configure('TFrame', background=COLORS['panel'])
@@ -53,20 +55,27 @@ class FabricManager:
                         lightcolor=COLORS['panel'], darkcolor=COLORS['panel'], bordercolor=COLORS['panel'],
                         arrowcolor=COLORS['muted'], relief='flat')
         style.map('Workspace.TMenubutton', background=[('active', COLORS['accent'])])
-        menu_bar = ttk.Frame(root, height=MENU_HEIGHT)
+        style.layout('Workspace.TMenubutton', [('Menubutton.padding', {'sticky':'nswe', 'children':[('Menubutton.label', {'sticky':'w'})]})])
+        menu_bar = self.menu_bar = ttk.Frame(root, height=MENU_HEIGHT)
+        self.menus = []
         menu_bar.pack(fill='x'); menu_bar.pack_propagate(False)
         for title, entries in (('File', (('Refresh', self.refresh), ('Close', root.destroy))),
-                               ('Help', (('Resource units', self.explain),))):
+                               ('View', (('Zoom in   Cmd +', lambda: self.set_zoom(self.zoom + .1)),
+                                         ('Zoom out   Cmd −', lambda: self.set_zoom(self.zoom - .1)),
+                                         ('Actual size   Cmd 0', lambda: self.set_zoom(1.0)))),
+                               ('Help', (('Connect nodes…', self.connection_guide), ('Resource units', self.explain)))):
             button = ttk.Menubutton(menu_bar, text=title, takefocus=True, style='Workspace.TMenubutton')
             menu = tk.Menu(button, tearoff=False, bg=COLORS['panel'], fg=COLORS['text'],
                            activebackground=COLORS['accent'], font=font)
             for label, action in entries: menu.add_command(label=label, command=action)
+            self.menus.append(menu)
             workspace_menu(button, menu)
             button.pack(side='right' if title=='Help' else 'left', fill='y', padx=8)
-        toolbar = ttk.Frame(root, height=48)
+        toolbar = self.toolbar = ttk.Frame(root, height=48)
         toolbar.pack(fill='x'); toolbar.pack_propagate(False)
         ttk.Label(toolbar, text='Overview', font=('Inter', -22)).pack(side='left', padx=16)
         ttk.Button(toolbar, text='Refresh', command=self.refresh).pack(side='right', padx=12, pady=4)
+        ttk.Button(toolbar, text='Connect nodes…', command=self.connection_guide).pack(side='right', padx=8, pady=4)
         self.status = tk.StringVar(value='Connecting to Fabric service…')
         ttk.Label(root, textvariable=self.status, padding=(16,8)).pack(side='bottom', fill='x')
         body = ttk.Frame(root, padding=16)
@@ -129,7 +138,7 @@ class FabricManager:
         self.empty_jobs = ttk.Label(self.jobs,textvariable=self.job_status,image=self.dashboard_images['jobs'],compound='top',justify='center',padding=8)
         self.empty_jobs.place(relx=.5,rely=.65,anchor='center')
         self.jobs.pack(fill='both',expand=True)
-        inspector_host = ttk.Frame(body, width=280)
+        inspector_host = self.inspector_host = ttk.Frame(body, width=312)
         inspector_host.grid(row=0,column=1,rowspan=3,sticky='ns',padx=(12,0))
         inspector_host.grid_propagate(False)
         inspector_host.rowconfigure(0, weight=1)
@@ -174,8 +183,51 @@ class FabricManager:
         ttk.Separator(inspector,orient='horizontal').grid(row=18,column=0,columnspan=2,sticky='ew',pady=12)
         self.node_detail = tk.StringVar(value='Select a node to inspect it.')
         ttk.Label(inspector,textvariable=self.node_detail,wraplength=220,justify='left').grid(row=19,column=0,columnspan=2,sticky='w')
+        self.font_widgets = []
+        self.collect_fonts(root)
+        for modifier in ('Mod4', 'Control') + (('Command',) if sys.platform == 'darwin' else ()):
+            root.bind(f'<{modifier}-plus>', lambda event: self.set_zoom(self.zoom + .1))
+            root.bind(f'<{modifier}-equal>', lambda event: self.set_zoom(self.zoom + .1))
+            root.bind(f'<{modifier}-minus>', lambda event: self.set_zoom(self.zoom - .1))
+            root.bind(f'<{modifier}-0>', lambda event: self.set_zoom(1.0))
+        self.set_zoom(1.0)
         self.refresh()
         root.after(2000,self.tick)
+
+    # ------------------------=
+    # FUNC: collect_fonts
+    # DESC: Retains explicit typography roles so zoom never compounds font rounding.
+    # ------------------=
+    def collect_fonts(self, widget):
+        if 'font' in widget.keys() and widget.cget('font'):
+            import tkinter.font as tkfont
+            font = tkfont.Font(root=self.root, font=widget.cget('font'))
+            parts = self.root.tk.splitlist(widget.cget('font'))
+            pixels = abs(int(parts[1])) if len(parts)>1 else abs(font.cget('size'))
+            self.font_widgets.append((widget, max(18, pixels), font.cget('weight')))
+        for child in widget.winfo_children():
+            self.collect_fonts(child)
+
+    # ------------------------=
+    # FUNC: set_zoom
+    # DESC: Zooms readable workspace content without changing resource state or compositor chrome.
+    # ------------------=
+    def set_zoom(self, value):
+        self.zoom = min(1.75, max(.75, round(value, 2)))
+        font = ('Inter', -round(18*self.zoom))
+        self.images = workspace_controls(self.root, self.style, self.zoom)
+        for name in ('.', 'TLabel', 'TEntry', 'TButton', 'Workspace.TMenubutton',
+                     'DashboardCard.TLabel', 'DashboardPanel.TLabel', 'Dashboard.TCheckbutton', 'Fabric.Treeview'):
+            self.style.configure(name, font=font)
+        self.style.configure('Fabric.Treeview', rowheight=round(40*self.zoom))
+        self.style.configure('Fabric.Treeview.Heading', font=font+('bold',))
+        for widget, pixels, weight in self.font_widgets:
+            widget.configure(font=('Inter', -round(pixels*self.zoom), weight))
+        self.menu_bar.configure(height=round(MENU_HEIGHT*self.zoom))
+        self.toolbar.configure(height=round(48*self.zoom))
+        self.inspector_host.configure(width=round(312*self.zoom))
+        self.card_layout()
+        return 'break'
 
     # ------------------------=
     # FUNC: card_layout
@@ -205,6 +257,34 @@ class FabricManager:
         self.dirty = True
         self.notice = None
         self.policy_error = False
+
+    # ------------------------=
+    # FUNC: connection_guide
+    # DESC: Presents the existing trusted Settings pairing workflow without bypassing bilateral confirmation.
+    # ------------------=
+    def connection_guide(self):
+        guide = getattr(self, 'guide', None)
+        if guide is not None and guide.winfo_exists():
+            guide.lift()
+            return
+        guide = self.guide = tk.Toplevel(self.root)
+        guide.title('Connect Fabric nodes')
+        guide.geometry('720x640')
+        guide.configure(bg=COLORS['panel'])
+        panel = ttk.Frame(guide, padding=24)
+        panel.pack(fill='both', expand=True)
+        ttk.Label(panel, text='Connect and share resources', font=('Inter', -22, 'bold')).pack(anchor='w', pady=(0,16))
+        steps = (
+            '1. Sign in as an administrator on both installed nodes. Connect them to the same reachable LAN. For VMs, use bridged networking; separate NAT networks do not discover one another.',
+            '2. On each node open Settings → Nodes & Mesh → Pair Node. Select Node cycles through discovered peers. Choose Verify Identity on one node to begin pairing.',
+            '3. Compare the fingerprint and six-digit code on both screens. On each node choose Confirm, type the matching peer code, then press Enter. Never confirm a mismatch.',
+            '4. In Access Policy on both nodes, allow NAMESPACE (membership), COMPUTE, and MESH for the selected peer. Use Next categories for MESH. Then open Mesh Health and choose Join Mesh on both nodes.',
+            '5. Open Infinity Fabric on each node. Enable Contribute resources, set CPU units, memory allowance and concurrent jobs, then Apply contribution. Refresh to inspect peer status and combined available capacity.',
+            'If a trusted peer has no active session, use Trusted Nodes → Open Session. Discovery alone grants no resource access.'
+        )
+        for step in steps:
+            ttk.Label(panel, text=step, wraplength=660, justify='left').pack(fill='x', pady=(0,16))
+        ttk.Button(panel, text='Close', command=guide.destroy).pack(side='bottom', anchor='e')
 
     # ------------------------=
     # FUNC: explain
